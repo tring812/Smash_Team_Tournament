@@ -5,6 +5,7 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Ô tìm VĐV** trên tab Lịch thi đấu và Bảng đấu: gõ tên (không dấu cũng được) hoặc CLB → lịch chỉ còn trận của người đó, bảng đấu chỉ còn bảng có tên họ (dòng tô vàng), ô tóm tắt "MS Bảng C · hạng 3". Giữ `?q=` khi chuyển tab, chia sẻ được. Tab Bảng đấu mặc định hiện mọi nội dung đã bốc thăm (có nút "Tất cả nội dung").
 - **Nhập file đăng ký dạng Google Sheets của BTC**: sheet câu trả lời Form có rẽ nhánh (nhiều cột "nội dung", MSSV đồng đội không ghi "partner"), cột **"Đăng kí bảng đấu" = hạng** (Bảng A / Bảng B → nội dung "Đôi nam A" / "Đôi nam B"; giải không chia hạng thì gộp và báo), và **mỗi nội dung một sheet** (tên sheet "ĐÔI NAM A", đôi = 2 dòng cùng STT "ĐỘI n"). Bản xem trước cho **chọn sheet** (mặc định chỉ sheet theo nội dung); bỏ qua cột link minh chứng / chuyển khoản.
 - **Luật điểm theo vòng** (migration `007_round_rules`, `PUT /categories/:id/round-rules`): vòng bảng, mọi vòng loại trực tiếp, và từng vòng (tứ kết / bán kết / chung kết… đếm ngược từ chung kết, đặt được trước khi có nhánh); điểm 21/15/11 hoặc tuỳ chỉnh, 1 game / 2/3 / 3/5. Khoá theo từng trận đã bắt đầu (`RULES_LOCKED`). Bàn điểm, kiểm tra tỉ số và trang công khai dùng luật của vòng.
 - **Bàn điểm: bên giao cầu & ô giao** (bên thắng pha giao tiếp; điểm chẵn → ô phải, lẻ → ô trái), hoàn tác trả lại bên giao, nút sửa bên giao.

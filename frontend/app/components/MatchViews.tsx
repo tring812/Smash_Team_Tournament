@@ -1,4 +1,4 @@
-import type { GroupStanding, Match, MatchStatus } from "../lib/types";
+import type { GroupStanding, Match, MatchStatus, StandingRow } from "../lib/types";
 import { fmtTime } from "../lib/api";
 import { DqBadge, EmptyState } from "./ui";
 
@@ -63,12 +63,13 @@ export function MatchCard({ m, compact = false }: { m: Match; compact?: boolean 
   );
 }
 
-export function StandingsTables({ groups }: { groups: GroupStanding[] }) {
+/** `highlight`: dòng khớp ô tìm VĐV được tô nổi (đánh dấu "Bạn"). */
+export function StandingsTables({ groups, highlight }: { groups: GroupStanding[]; highlight?: (r: StandingRow) => boolean }) {
   if (!groups.length) return <EmptyState title="Chưa bốc thăm chia bảng" />;
   return (
     <div className="grid gap-4 md:grid-cols-2">
       {groups.map((g) => (
-        <section key={g.groupId} className="overflow-hidden bg-white rounded-2xl border border-slate-100 shadow-sm">
+        <section key={g.groupId} id={`g-${g.groupId}`} className="scroll-mt-28 overflow-hidden bg-white rounded-2xl border border-slate-100 shadow-sm">
           <h3 className="flex items-center justify-between bg-black px-4 py-3 text-white">
             <span className="headline text-xl">Bảng <span className="text-red-500">{g.name}</span></span>
             {g.complete && <span className="rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-bold">Đã xong</span>}
@@ -88,7 +89,8 @@ export function StandingsTables({ groups }: { groups: GroupStanding[] }) {
               </thead>
               <tbody className="tabular">
                 {g.standings.map((r) => (
-                  <tr key={r.entryId} className={`border-t border-slate-100 ${r.disqualified ? "text-slate-400" : ""}`}>
+                  <tr key={r.entryId} aria-current={highlight?.(r) ? "true" : undefined}
+                    className={`border-t border-slate-100 ${r.disqualified ? "text-slate-400" : ""} ${highlight?.(r) ? "bg-amber-50 shadow-[inset_4px_0_0_#f59e0b]" : ""}`}>
                     <td className="px-4 py-2.5">
                       {r.rank ? <span className={`inline-grid h-6 w-6 place-items-center rounded-full text-xs font-bold ${r.rank <= 2 ? "bg-red-600 text-white" : "bg-slate-100 text-slate-600"}`}>{r.rank}</span> : "—"}
                     </td>

@@ -36,7 +36,7 @@ Giải phong trào thường chạy bằng Google Form + Excel + giấy dán tư
 | **Ban tổ chức (BTC)** | Trang quản trị giải | Nhập danh sách từ Excel / Google Form, bốc thăm, xếp lịch, gọi trận vào sân trống, truất quyền, sửa tỉ số |
 | **Quản trị viên** | `/accounts`, `/new` | Tạo giải, cấp tài khoản cho BTC / trọng tài |
 
-Mỗi giải là một trang `/t/<slug>` với 3 tab: **Lịch thi đấu**, **Bảng đấu**, **Loại trực tiếp**.
+Mỗi giải là một trang `/t/<slug>` với 3 tab: **Lịch thi đấu**, **Bảng đấu**, **Loại trực tiếp**; ô **tìm tên VĐV** (không cần gõ dấu) lọc lịch và bảng đấu.
 
 <sub>[↑ Back to contents](#contents)</sub>
 

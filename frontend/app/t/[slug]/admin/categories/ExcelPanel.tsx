@@ -149,7 +149,7 @@ export function ExcelPanel({ current }: { current: Category | undefined }) {
               </fieldset>
             )}
             {p.notes.length > 0 && (
-              <ul className="space-y-1 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-amber-900">
+              <ul className="space-y-1 rounded-2xl border border-amber-300 bg-amber-50 p-3 text-amber-800">
                 {p.notes.map((n) => <li key={n} className="flex gap-2"><Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />{n}</li>)}
               </ul>
             )}

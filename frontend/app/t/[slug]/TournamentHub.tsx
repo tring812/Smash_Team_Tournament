@@ -3,17 +3,17 @@
 import Link from "next/link";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowUpRight, CalendarClock, GitBranch, LayoutGrid, MapPin, MonitorPlay, RefreshCw } from "lucide-react";
+import { ArrowUpRight, CalendarClock, GitBranch, LayoutGrid, MapPin, MonitorPlay, RefreshCw, Search, UserSearch, X } from "lucide-react";
 import { api, fmtTime } from "../../lib/api";
 import { usePoll } from "../../lib/usePoll";
 import { useLive } from "../../lib/useLive";
-import type { Bracket, GroupStanding, Match, Tournament } from "../../lib/types";
+import type { Bracket, Category, GroupStanding, Match, StandingRow, Tournament } from "../../lib/types";
 import { MatchCard, StandingsTables } from "../../components/MatchViews";
 import { BracketExplorer, BracketViewToggle, type BracketView } from "../../components/BracketExplorer";
 import {
   AllMatchesTable, CourtView, ScheduleViewToggle, SCHEDULE_VIEWS, TimeView, dayKey, dayLabel, type ScheduleView,
 } from "../../components/ScheduleViews";
-import { CardSkeleton, PageHeader, textInputClass } from "../../components/ui";
+import { CardSkeleton, EmptyState, PageHeader, textInputClass } from "../../components/ui";
 
 export type HubTab = "schedule" | "groups" | "bracket";
 
@@ -26,13 +26,21 @@ const TABS: { id: HubTab; label: string; icon: typeof CalendarClock }[] = [
   { id: "bracket", label: "Loại trực tiếp", icon: GitBranch },
 ];
 
+/** So khớp tên không phân biệt hoa thường / dấu: "nguyen an" khớp "Nguyễn Ân". */
+const fold = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/gi, "d").toLowerCase().replace(/\s+/g, " ").trim();
+/** Mọi từ trong ô tìm đều phải có trong tên hoặc CLB (gõ "an uit" → An của UIT). */
+const matcher = (q: string) => {
+  const words = fold(q).split(" ").filter(Boolean);
+  return words.length ? (name: string, club = "") => { const hay = fold(`${name} ${club}`); return words.every((w) => hay.includes(w)); } : null;
+};
+
 const clock = new Intl.DateTimeFormat("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
 /**
- * TRANG GIẢI CÔNG KHAI — một khung duy nhất cho cả 3 phần (lịch / bảng / loại trực tiếp).
- * Mỗi phần có URL riêng (/t/<slug>, /t/<slug>/groups, /t/<slug>/bracket) nên link từ thanh điều hướng,
- * từ thẻ giải ở trang chủ hay chia sẻ đều ra cùng một giao diện. Bộ lọc nằm trên URL:
- * ?cat=MS (mọi tab) · ?view=time|court|table&day=&court= (lịch) · ?view=tree|table (loại trực tiếp).
+ * TRANG GIẢI CÔNG KHAI — 3 tab, mỗi tab một URL dùng chung khung: "Lịch thi đấu" (/t/<slug>, trận đấu),
+ * "Bảng đấu" (/t/<slug>/groups, bảng xếp hạng vòng bảng), "Loại trực tiếp" (/t/<slug>/bracket).
+ * Ô tìm VĐV có ở Lịch + Bảng đấu và giữ nguyên khi chuyển giữa hai tab. Bộ lọc nằm trên URL:
+ * ?cat=MS (mọi tab) · ?q=tên VĐV · ?view=time|court|table&day=&court= (lịch) · ?view=tree|table (loại trực tiếp).
  */
 export function TournamentHub({ tab }: { tab: HubTab }) {
   const { slug } = useParams<{ slug: string }>();
@@ -45,14 +53,19 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
   const bracketView: BracketView = viewParam === "table" ? "table" : "tree";
   const day = search.get("day") ?? "";
   const court = search.get("court") ?? "";
+  const qParam = search.get("q") ?? "";
 
   const t = usePoll((s) => api<Tournament>(`/tournaments/${encodeURIComponent(slug)}`, { signal: s }), [slug], 60_000);
   const cats = t.data?.categories ?? [];
   const cat = cats.find((c) => c.code === catCode);
-  // Bảng đấu / loại trực tiếp chỉ xem được từng nội dung → mặc định nội dung phù hợp nhất.
-  const focusCat = cat
-    ?? (tab === "bracket" ? cats.find((c) => c.stage === "knockout" || c.stage === "completed") : cats.find((c) => c.stage !== "setup"))
-    ?? cats[0];
+  // Loại trực tiếp chỉ xem được từng nội dung → mặc định nội dung đã có nhánh.
+  const focusCat = cat ?? cats.find((c) => c.stage === "knockout" || c.stage === "completed") ?? cats[0];
+  // Bảng xếp hạng: tab Bảng đấu, hoặc tab Lịch khi đang tìm VĐV (để báo "Bảng C · hạng 3").
+  // Nội dung đang chọn, hoặc mọi nội dung đã bốc thăm.
+  const searching = Boolean(qParam.trim());
+  const standingCats: Category[] = tab === "groups" || (tab === "schedule" && searching)
+    ? (cat ? [cat] : cats.filter((c) => c.stage !== "setup")) : [];
+  const standingKey = standingCats.map((c) => c.id).join(",");
 
   // Có điểm / gọi sân / dời trận → tải lại ngay; polling 10s (30s khi đang nhận trực tiếp) chỉ là dự phòng.
   const { tick, live: streaming } = useLive(t.data?.id);
@@ -61,9 +74,12 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
     [t.data?.id, cat?.id, tab, tick], streaming ? 30_000 : 10_000,
   );
   const groups = usePoll(
-    (s) => (tab === "groups" && focusCat ? api<GroupStanding[]>(`/categories/${focusCat.id}/standings`, { signal: s }) : Promise.resolve([])),
-    [tab, focusCat?.id, tick], streaming ? 30_000 : 10_000,
+    (s) => Promise.all(standingCats.map(async (c) => ({ category: c, groups: await api<GroupStanding[]>(`/categories/${c.id}/standings`, { signal: s }) }))),
+    [standingKey, tick], streaming ? 30_000 : 10_000,
   );
+
+  // Ô tìm VĐV: gõ ngay trên máy, URL (?q=) cập nhật sau 300 ms để chia sẻ / quay lại được.
+  const [q, setQ] = useState(qParam);
   const bracket = usePoll(
     (s) => (tab === "bracket" && focusCat ? api<Bracket>(`/categories/${focusCat.id}/bracket`, { signal: s }) : Promise.resolve({ rounds: [] })),
     [tab, focusCat?.id, tick], streaming ? 30_000 : 10_000,
@@ -77,8 +93,15 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
   const days = useMemo(() => [...new Set(all.filter((m) => m.scheduledAt).map((m) => m.scheduledAt as string))]
     .reduce<{ key: string; iso: string }[]>((acc, iso) => (acc.some((d) => d.key === dayKey(iso)) ? acc : [...acc, { key: dayKey(iso), iso }]), [])
     .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)), [all]);
-  const shown = all.filter((m) => (!day || (m.scheduledAt && dayKey(m.scheduledAt) === day)) && (!court || String(m.court) === court));
-  const live = all.filter((m) => m.status === "live");
+  const hit = useMemo(() => matcher(q), [q]);
+  const isMine = (m: Match) => !hit || [m.a, m.b].some((x) => x && hit(x.name, x.club));
+  const shown = all.filter((m) => (!day || (m.scheduledAt && dayKey(m.scheduledAt) === day)) && (!court || String(m.court) === court) && isMine(m));
+  const live = all.filter((m) => m.status === "live" && isMine(m));
+  const rowHit = hit ? (r: StandingRow) => hit(r.name, r.club) : undefined;
+  // Khi tìm: chỉ giữ bảng có VĐV khớp; "found" = VĐV đó đang ở bảng nào, hạng mấy.
+  const standings = (groups.data ?? []).map((x) => ({ ...x, groups: rowHit ? x.groups.filter((g) => g.standings.some(rowHit)) : x.groups }))
+    .filter((x) => !rowHit || x.groups.length);
+  const found = rowHit ? standings.flatMap((x) => x.groups.flatMap((g) => g.standings.filter(rowHit).map((r) => ({ r, g, c: x.category })))) : [];
 
   const setParam = (k: string, v: string) => {
     const p = new URLSearchParams(search.toString());
@@ -86,8 +109,20 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
     const qs = p.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   };
-  /** Chuyển tab giữ nguyên nội dung đang chọn (view/ngày/sân là của riêng từng tab). */
-  const tabHref = (id: HubTab) => `${hubHref(slug, id)}${catCode ? `?cat=${encodeURIComponent(catCode)}` : ""}`;
+  useEffect(() => {
+    if (q === qParam) return;
+    const id = setTimeout(() => setParam("q", q.trim()), 300);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chỉ đồng bộ khi người dùng gõ
+  }, [q]);
+  /** Chuyển tab giữ nguyên nội dung đang chọn và ô tìm VĐV (view/ngày/sân là của riêng từng tab). */
+  const tabHref = (id: HubTab) => {
+    const p = new URLSearchParams();
+    if (catCode) p.set("cat", catCode);
+    if (id !== "bracket" && q.trim()) p.set("q", q.trim());
+    const qs = p.toString();
+    return `${hubHref(slug, id)}${qs ? `?${qs}` : ""}`;
+  };
 
   if (t.error) return <p role="alert" className="text-red-700">{t.error}</p>;
   if (!t.data) return <CardSkeleton rows={4} />;
@@ -125,6 +160,52 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
         ))}
       </nav>
 
+      {tab !== "bracket" && (
+        <search className="block">
+          <form role="search" onSubmit={(e) => e.preventDefault()} className="relative">
+            <label htmlFor="player-q" className="sr-only">Tìm VĐV theo tên hoặc CLB</label>
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" aria-hidden />
+            <input id="player-q" type="search" value={q} onChange={(e) => setQ(e.target.value)} autoComplete="off" enterKeyHint="search"
+              placeholder="Tìm tên của bạn (vd: nguyen an, hoặc tên CLB / trường)"
+              className={`${textInputClass} min-h-12 rounded-full pl-12 pr-12 text-base`} />
+            {q && (
+              <button type="button" onClick={() => setQ("")} aria-label="Xoá tìm kiếm"
+                className="absolute right-1.5 top-1/2 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full text-slate-500 hover:bg-slate-100 cursor-pointer">
+                <X className="h-5 w-5" aria-hidden />
+              </button>
+            )}
+          </form>
+          {hit && (
+            <div aria-live="polite" className="mt-3 rounded-2xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+              {found.length || (tab === "schedule" && shown.length) ? (
+                <>
+                  <p className="font-bold">
+                    {tab === "schedule" ? `${shown.length} trận` : `Có tên trong ${found.length} bảng`}
+                    {tab === "schedule" && found.length > 0 && <> · có tên trong {found.length} bảng</>}
+                  </p>
+                  {found.length > 0 && (
+                    <ul className="mt-2 flex flex-wrap gap-2">
+                      {found.slice(0, 8).map(({ r, g, c }) => (
+                        <li key={`${c.id}-${r.entryId}`}>
+                          <Link href={tab === "groups" ? `#g-${g.groupId}` : tabHref("groups")} scroll={tab === "groups"}
+                            className="flex min-h-11 flex-wrap items-center gap-x-1.5 rounded-3xl bg-white px-3 py-1.5 font-semibold shadow-sm ring-1 ring-amber-300 hover:ring-amber-700">
+                            <UserSearch className="h-4 w-4 text-amber-700" aria-hidden />{r.name}
+                            <span className="font-normal text-slate-600">· {c.code} Bảng {g.name}{r.rank ? ` · hạng ${r.rank}` : ""}</span>
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
+              ) : (
+                <p>Không tìm thấy “{q.trim()}”. Thử gõ ít chữ hơn (vd chỉ tên), hoặc chọn “Tất cả nội dung”.
+                  VĐV chỉ có trong lịch sau khi BTC bốc thăm.</p>
+              )}
+            </div>
+          )}
+        </search>
+      )}
+
       {live.length > 0 && tab === "schedule" && (
         <section aria-labelledby="live-h" className="rounded-3xl bg-black p-5 sm:p-6">
           <h2 id="live-h" className="headline mb-4 flex items-center gap-2 text-xl text-white">
@@ -139,9 +220,9 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
 
       <div className="flex flex-wrap items-end gap-3">
         <div role="group" aria-label="Chọn nội dung" className="flex flex-wrap gap-2">
-          {tab === "schedule" && <button type="button" aria-pressed={!cat} onClick={() => setParam("cat", "")} className={pill(!cat)}>Tất cả nội dung</button>}
+          {tab !== "bracket" && <button type="button" aria-pressed={!cat} onClick={() => setParam("cat", "")} className={pill(!cat)}>Tất cả nội dung</button>}
           {cats.map((c) => {
-            const active = tab === "schedule" ? c.id === cat?.id : c.id === focusCat?.id;
+            const active = tab !== "bracket" ? c.id === cat?.id : c.id === focusCat?.id;
             return <button key={c.id} type="button" aria-pressed={active} onClick={() => setParam("cat", c.code)} className={pill(active)}>{c.code} · {c.name}</button>;
           })}
         </div>
@@ -178,13 +259,29 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
       {err && <p role="alert" className="text-red-700">{err}</p>}
 
       {tab === "schedule" && (!matches.data ? <CardSkeleton rows={4} /> : (
-        <>
-          {scheduleView === "time" && <TimeView matches={shown} />}
-          {scheduleView === "court" && <CourtView matches={shown} courts={t.data.courts} />}
-          {scheduleView === "table" && <AllMatchesTable matches={shown} />}
-        </>
+        <section aria-label="Trận đấu">
+          {hit && !shown.length ? <EmptyState title="Không có trận nào khớp tìm kiếm" /> : (
+            <>
+              {scheduleView === "time" && <TimeView matches={shown} />}
+              {scheduleView === "court" && <CourtView matches={shown} courts={t.data.courts} />}
+              {scheduleView === "table" && <AllMatchesTable matches={shown} />}
+            </>
+          )}
+        </section>
       ))}
-      {tab === "groups" && (groups.data ? <StandingsTables groups={groups.data} /> : <CardSkeleton rows={4} />)}
+
+      {tab === "groups" && (
+        <section aria-label="Bảng đấu" className="space-y-6">
+          {!groups.data ? <CardSkeleton rows={4} /> : !standings.length ? (
+            <EmptyState title={hit ? "Không có bảng nào có tên này" : "Chưa bốc thăm chia bảng"} />
+          ) : standings.map(({ category, groups: gs }) => (
+            <div key={category.id} className="space-y-3">
+              {standingCats.length > 1 && <h2 className="headline text-2xl">{category.code} · {category.name}</h2>}
+              <StandingsTables groups={gs} highlight={rowHit} />
+            </div>
+          ))}
+        </section>
+      )}
       {tab === "bracket" && (bracket.data ? <BracketExplorer bracket={bracket.data} view={bracketView} /> : <CardSkeleton rows={4} />)}
     </div>
   );
