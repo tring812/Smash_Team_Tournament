@@ -1,0 +1,29 @@
+{
+  "name": "smashteam-tournament-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "API quản lý giải đấu cầu lông độc lập (vòng bảng → loại trực tiếp, nhập điểm trọng tài)",
+  "license": "UNLICENSED",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch --env-file=.env src/server.js",
+    "migrate": "node --env-file-if-exists=.env scripts/migrate.js",
+    "test": "node --test test/*.test.js",
+    "audit": "npm audit --audit-level=low && npm audit signatures",
+    "seed:demo": "node --env-file-if-exists=.env scripts/seed-demo.js",
+    "user:create": "node --env-file-if-exists=.env scripts/create-user.js"
+  },
+  "dependencies": {
+    "express": "5.2.1",
+    "jsonwebtoken": "9.0.3",
+    "pg": "8.21.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.16"
+  }
+}
