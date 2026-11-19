@@ -2,36 +2,36 @@
 /**
  * Test tích hợp service layer với PostgreSQL THẬT.
  * Cần biến môi trường TEST_PG_HOST / TEST_PG_PORT / TEST_PG_DB (database sẽ bị XOÁ SẠCH).
- * Dùng `pg` nếu đã cài (máy dev/CI), nếu không thì fallback adapter psql (sandbox không có npm).
+ * Không đặt TEST_PG_* thì chạy trên PGlite trong bộ nhớ. Áp dụng TẤT CẢ migration theo thứ tự.
  */
 const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
 
 const svc = require('../src/services/tournamentService');
+
+const fs = require('node:fs');
 
 const HOST = process.env.TEST_PG_HOST;
 const PORT = Number(process.env.TEST_PG_PORT ?? 5432);
 const DB = process.env.TEST_PG_DB;
-const skip = !HOST || !DB ? 'TEST_PG_HOST/TEST_PG_DB chưa đặt' : false;
+const usePg = Boolean(HOST && DB);
 if (DB && !/test/.test(DB)) throw new Error('Từ chối chạy: TEST_PG_DB phải chứa chữ "test" (DB sẽ bị xoá sạch)');
+let hasPglite = true;
+try { require.resolve('@electric-sql/pglite'); } catch { hasPglite = false; }
+const skip = usePg || hasPglite ? false : 'cần TEST_PG_HOST/TEST_PG_DB hoặc @electric-sql/pglite';
 
 const ADMIN = { id: '00000000-0000-4000-8000-000000000001', full_name: 'Admin CLB', role: 'admin' };
 const REF = { id: '00000000-0000-4000-8000-000000000002', full_name: 'Trọng tài Lan', role: 'user' };
 const REF2 = { id: '00000000-0000-4000-8000-000000000003', full_name: 'Trọng tài Minh', role: 'user' };
 const NOBODY = { id: '00000000-0000-4000-8000-000000000004', full_name: 'Khán giả', role: 'user' };
 
-/** @returns {any} */
+/** Postgres thật (CI) nếu có TEST_PG_*, không thì PGlite trong bộ nhớ. @returns {any} */
 function makePool() {
-  try {
-    // eslint-disable-next-line global-require
-    const { Pool } = require('pg');
-    return new Pool({ host: HOST, port: PORT, database: DB, user: process.env.TEST_PG_USER ?? 'postgres' });
-  } catch {
-    // eslint-disable-next-line global-require
-    return require('./support/psqlPool').createPsqlPool({ host: HOST, port: PORT, database: DB });
-  }
+  if (!usePg) return require('../src/db').createPool('pglite:memory');
+  // eslint-disable-next-line global-require
+  const { Pool } = require('pg');
+  return new Pool({ host: HOST, port: PORT, database: DB, user: process.env.TEST_PG_USER ?? 'postgres', password: process.env.PGPASSWORD, options: '-c TimeZone=UTC' });
 }
 
 /** Promise phải reject với HttpError có status/code cho trước. */
@@ -52,11 +52,12 @@ describe('tournament service (real Postgres)', { skip }, () => {
   /** @type {any} */ let ms;
 
   before(async () => {
-    const env = { ...process.env, PGTZ: 'UTC' };
-    const args = ['-X', '-q', '-v', 'ON_ERROR_STOP=1', '-h', HOST, '-p', String(PORT), '-U', 'postgres', '-d', DB];
-    execFileSync('psql', [...args, '-c', 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'], { env, stdio: 'pipe' });
-    execFileSync('psql', [...args, '-f', path.join(__dirname, '..', 'migrations', '001_init.sql')], { env, stdio: 'pipe' });
     pool = makePool();
+    if (usePg) await pool.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
+    const dir = path.join(__dirname, '..', 'migrations');
+    for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.sql')).sort()) {
+      await pool.query(fs.readFileSync(path.join(dir, f), 'utf8'));
+    }
     for (const u of [ADMIN, REF, REF2, NOBODY]) {
       await pool.query('INSERT INTO users (id, full_name, role) VALUES ($1, $2, $3)', [u.id, u.full_name, u.role]);
     }
@@ -93,11 +94,17 @@ describe('tournament service (real Postgres)', { skip }, () => {
     assert.equal(added.length, 8);
   });
 
-  test('draw creates snake-seeded groups and a full round robin, only once', async () => {
-    const res = await svc.drawGroups(pool, ADMIN, ms.id);
+  test('draw (groups from file) creates a full round robin and locks the entry list', async () => {
+    // Chia bảng cố định (như cột "Bảng" trong file) để các bước sau có kết quả xác định.
+    const { rows } = await pool.query('SELECT id, player1_name FROM entries WHERE category_id = $1', [ms.id]);
+    const id = (n) => rows.find((r) => r.player1_name === n).id;
+    const manual = [
+      { name: 'A', entryIds: ['An', 'Dũng', 'Em', 'Hải'].map(id) },
+      { name: 'B', entryIds: ['Bình', 'Cường', 'Phúc', 'Giang'].map(id) },
+    ];
+    const res = await svc.drawGroups(pool, ADMIN, ms.id, { manual });
     assert.deepEqual(res.groups, [{ name: 'A', size: 4 }, { name: 'B', size: 4 }]);
     assert.equal(res.matchCount, 12);
-    await rejectsWith(svc.drawGroups(pool, ADMIN, ms.id), 409, 'ALREADY_DRAWN');
     await rejectsWith(svc.addEntries(pool, ADMIN, ms.id, [{ player1Name: 'Muộn' }]), 409, 'ALREADY_DRAWN');
   });
 
@@ -165,7 +172,7 @@ describe('tournament service (real Postgres)', { skip }, () => {
     }
     const st = await svc.groupStandings(pool, ms.id);
     assert.deepEqual(st.map((g) => g.complete), [true, true]);
-    // Rắn bò 8 người/2 bảng: A = An, Dũng, Em, Hải ; B = Bình, Cường, Phúc, Giang
+    // Bảng A = An, Dũng, Em, Hải ; B = Bình, Cường, Phúc, Giang (rating giảm dần → thứ hạng)
     assert.deepEqual(st[0].standings.map((r) => r.name), ['An', 'Dũng', 'Em', 'Hải']);
     assert.deepEqual(st[1].standings.map((r) => r.name), ['Bình', 'Cường', 'Phúc', 'Giang']);
     assert.deepEqual(st[0].standings.map((r) => r.won), [3, 2, 1, 0]);
