@@ -1,0 +1,162 @@
+'use strict';
+/**
+ * Điều phối theo sân (PGlite): gợi ý trận kế tiếp, gọi / rút trận, chống 1 VĐV ở 2 sân (kể cả khác nội dung),
+ * dời giờ/sân một trận, trọng tài phụ trách sân, VĐV vừa đánh xong được nghỉ.
+ */
+const { test, describe, before, after } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+let hasPglite = true;
+try { require.resolve('@electric-sql/pglite'); } catch { hasPglite = false; }
+
+const svc = require('../src/services/tournamentService');
+const courts = require('../src/services/courtService');
+
+const ADMIN = { id: '00000000-0000-4000-8000-0000000000c1', full_name: 'Admin', role: 'admin' };
+const REF = { id: '00000000-0000-4000-8000-0000000000c2', full_name: 'TT Sân 2', role: 'user' };
+const REF2 = { id: '00000000-0000-4000-8000-0000000000c3', full_name: 'TT khác', role: 'user' };
+const future = (d) => new Date(Date.now() + d * 86_400_000).toISOString();
+
+async function rejectsWith(p, status, code) {
+  await assert.rejects(p, (err) => {
+    assert.equal(err.status, status, `expected ${status}, got ${err.status}: ${err.message}`);
+    if (code) assert.equal(err.code, code);
+    return true;
+  });
+}
+
+describe('Điều phối sân (PGlite)', { skip: hasPglite ? false : 'chưa cài @electric-sql/pglite' }, () => {
+  /** @type {any} */ let pool;
+  /** @type {any} */ let t;
+  /** @type {any} */ let ms;
+  /** @type {any} */ let ws;
+
+  before(async () => {
+    pool = require('../src/db').createPool('pglite:memory');
+    for (const f of fs.readdirSync(path.join(__dirname, '..', 'migrations')).sort()) {
+      await pool.query(fs.readFileSync(path.join(__dirname, '..', 'migrations', f), 'utf8'));
+    }
+    for (const u of [ADMIN, REF, REF2]) {
+      await pool.query('INSERT INTO users (id, full_name, role) VALUES ($1, $2, $3)', [u.id, u.full_name, u.role]);
+    }
+    t = await svc.createTournament(pool, ADMIN, { slug: 'court-cup', name: 'Court Cup', startsAt: future(7), courts: 4 });
+    await svc.upsertStaff(pool, ADMIN, t.id, { userId: REF.id, role: 'referee' });
+    await svc.upsertStaff(pool, ADMIN, t.id, { userId: REF2.id, role: 'referee' });
+    ms = await svc.createCategory(pool, ADMIN, t.id, { code: 'MS', name: 'Đơn nam', isDoubles: false, groupCount: 1, advancePerGroup: 1 });
+    ws = await svc.createCategory(pool, ADMIN, t.id, { code: 'XS', name: 'Đơn phụ', isDoubles: false, groupCount: 1, advancePerGroup: 1 });
+    await svc.addEntries(pool, ADMIN, ms.id, ['An', 'Bình', 'Chi', 'Dũng'].map((n) => ({ player1Name: n })));
+    // "an" (khác hoa thường) cũng đánh nội dung khác → cùng một người với "An".
+    await svc.addEntries(pool, ADMIN, ws.id, ['an', 'Khoa', 'Long'].map((n) => ({ player1Name: n })));
+    await svc.drawGroups(pool, ADMIN, ms.id);
+    await svc.drawGroups(pool, ADMIN, ws.id);
+    await svc.updateTournament(pool, ADMIN, t.id, { status: 'published' });
+  });
+  after(async () => { await pool?.end(); });
+
+  const board = () => courts.courtBoard(pool, ADMIN, t.id);
+  const matchesOf = async () => svc.listMatches(pool, t.id);
+  const names = (m) => [m.a.name.toLowerCase(), m.b.name.toLowerCase()];
+
+  test('gợi ý: mỗi sân trống 1 trận, không 2 gợi ý nào chung VĐV', async () => {
+    const b = await board();
+    assert.equal(b.courts.length, 4);
+    const all = await matchesOf();
+    const picked = b.courts.map((c) => c.suggestionId).filter(Boolean).map((id) => all.find((m) => m.id === id));
+    assert.ok(picked.length >= 2, 'ít nhất 2 sân có gợi ý');
+    const people = picked.flatMap(names);
+    assert.equal(new Set(people).size, people.length, `gợi ý trùng VĐV: ${people}`);
+    assert.equal(b.queue.length, 9);
+  });
+
+  test('gọi trận: sân bận, VĐV bận (kể cả khác nội dung) bị chặn; rút trận trả về hàng chờ', async () => {
+    const all = await matchesOf();
+    const msA = all.find((m) => m.category.code === 'MS' && names(m).includes('an'));
+    await courts.callMatch(pool, ADMIN, msA.id, { court: 1 });
+    const called = await svc.getMatch(pool, msA.id);
+    assert.equal(called.court, 1);
+    assert.ok(called.calledAt);
+
+    const other = all.find((m) => m.category.code === 'MS' && !names(m).includes('an') && m.id !== msA.id
+      && !names(m).some((n) => names(msA).includes(n)));
+    await rejectsWith(courts.callMatch(pool, ADMIN, other.id, { court: 1 }), 409, 'COURT_BUSY');
+
+    const wsAn = all.find((m) => m.category.code === 'XS' && names(m).includes('an'));
+    await rejectsWith(courts.callMatch(pool, ADMIN, wsAn.id, { court: 3 }), 409, 'PLAYER_BUSY');
+    await rejectsWith(courts.callMatch(pool, ADMIN, other.id, { court: 9 }), 422);
+
+    const b = await board();
+    assert.equal(b.courts[0].current.id, msA.id);
+    assert.ok(b.queue.find((q) => q.match.id === wsAn.id).busyWith.some((x) => x.court === 1));
+
+    await courts.uncallMatch(pool, ADMIN, msA.id);
+    assert.equal((await svc.getMatch(pool, msA.id)).calledAt, null);
+    await rejectsWith(courts.uncallMatch(pool, ADMIN, msA.id), 409, 'NOT_CALLED');
+    await courts.callMatch(pool, ADMIN, wsAn.id, { court: 3 }); // giờ "an" rảnh → gọi được
+    await courts.uncallMatch(pool, ADMIN, wsAn.id);
+  });
+
+  test('trọng tài phụ trách sân: chỉ người đó (hoặc trọng tài gán riêng) nhập điểm trận ở sân', async () => {
+    await courts.setCourtReferee(pool, ADMIN, t.id, 2, REF.id);
+    const m = (await board()).queue.find((q) => !q.busyWith.length).match;
+    await courts.callMatch(pool, ADMIN, m.id, { court: 2 });
+    const fresh = await svc.getMatch(pool, m.id);
+    await rejectsWith(svc.recordScore(pool, REF2, m.id, { action: 'save', version: fresh.version, games: [[1, 0]] }), 403);
+    const q = await svc.refereeQueue(pool, REF);
+    assert.equal(q[0].id, m.id, 'trận ở sân mình lên đầu hàng đợi');
+    assert.ok(!(await svc.refereeQueue(pool, REF2)).some((x) => x.id === m.id));
+    await svc.recordScore(pool, REF, m.id, { action: 'save', version: fresh.version, games: [[1, 0]] });
+    await rejectsWith(courts.uncallMatch(pool, ADMIN, m.id), 409, 'NOT_CALLED'); // đã có điểm → không rút
+    await rejectsWith(courts.setCourtReferee(pool, ADMIN, t.id, 1, '00000000-0000-4000-8000-0000000000ff'), 422);
+  });
+
+  test('chuyển sân trận đang đánh; không đổi giờ trận đang ở sân; dời giờ trận chờ bị chặn khi VĐV trùng khung', async () => {
+    const live = (await matchesOf()).find((m) => m.status === 'live');
+    await courts.moveMatch(pool, ADMIN, live.id, { court: 4 });
+    assert.equal((await svc.getMatch(pool, live.id)).court, 4);
+    await rejectsWith(courts.moveMatch(pool, ADMIN, live.id, { scheduledAt: future(1) }), 422);
+
+    const waiting = (await matchesOf()).filter((m) => ['pending', 'scheduled'].includes(m.status) && !m.calledAt);
+    const [x, y] = waiting.filter((m) => m.category.code === 'MS' && names(m).includes('bình'));
+    const at = future(2);
+    await courts.moveMatch(pool, ADMIN, x.id, { scheduledAt: at, court: 1 });
+    const moved = await svc.getMatch(pool, x.id);
+    assert.equal(moved.status, 'scheduled');
+    assert.equal(new Date(moved.scheduledAt).toISOString(), at);
+    await rejectsWith(courts.moveMatch(pool, ADMIN, y.id, { scheduledAt: at, court: 2 }), 409, 'PLAYER_TAKEN');
+    const z = waiting.find((m) => !names(m).some((n) => names(x).includes(n)));
+    await rejectsWith(courts.moveMatch(pool, ADMIN, z.id, { scheduledAt: at, court: 1 }), 409, 'COURT_TAKEN');
+  });
+
+  test('đánh xong → sân trống; VĐV vừa đánh được ghi đang nghỉ; nhật ký có thao tác điều phối', async () => {
+    const live = (await matchesOf()).find((m) => m.status === 'live');
+    await svc.recordScore(pool, REF, live.id, { action: 'finish', version: live.version, games: [[21, 10], [21, 12]] });
+    const b = await board();
+    assert.equal(b.courts[3].current, null);
+    const resting = b.queue.filter((q) => q.restingMinutes > 0).map((q) => q.match.id);
+    assert.ok(resting.length > 0);
+    const suggested = new Set(b.courts.map((c) => c.suggestionId).filter(Boolean));
+    const fresh = b.queue.filter((q) => !q.restingMinutes && !q.busyWith.length);
+    if (fresh.length) assert.ok([...suggested].every((id) => !resting.includes(id)) || fresh.length < suggested.size, 'ưu tiên gợi ý trận không có VĐV đang nghỉ');
+    const actions = (await svc.listEvents(pool, ADMIN, t.id)).map((e) => e.action);
+    for (const a of ['call_match', 'uncall_match', 'move_match', 'court_referee']) assert.ok(actions.includes(a), a);
+  });
+
+  test('xếp lịch lại không đụng trận đã gọi vào sân', async () => {
+    const m = (await board()).queue.find((q) => !q.busyWith.length).match;
+    await courts.callMatch(pool, ADMIN, m.id, { court: 3 });
+    const before = await svc.getMatch(pool, m.id);
+    await svc.scheduleTournament(pool, ADMIN, t.id, { stage: 'group', startAt: future(3) });
+    const after = await svc.getMatch(pool, m.id);
+    assert.equal(after.court, 3);
+    assert.equal(after.scheduledAt.toString(), before.scheduledAt.toString());
+    assert.ok(after.calledAt);
+  });
+
+  test('người ngoài BTC không xem/điều phối được', async () => {
+    await rejectsWith(courts.courtBoard(pool, REF, t.id), 403);
+    const m = (await matchesOf()).find((x) => x.status === 'scheduled' && !x.calledAt);
+    await rejectsWith(courts.callMatch(pool, REF, m.id, { court: 1 }), 403);
+  });
+});

@@ -1,0 +1,231 @@
+@import "tailwindcss";
+
+/* Cấu trúc UI giống web CLB (smashteam-badminton): nền trắng/slate, thẻ bo tròn, nút đen dạng viên thuốc,
+   sidebar quản trị nền đen. Màu thương hiệu Smash Open Cup: ĐỎ (#DC2626, chữ trắng đạt AA 4.8:1) + ĐEN. */
+@theme {
+  --color-primary: #dc2626;
+  --color-primary-hover: #b91c1c;
+  --color-secondary: #0a0a0a;
+  --color-background: #f8fafc;
+  --color-foreground: #0a0a0a;
+
+  /* Token ngữ nghĩa dùng chung (trang trọng tài, MatchViews…). */
+  --color-bg: #f8fafc;
+  --color-surface: #ffffff;
+  --color-surface-2: #f1f5f9;
+  --color-fg: #0a0a0a;
+  --color-muted: #64748b;
+  --color-line: #cbd5e1;
+  --color-line-soft: #f1f5f9;
+  --color-on-primary: #ffffff;
+  --color-accent: #b91c1c;
+  --color-live: #dc2626;
+  --color-success: #047857;
+  --color-warn: #b45309;
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-barlow), var(--font-inter), sans-serif;
+
+  --animate-fade-up: fade-up 200ms ease-out;
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+}
+
+:root {
+  --background: #f8fafc;
+  --foreground: #0a0a0a;
+  color-scheme: light;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+:focus-visible { outline: 3px solid #dc2626; outline-offset: 2px; border-radius: 8px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* Tiêu đề kiểu thể thao (hero, tên vòng đấu): Barlow Condensed nghiêng, in hoa. */
+.headline {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+}
+
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #fca5a5; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #dc2626; }
+
+/* iOS safe area (giống web CLB) */
+.pt-safe { padding-top: env(safe-area-inset-top, 0px); }
+.pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
+/* ===== CHẾ ĐỘ TỐI: Hệ thống / Sáng / Tối (data-theme trên <html>, chọn ở chân trang & trang Tài khoản) =====
+   Màu lấy từ biến CSS nên chỉ cần đổi biến: đảo thang trắng/đen/slate, tint nhạt → tint tối, chữ đậm → chữ sáng.
+   `.theme-fixed`: vùng cố ý tối (sidebar quản trị, màn hình TV, banner) giữ nguyên bảng màu gốc. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #020617;
+  --foreground: #f1f5f9;
+  --color-background: #020617;
+  --color-foreground: #f1f5f9;
+  --color-bg: #020617;
+  --color-surface: #0f172a;
+  --color-surface-2: #1e293b;
+  --color-fg: #f1f5f9;
+  --color-muted: #94a3b8;
+  --color-line: #334155;
+  --color-line-soft: #1e293b;
+  --color-secondary: #f1f5f9;
+  --color-success: #34d399;
+  --color-warn: #fbbf24;
+  --color-live: #f87171;
+  --color-white: #0f172a;
+  --color-black: #f1f5f9;
+  --color-slate-50: #0b1222;
+  --color-slate-100: #1e293b;
+  --color-slate-200: #334155;
+  --color-slate-300: #475569;
+  --color-slate-400: #7f8ea3;
+  --color-slate-500: #94a3b8;
+  --color-slate-600: #cbd5e1;
+  --color-slate-700: #e2e8f0;
+  --color-slate-800: #f1f5f9;
+  --color-slate-900: #f8fafc;
+  --color-red-50: #2a0f12;
+  --color-red-100: #3b1216;
+  --color-red-200: #5c1d22;
+  --color-red-300: #b91c1c;
+  --color-red-700: #fca5a5;
+  --color-red-800: #fecaca;
+  --color-emerald-50: #062a20;
+  --color-emerald-100: #073b2d;
+  --color-emerald-200: #0b5a44;
+  --color-emerald-700: #6ee7b7;
+  --color-emerald-800: #a7f3d0;
+  --color-amber-50: #2b1d05;
+  --color-amber-100: #3d2907;
+  --color-amber-300: #b45309;
+  --color-amber-700: #fcd34d;
+  --color-amber-800: #fde68a;
+  --color-sky-50: #082f49;
+}
+:root[data-theme="dark"] :is(.bg-red-600, .bg-red-500, .bg-primary, .bg-sky-600, .bg-sky-700, .bg-emerald-600) { --color-white: #fff; }
+:root[data-theme="dark"] :is(.bg-amber-400, .bg-amber-500) { --color-black: #000; }
+:root[data-theme="dark"] .text-red-600 { color: #f87171; }
+:root[data-theme="dark"] .text-primary { color: #f87171; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --background: #020617;
+    --foreground: #f1f5f9;
+    --color-background: #020617;
+    --color-foreground: #f1f5f9;
+    --color-bg: #020617;
+    --color-surface: #0f172a;
+    --color-surface-2: #1e293b;
+    --color-fg: #f1f5f9;
+    --color-muted: #94a3b8;
+    --color-line: #334155;
+    --color-line-soft: #1e293b;
+    --color-secondary: #f1f5f9;
+    --color-success: #34d399;
+    --color-warn: #fbbf24;
+    --color-live: #f87171;
+    --color-white: #0f172a;
+    --color-black: #f1f5f9;
+    --color-slate-50: #0b1222;
+    --color-slate-100: #1e293b;
+    --color-slate-200: #334155;
+    --color-slate-300: #475569;
+    --color-slate-400: #7f8ea3;
+    --color-slate-500: #94a3b8;
+    --color-slate-600: #cbd5e1;
+    --color-slate-700: #e2e8f0;
+    --color-slate-800: #f1f5f9;
+    --color-slate-900: #f8fafc;
+    --color-red-50: #2a0f12;
+    --color-red-100: #3b1216;
+    --color-red-200: #5c1d22;
+    --color-red-300: #b91c1c;
+    --color-red-700: #fca5a5;
+    --color-red-800: #fecaca;
+    --color-emerald-50: #062a20;
+    --color-emerald-100: #073b2d;
+    --color-emerald-200: #0b5a44;
+    --color-emerald-700: #6ee7b7;
+    --color-emerald-800: #a7f3d0;
+    --color-amber-50: #2b1d05;
+    --color-amber-100: #3d2907;
+    --color-amber-300: #b45309;
+    --color-amber-700: #fcd34d;
+    --color-amber-800: #fde68a;
+    --color-sky-50: #082f49;
+  }
+  :root:not([data-theme="light"]) :is(.bg-red-600, .bg-red-500, .bg-primary, .bg-sky-600, .bg-sky-700, .bg-emerald-600) { --color-white: #fff; }
+  :root:not([data-theme="light"]) :is(.bg-amber-400, .bg-amber-500) { --color-black: #000; }
+  :root:not([data-theme="light"]) .text-red-600 { color: #f87171; }
+  :root:not([data-theme="light"]) .text-primary { color: #f87171; }
+}
+.theme-fixed {
+  --background: #f8fafc;
+  --foreground: #0a0a0a;
+  --color-background: #f8fafc;
+  --color-foreground: #0a0a0a;
+  --color-bg: #f8fafc;
+  --color-surface: #ffffff;
+  --color-surface-2: #f1f5f9;
+  --color-fg: #0a0a0a;
+  --color-muted: #64748b;
+  --color-line: #cbd5e1;
+  --color-line-soft: #f1f5f9;
+  --color-secondary: #0a0a0a;
+  --color-success: #047857;
+  --color-warn: #b45309;
+  --color-live: #dc2626;
+  --color-white: #fff;
+  --color-black: #000;
+  --color-slate-50: #f8fafc;
+  --color-slate-100: #f1f5f9;
+  --color-slate-200: #e2e8f0;
+  --color-slate-300: #cad5e2;
+  --color-slate-400: #90a1b9;
+  --color-slate-500: #62748e;
+  --color-slate-600: #45556c;
+  --color-slate-700: #314158;
+  --color-slate-800: #1d293d;
+  --color-slate-900: #0f172b;
+  --color-red-50: #fef2f2;
+  --color-red-100: #ffe2e2;
+  --color-red-200: #ffcaca;
+  --color-red-300: #ffa3a3;
+  --color-red-700: #bf000f;
+  --color-red-800: #9f0712;
+  --color-emerald-50: #ecfdf5;
+  --color-emerald-100: #d0fae5;
+  --color-emerald-200: #a4f4cf;
+  --color-emerald-700: #007956;
+  --color-emerald-800: #005f46;
+  --color-amber-50: #fffbeb;
+  --color-amber-100: #fef3c6;
+  --color-amber-300: #ffd236;
+  --color-amber-700: #b75000;
+  --color-amber-800: #953d00;
+  --color-sky-50: #f0f9ff;
+}
+.theme-fixed :is(.text-red-600, .text-primary) { color: revert-layer; }
+
+/* Chữ phụ `text-slate-400` (2,6:1 trên nền trắng) không đạt WCAG AA → dùng slate-500 (≈4,7:1).
+   Vùng nền tối cố định (sidebar, chân trang, TV) giữ slate-400 vì ở đó nó đã đủ tương phản. */
+.text-slate-400 { color: var(--color-slate-500); }
+:is(.theme-fixed.text-slate-400, .theme-fixed .text-slate-400) { color: var(--color-slate-400); }
