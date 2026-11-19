@@ -25,6 +25,7 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 - Tab **Bảng đấu** `/t/<slug>/groups` và mục "Bảng đấu" trên thanh điều hướng.
 
 ### Changed
+- README viết lại: giới thiệu, tính năng, kiến trúc (sơ đồ), luồng dữ liệu (ghi điểm → SSE, đăng ký → bảng đấu), mô hình dữ liệu, cấu trúc thư mục, bảng biến môi trường, triển khai; bỏ badge CI trỏ tới repo chưa tồn tại.
 - Sửa luật điểm mặc định của nội dung chỉ bị khoá khi có trận đã bắt đầu đang dùng luật mặc định (trước đây: khi có bất kỳ trận nào bắt đầu).
 - Chữ phụ `text-slate-400` nâng lên đạt WCAG AA trên nền sáng; nhãn giao cầu, chữ "vs" trên TV đủ tương phản.
 - Trang giải gộp thành **một khung 3 tab** (Lịch thi đấu `/t/<slug>` · Bảng đấu `/t/<slug>/groups` · Loại trực tiếp `/t/<slug>/bracket`), dùng chung cho thanh điều hướng và trang giải — trước đây bấm "Lịch thi đấu" trên thanh điều hướng mở một trang khác với trang giải. `/t/<slug>/schedule` chuyển hướng về trang mới, giữ bộ lọc.
