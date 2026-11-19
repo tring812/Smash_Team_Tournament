@@ -8,6 +8,12 @@
  * - "Nội dung": mã (MS) hoặc tên ("Đơn nam", "Đơn nam (MS)"); Google Form chọn nhiều → "Đơn nam, Đôi nam nữ" → mỗi
  *   nội dung một dòng (đồng đội chỉ dùng cho nội dung đôi). Không có cột → tên sheet trùng mã, hoặc nội dung đang chọn.
  * - "Bảng": chia bảng THEO FILE thay vì bốc thăm (chỉ khi file chứa toàn bộ đội của nội dung).
+ * - "Đăng kí bảng đấu" / "Hạng": HẠNG thi đấu (Bảng A = mở rộng, Bảng B = thành viên CLB…), KHÔNG phải chia bảng:
+ *   "Đôi nam" + hạng B → nội dung tên "Đôi nam B". Giải không chia hạng → gộp vào "Đôi nam" (có ghi chú).
+ * - Google Form rẽ nhánh: nhiều cột "nội dung" (mỗi nhánh một cột) → lấy ô có giá trị; cột MSSV / SĐT không ghi
+ *   "partner" nhưng nằm SAU cột họ tên đồng đội → của đồng đội.
+ * - Sheet theo nội dung (tên sheet "ĐÔI NAM A" khớp tên nội dung), mỗi dòng 1 người: nội dung đôi ghép 2 dòng cùng
+ *   STT "ĐỘI n" (STT là số / trống → ghép 2 dòng liền nhau).
  * Một người = MSSV, nếu không có thì SĐT, nếu không có nữa thì tên (giống server).
  */
 import type { Athlete, Category, Entry } from "./types";
@@ -24,6 +30,8 @@ export interface ImportPlan {
   errors: ImportIssue[];
   /** Dòng bỏ qua nhưng không chặn việc nhập (đã đăng ký rồi…). */
   skipped: ImportIssue[];
+  /** Lưu ý chung (vd file chia hạng A/B nhưng giải chưa có nội dung theo hạng). */
+  notes: string[];
 }
 
 export const MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -51,62 +59,144 @@ export function normalizeStudentId(raw: unknown): string | null {
 const nameKey = (s: string) => s.normalize("NFC").trim().replace(/\s+/g, " ").toLocaleLowerCase("vi");
 
 // ───────── Nhận diện cột ─────────
-type Base = "name" | "sid" | "phone" | "email" | "code" | "club" | "group";
-type Field = "code" | "club" | "group" | "p1" | "p1Sid" | "p1Phone" | "p1Email" | "p2" | "p2Sid" | "p2Phone" | "p2Email";
+type Base = "name" | "sid" | "phone" | "email" | "code" | "club" | "group" | "division";
+type Field = "code" | "club" | "group" | "division" | "p1" | "p1Sid" | "p1Phone" | "p1Email" | "p2" | "p2Sid" | "p2Phone" | "p2Email";
 /** Ưu tiên từ trên xuống: "Tên CLB" là CLB chứ không phải họ tên; "Họ tên" chung chung nhất nên cuối cùng. */
 const ALIASES: [Base, string[]][] = [
   ["sid", ["mssv", "masosinhvien", "masv", "masosv", "studentid", "mssinhvien"]],
   ["phone", ["sodienthoai", "dienthoai", "sdt", "sodt", "phone", "didong", "zalo"]],
   ["email", ["email", "gmail", "diachiemail", "mail"]],
   ["club", ["caulacbo", "clb", "club", "donvi", "truong", "khoa", "team"]],
+  ["division", ["dangkibang", "dangkybang", "bangdau", "hangdau", "hangthidau", "trinhdo", "division", "tier"]],
   ["code", ["noidung", "manoidung", "hangmuc", "category", "event"]],
   ["group", ["tenbang", "group"]],
   ["name", ["hovaten", "hoten", "vandongvien", "vdv", "fullname", "player", "nguoichoi", "ten", "name"]],
 ];
 /** Chỉ khớp NGUYÊN Ô (chuỗi quá ngắn / dễ nằm trong từ khác). */
-const EXACT: [Base, string[]][] = [["code", ["ma", "code"]], ["club", ["doi"]], ["group", ["bang"]]];
+const EXACT: [Base, string[]][] = [["code", ["ma", "code"]], ["club", ["doi"]], ["group", ["bang"]], ["division", ["hang"]]];
 const PARTNER = ["dongdoi", "partner", "vdv2", "nguoi2", "thanhvien2", "player2", "vandongvien2"];
-const IGNORE = ["dauthoigian", "timestamp", "thoigian", "stt", "ghichu", "note", "trangthai"];
+const IGNORE = ["dauthoigian", "timestamp", "thoigian", "stt", "sothutu", "ghichu", "note", "trangthai", "chuyenkhoan", "minhchung", "dinhkem"];
 
-function classify(header: unknown): Field | null {
+function classify(header: unknown): { field: Field; partner: boolean } | null {
   const h = norm(header);
   if (!h || IGNORE.some((x) => h === x || h.startsWith(x))) return null;
   let base: Base | null = null;
   for (const [b, list] of EXACT) if (list.includes(h)) base = b;
   if (!base) for (const [b, list] of ALIASES) if (list.some((a) => h.includes(a))) { base = b; break; }
   if (!base) return null;
-  if (base === "code" || base === "club" || base === "group") return base;
   const partner = PARTNER.some((p) => h.includes(p)) || /2$/.test(h);
+  if (base === "code" || base === "club" || base === "group" || base === "division") return { field: base, partner };
   const prefix = partner ? "p2" : "p1";
-  return base === "name" ? prefix : (`${prefix}${base === "sid" ? "Sid" : base === "phone" ? "Phone" : "Email"}` as Field);
+  return { field: base === "name" ? prefix : (`${prefix}${base === "sid" ? "Sid" : base === "phone" ? "Phone" : "Email"}` as Field), partner };
 }
 
-type Header = { headerRow: number } & Partial<Record<Field, number>>;
+type Header = { headerRow: number; codes: number[]; stt?: number } & Partial<Record<Field, number>>;
 function findHeader(data: CellValue[][]): Header | null {
   for (let r = 0; r < Math.min(10, data.length); r++) {
     const map: Partial<Record<Field, number>> = {};
-    (data[r] ?? []).forEach((cell, i) => { const f = classify(cell); if (f && map[f] === undefined) map[f] = i; });
-    if (map.p1 !== undefined) return { headerRow: r, ...map };
+    const codes: number[] = [];
+    let stt: number | undefined;
+    (data[r] ?? []).forEach((cell, i) => {
+      if (["stt", "sothutu"].includes(norm(cell)) && stt === undefined) stt = i;
+      const c = classify(cell);
+      if (!c) return;
+      let f = c.field;
+      if (f === "code") { codes.push(i); return; }
+      if (f === "club" && c.partner) return; // CLB của đồng đội: đội lấy CLB của VĐV 1
+      // Form: "Mã số sinh viên" không ghi "partner" nhưng đứng sau "Họ tên partner" → của đồng đội.
+      if (/^p1(Sid|Phone|Email)$/.test(f) && map[f] !== undefined && map.p2 !== undefined && map.p2 < i) f = f.replace("p1", "p2") as Field;
+      if (map[f] === undefined) map[f] = i;
+    });
+    if (map.p1 !== undefined) return { headerRow: r, codes, stt, ...map };
   }
   return null;
 }
 
 const cellText = (v: CellValue) => (v instanceof Date ? v.toISOString().slice(0, 10) : String(v ?? "")).trim().replace(/\s+/g, " ");
 
+/** "Đôi nam A" / "ĐÔI NAM - Bảng B" / "Đơn nam (A)" → { base: "Đôi nam", div: "A" }; không có hạng → div null. */
+export function splitDivision(text: string): { base: string; div: string | null } {
+  const m = text.trim().match(/^(.*?\S)[\s\-–(]+(?:bảng|bang|hạng|hang|nhóm|nhom)?\s*([A-Za-z0-9])\)?$/i);
+  return m && m[1]!.trim().length >= 3 ? { base: m[1]!.trim(), div: m[2]!.toUpperCase() } : { base: text.trim(), div: null };
+}
+/** Ô hạng: "Bảng A" / "Bảng B đợt 1 (Chỉ thành viên CLB)" / "Hạng B" / "B" → "A" / "B". */
+export function divisionOf(cell: string): string | null {
+  const t = cell.trim();
+  const m = t.match(/(?:bảng|bang|hạng|hang|nhóm|nhom)\s*([A-Za-z0-9])(?![A-Za-zÀ-ỹ])/i)?.[1] ?? t.match(/^([A-Za-z0-9])$/)?.[1];
+  return m ? m.toUpperCase() : null;
+}
+
+const stripParen = (t: string) => t.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
+type Match = { cat: Category; merged?: boolean } | { error: string };
+/**
+ * Một nội dung theo tên / mã, có xét hạng. "Đôi nam" KHÔNG khớp "Đôi nam nữ" (so nguyên tên, chỉ bỏ phần "(…)").
+ * Hạng lấy từ cột hạng của dòng, hoặc từ chính tên ("ĐÔI NAM A"). Giải chia hạng → cần đúng hạng;
+ * giải không chia hạng → bỏ qua hạng trong file (merged).
+ */
+function matchOne(text: string, rowDiv: string | null, categories: Category[]): Match | null {
+  const code = text.match(/\(([A-Za-z0-9]{1,10})\)/)?.[1]?.toUpperCase();
+  const byCode = categories.find((x) => x.code.toUpperCase() === text.trim().toUpperCase() || (code && x.code.toUpperCase() === code));
+  if (byCode) return { cat: byCode };
+  const plain = stripParen(text);
+  const split = (c: Category) => splitDivision(c.name);
+  // 1) tên trùng nguyên văn (kể cả hạng trong tên) và không mâu thuẫn hạng của dòng
+  const exact = categories.find((x) => norm(x.name) === norm(plain) && (!rowDiv || !split(x).div || split(x).div === rowDiv));
+  if (exact) return { cat: exact };
+  // 2) tên = gốc + hạng ("ĐÔI NAM A") hoặc gốc + hạng của dòng
+  const own = splitDivision(plain);
+  const tries: { base: string; div: string | null }[] = [];
+  if (own.div) tries.push(own);
+  tries.push({ base: plain, div: rowDiv });
+  for (const t of tries) {
+    const same = categories.filter((x) => norm(split(x).base) === norm(t.base));
+    if (!same.length) continue;
+    if (t.div) {
+      const hit = same.find((x) => split(x).div === t.div);
+      if (hit) return { cat: hit };
+      const flat = same.find((x) => !split(x).div);
+      if (flat) return { cat: flat, merged: true };
+      return { error: `Không có nội dung "${t.base}" hạng ${t.div} (giải có: ${same.map((x) => x.name).join(", ")})` };
+    }
+    const flat = same.filter((x) => !split(x).div);
+    if (flat.length === 1) return { cat: flat[0]! };
+    if (same.length === 1) return { cat: same[0]! };
+    return { error: `"${plain}" có nhiều hạng (${same.map((x) => x.name).join(", ")}) — thêm cột "Đăng kí bảng đấu" / "Hạng"` };
+  }
+  return null;
+}
+
 /** "Đơn nam, Đôi nam nữ" / "MS; XD" / "Đơn nam (MS)" → các nội dung. */
-function matchCategories(cell: string, categories: Category[]): { found: Category[]; unknown: string[] } {
+function matchCategories(cell: string, rowDiv: string | null, categories: Category[]): { found: Category[]; unknown: string[]; merged: boolean } {
   const parts = cell.split(/[,;\n]/).map((x) => x.trim()).filter(Boolean);
   const found: Category[] = [];
   const unknown: string[] = [];
+  let merged = false;
   for (const p of parts) {
-    const k = norm(p);
-    const code = p.match(/\(([A-Za-z0-9]{1,10})\)/)?.[1]?.toUpperCase();
-    const c = categories.find((x) => x.code.toUpperCase() === p.toUpperCase() || (code && x.code.toUpperCase() === code) || norm(x.name) === k)
-      ?? categories.find((x) => k.includes(norm(x.name)) && norm(x.name).length >= 4);
-    if (c) { if (!found.includes(c)) found.push(c); } else unknown.push(p);
+    const m = matchOne(p, rowDiv, categories);
+    if (m && "cat" in m) { if (!found.includes(m.cat)) found.push(m.cat); merged ||= Boolean(m.merged); }
+    else unknown.push(m ? m.error : `Không có nội dung "${p}" trong giải`);
   }
-  return { found, unknown };
+  return { found, unknown, merged };
 }
+
+/** Sheet đặt tên theo nội dung ("ĐÔI NAM A", "MS")? */
+export function sheetCategory(sheet: string, categories: Category[]): Category | undefined {
+  const m = matchOne(sheet, null, categories);
+  return m && "cat" in m ? m.cat : undefined;
+}
+
+/**
+ * Sheet nên nhập mặc định: nếu file có sheet đặt tên theo nội dung (danh sách BTC đã chốt) thì chỉ lấy các sheet đó,
+ * bỏ sheet câu trả lời Google Form gốc (trùng người, còn người chưa đóng lệ phí). Không thì lấy mọi sheet có tiêu đề.
+ */
+export function defaultSheets(sheets: RawSheet[], categories: Category[]): string[] {
+  const usable = sheets.filter((s) => findHeader(s.data));
+  const named = usable.filter((s) => sheetCategory(s.sheet, categories));
+  return (named.length ? named : usable).map((s) => s.sheet);
+}
+/** Sheet có dòng tiêu đề (để chọn trong bản xem trước). */
+export const usableSheets = (sheets: RawSheet[]) => sheets.filter((s) => findHeader(s.data)).map((s) => s.sheet);
+const isUrl = (v: string) => /^https?:\/\//i.test(v);
 
 const groupLabel = (v: string) => v.replace(/^\s*bảng\s*/i, "").trim().toUpperCase();
 
@@ -142,7 +232,6 @@ export function planImport(sheets: RawSheet[], categories: Category[], fallback:
   existing: Record<string, Entry[]>, athletes: Athlete[] = []): ImportPlan {
   const errors: ImportIssue[] = [];
   const skipped: ImportIssue[] = [];
-  const byCode = new Map(categories.map((c) => [c.code.toUpperCase(), c]));
   const athleteById = new Map(athletes.map((a) => [a.id, a]));
   const buckets = new Map<string, ImportRow[]>();
   const known = new Map<string, Known>();
@@ -154,44 +243,84 @@ export function planImport(sheets: RawSheet[], categories: Category[], fallback:
   let anyHeader = false;
   const locked = new Map<string, { sheet: string; row: number; code: string; n: number }>();
 
+  const notes = new Set<string>();
+  const mergedNote = (c: Category) => notes.add(`File chia hạng (Bảng A / B…) nhưng giải chưa có nội dung theo hạng — các hạng được gộp vào "${c.name}". Muốn tách: tạo nội dung "${c.name} A", "${c.name} B"… rồi nhập lại.`);
+
   for (const s of sheets) {
     const h = findHeader(s.data);
     if (!h) continue;
     anyHeader = true;
-    const sheetCat = byCode.get(s.sheet.trim().toUpperCase());
+    const sheetCat = sheetCategory(s.sheet, categories);
+    if (sheetCat && splitDivision(s.sheet).div && !splitDivision(sheetCat.name).div && norm(sheetCat.name) !== norm(s.sheet)) mergedNote(sheetCat);
     const col = (row: CellValue[], f: Field) => (h[f] === undefined ? "" : cellText(row[h[f]!]));
-    for (let r = h.headerRow + 1; r < s.data.length; r++) {
-      const row = s.data[r] ?? [];
-      const at = { sheet: s.sheet, row: r + 1 };
+    /** Form rẽ nhánh có nhiều cột "nội dung": lấy ô đầu tiên có giá trị (bỏ link minh chứng). */
+    const codeOf = (row: CellValue[]) => h.codes.map((i) => cellText(row[i])).find((v) => v && !isUrl(v)) ?? "";
+
+    type Rec = { at: { sheet: string; row: number }; p1: CellValue[]; p2: CellValue[] | null; p2Name: string };
+    const recs: Rec[] = [];
+    // Sheet theo nội dung ĐÔI, mỗi dòng 1 người (không có cột đồng đội) → ghép 2 dòng thành 1 đội.
+    const pairRows = h.p2 === undefined && !h.codes.length && Boolean((sheetCat ?? fallback)?.is_doubles);
+    if (pairRows) {
+      let pending: { row: CellValue[]; at: Rec["at"]; key: string | null } | null = null;
+      const lonely = (x: NonNullable<typeof pending>) =>
+        errors.push({ ...x.at, message: `${x.key ? `${cellText(x.row[h.stt!])}: ` : ""}${col(x.row, "p1")} chưa có đồng đội — nội dung đôi cần 2 dòng liền nhau (cùng STT "ĐỘI n")` });
+      for (let r = h.headerRow + 1; r < s.data.length; r++) {
+        const row = s.data[r] ?? [];
+        if (!col(row, "p1")) continue;
+        const at = { sheet: s.sheet, row: r + 1 };
+        const stt = h.stt === undefined ? "" : cellText(row[h.stt]);
+        const key = /^(doi|cap|team|nhom)[a-z0-9]+$/.test(norm(stt)) ? norm(stt) : null; // "ĐỘI 1" = "Đôi 1" = "doi1"
+        if (pending && pending.key === key) {
+          recs.push({ at: pending.at, p1: pending.row, p2: row, p2Name: col(row, "p1") });
+          pending = null;
+        } else {
+          if (pending) lonely(pending);
+          pending = { row, at, key };
+        }
+      }
+      if (pending) lonely(pending);
+    } else {
+      for (let r = h.headerRow + 1; r < s.data.length; r++) {
+        const row = s.data[r] ?? [];
+        recs.push({ at: { sheet: s.sheet, row: r + 1 }, p1: row, p2: null, p2Name: col(row, "p2") });
+      }
+    }
+
+    for (const rec of recs) {
+      const { at, p1: row } = rec;
       const p1Name = col(row, "p1");
-      const p2Name = col(row, "p2");
-      const catCell = col(row, "code");
+      const p2Name = rec.p2Name;
+      const catCell = codeOf(row);
       if (!p1Name && !p2Name && !catCell) continue; // dòng trống
       if (++total > MAX_ROWS) { errors.push({ ...at, message: `File quá ${MAX_ROWS} dòng — hãy chia nhỏ` }); break; }
 
       const person = (name: string, f: "p1" | "p2"): Person | string => {
-        const rawSid = col(row, `${f}Sid` as Field);
-        const rawPhone = col(row, `${f}Phone` as Field);
+        // Dòng ghép (sheet 1 người/dòng): đồng đội nằm ở cột VĐV 1 của dòng sau.
+        const [src, pre] = f === "p2" && rec.p2 ? [rec.p2, "p1" as const] : [row, f];
+        const rawSid = col(src, `${pre}Sid` as Field);
+        const rawPhone = col(src, `${pre}Phone` as Field);
         const studentId = rawSid ? normalizeStudentId(rawSid) : null;
         const phone = rawPhone ? normalizePhone(rawPhone) : null;
         if (rawSid && !studentId) return `MSSV "${rawSid}" của ${name} không hợp lệ (4–20 chữ/số)`;
         if (rawPhone && !phone) return `SĐT "${rawPhone}" của ${name} không hợp lệ`;
         if (name.length > NAME_MAX) return `Tên dài quá ${NAME_MAX} ký tự`;
-        return { name, studentId, phone, email: col(row, `${f}Email` as Field) || null };
+        return { name, studentId, phone, email: col(src, `${pre}Email` as Field) || null };
       };
 
+      const rowDiv = col(row, "division") ? divisionOf(col(row, "division")) : null;
       let cats: Category[];
       if (catCell) {
-        const m = matchCategories(catCell, categories);
-        if (m.unknown.length) { errors.push({ ...at, message: `Không có nội dung "${m.unknown.join(", ")}" trong giải` }); continue; }
+        const m = matchCategories(catCell, rowDiv, categories);
+        if (m.unknown.length) { errors.push({ ...at, message: m.unknown.join("; ") }); continue; }
         cats = m.found;
+        if (m.merged) cats.forEach(mergedNote);
       } else {
         const c = sheetCat ?? fallback;
         if (!c) { errors.push({ ...at, message: "Không xác định được nội dung (thêm cột \"Nội dung\")" }); continue; }
         cats = [c];
       }
       if (!p1Name) { errors.push({ ...at, message: "Thiếu họ tên VĐV" }); continue; }
-      const club = col(row, "club");
+      const club = col(row, "club") || (rec.p2 ? col(rec.p2, "club") : "");
       if (club.length > CLUB_MAX) { errors.push({ ...at, message: `Tên CLB dài quá ${CLUB_MAX} ký tự` }); continue; }
       const p1 = person(p1Name, "p1");
       if (typeof p1 === "string") { errors.push({ ...at, message: p1 }); continue; }
@@ -211,7 +340,7 @@ export function planImport(sheets: RawSheet[], categories: Category[], fallback:
           const x = person(p2Name, "p2");
           if (typeof x === "string") { errors.push({ ...at, message: x }); continue; }
           p2 = x;
-        } else if (p2Name && !multi) {
+        } else if (p2Name && !multi && !catCell) {
           errors.push({ ...at, message: `${cat.code} là nội dung đơn — bỏ trống cột đồng đội` });
           continue;
         }
@@ -246,7 +375,7 @@ export function planImport(sheets: RawSheet[], categories: Category[], fallback:
     return { category, rows, groups };
   });
   errors.sort((a, b) => (a.sheet === b.sheet ? a.row - b.row : 0));
-  return { byCategory, errors, skipped };
+  return { byCategory, errors, skipped, notes: [...notes] };
 }
 
 // ───────── Đọc file ─────────

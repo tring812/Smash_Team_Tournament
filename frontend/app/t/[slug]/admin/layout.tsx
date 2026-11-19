@@ -93,7 +93,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
   const sideLink = "min-h-11 flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm transition-colors";
   return (
-    <div className="h-screen bg-background flex overflow-hidden">
+    <div className="relative h-dvh bg-background flex overflow-hidden">
       {open && <div className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-sm" onClick={() => setOpen(false)} aria-hidden />}
 
       <aside className={`theme-fixed fixed lg:static inset-y-0 left-0 w-64 shrink-0 bg-secondary text-slate-300 z-50 transform ${open ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0 transition-transform duration-300 flex flex-col border-r border-white/5 shadow-xl`}>
@@ -161,7 +161,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           </span>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-4 lg:p-8">
+        {/* relative: phần tử absolute bên trong (sr-only…) bám vào vùng cuộn này — nếu không chúng thoát ra, kéo dài cả trang và sidebar trôi mất khi cuộn */}
+        <div className="relative flex-1 overflow-y-auto p-4 lg:p-8">
           <div className="max-w-6xl mx-auto space-y-6">
             <div aria-live="polite">{msg && <Notice kind={msg.kind}>{msg.text}</Notice>}</div>
             <AdminContext.Provider value={ctx}>{children}</AdminContext.Provider>

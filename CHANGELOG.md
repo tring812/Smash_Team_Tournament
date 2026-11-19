@@ -5,6 +5,7 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Nhập file đăng ký dạng Google Sheets của BTC**: sheet câu trả lời Form có rẽ nhánh (nhiều cột "nội dung", MSSV đồng đội không ghi "partner"), cột **"Đăng kí bảng đấu" = hạng** (Bảng A / Bảng B → nội dung "Đôi nam A" / "Đôi nam B"; giải không chia hạng thì gộp và báo), và **mỗi nội dung một sheet** (tên sheet "ĐÔI NAM A", đôi = 2 dòng cùng STT "ĐỘI n"). Bản xem trước cho **chọn sheet** (mặc định chỉ sheet theo nội dung); bỏ qua cột link minh chứng / chuyển khoản.
 - **Luật điểm theo vòng** (migration `007_round_rules`, `PUT /categories/:id/round-rules`): vòng bảng, mọi vòng loại trực tiếp, và từng vòng (tứ kết / bán kết / chung kết… đếm ngược từ chung kết, đặt được trước khi có nhánh); điểm 21/15/11 hoặc tuỳ chỉnh, 1 game / 2/3 / 3/5. Khoá theo từng trận đã bắt đầu (`RULES_LOCKED`). Bàn điểm, kiểm tra tỉ số và trang công khai dùng luật của vòng.
 - **Bàn điểm: bên giao cầu & ô giao** (bên thắng pha giao tiếp; điểm chẵn → ô phải, lẻ → ô trái), hoàn tác trả lại bên giao, nút sửa bên giao.
 - **Nhắc nghỉ & đổi sân**: nghỉ 60 s khi bên dẫn chạm nửa số điểm (11/8/6), nghỉ 2 phút + đổi sân giữa game, đổi sân ở game quyết định; đếm ngược, rung máy, tự đổi bên trên màn hình.
@@ -25,6 +26,8 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 - Tab **Bảng đấu** `/t/<slug>/groups` và mục "Bảng đấu" trên thanh điều hướng.
 
 ### Changed
+- Khớp nội dung theo tên chặt hơn: "Đôi nam nữ" không còn rơi vào "Đôi nam" khi giải chưa có nội dung đôi nam nữ.
+- Sửa: trang quản trị cuộn cả trang và sidebar trôi khỏi màn hình (nhãn ẩn `sr-only` thoát khỏi vùng cuộn) — để lại khoảng trống tối dưới chân trang.
 - README viết lại: giới thiệu, tính năng, kiến trúc (sơ đồ), luồng dữ liệu (ghi điểm → SSE, đăng ký → bảng đấu), mô hình dữ liệu, cấu trúc thư mục, bảng biến môi trường, triển khai; bỏ badge CI trỏ tới repo chưa tồn tại.
 - Sửa luật điểm mặc định của nội dung chỉ bị khoá khi có trận đã bắt đầu đang dùng luật mặc định (trước đây: khi có bất kỳ trận nào bắt đầu).
 - Chữ phụ `text-slate-400` nâng lên đạt WCAG AA trên nền sáng; nhãn giao cầu, chữ "vs" trên TV đủ tương phản.

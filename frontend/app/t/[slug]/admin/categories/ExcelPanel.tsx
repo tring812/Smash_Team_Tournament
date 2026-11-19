@@ -1,9 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { AlertTriangle, Download, FileSpreadsheet, FileUp, Info } from "lucide-react";
 import { api } from "../../../../lib/api";
-import { downloadTemplate, exportEntries, planImport, readWorkbook, type ImportPlan } from "../../../../lib/excel";
+import { defaultSheets, downloadTemplate, exportEntries, planImport, readWorkbook, usableSheets, type RawSheet } from "../../../../lib/excel";
 import type { Athlete, Category, Entry } from "../../../../lib/types";
 import { Button, Modal } from "../../../../components/ui";
 import { useAdmin } from "../AdminContext";
@@ -15,7 +15,16 @@ export function ExcelPanel({ current }: { current: Category | undefined }) {
   const { t, busy, act, setError } = useAdmin();
   const fileRef = useRef<HTMLInputElement>(null);
   const [working, setWorking] = useState<null | "read" | "export" | "template">(null);
-  const [plan, setPlan] = useState<{ file: string; plan: ImportPlan } | null>(null);
+  /** File đã đọc + dữ liệu để lập kế hoạch; `picked` = sheet BTC chọn nhập (đổi chọn → lập lại kế hoạch). */
+  const [loaded, setLoaded] = useState<{
+    file: string; sheets: RawSheet[]; usable: string[]; picked: string[];
+    existing: Record<string, Entry[]>; athletes: Athlete[];
+  } | null>(null);
+  const plan = useMemo(() => loaded && {
+    file: loaded.file,
+    plan: planImport(loaded.sheets.filter((x) => loaded.picked.includes(x.sheet)), t.categories, current, loaded.existing, loaded.athletes),
+  }, [loaded, t.categories, current]);
+  const setPlan = (v: null) => setLoaded(v);
 
   const loadEntries = async (cats: Category[]) =>
     Object.fromEntries(await Promise.all(cats.map(async (c) => [c.id, await api<Entry[]>(`/categories/${c.id}/entries`)] as const)));
@@ -27,7 +36,7 @@ export function ExcelPanel({ current }: { current: Category | undefined }) {
     try {
       const sheets = await readWorkbook(file);
       const [existing, athletes] = await Promise.all([loadEntries(t.categories.filter((c) => c.stage === "setup")), loadAthletes()]);
-      setPlan({ file: file.name, plan: planImport(sheets, t.categories, current, existing, athletes) });
+      setLoaded({ file: file.name, sheets, usable: usableSheets(sheets), picked: defaultSheets(sheets, t.categories), existing, athletes });
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -109,14 +118,41 @@ export function ExcelPanel({ current }: { current: Category | undefined }) {
         )}
       </div>
       <p className="mt-2 text-xs text-slate-500">
-        Nhận file mẫu hoặc <strong>CSV tải từ Google Form</strong>. Cột: <strong>Nội dung</strong> · <strong>Họ tên</strong> · <strong>MSSV</strong> · <strong>SĐT</strong> ·
-        đồng đội (họ tên / MSSV / SĐT) · <strong>CLB</strong> · <strong>Bảng</strong> (nếu đã chia sẵn). MSSV/SĐT giúp phân biệt người trùng tên;
-        người đã đăng ký tự bỏ qua. File xuất có MSSV/SĐT — đừng chia sẻ công khai.
+        Nhận file mẫu, <strong>file Google Sheets / Form</strong> (Tải xuống .xlsx hoặc .csv) hoặc file có mỗi nội dung một sheet (tên sheet như
+        <strong>“ĐÔI NAM A”</strong>, đôi = 2 dòng cùng STT “ĐỘI n”). Cột: <strong>Nội dung</strong> · <strong>Họ tên</strong> · <strong>MSSV</strong> · <strong>SĐT</strong> ·
+        đồng đội · <strong>CLB/Trường</strong> · <strong>Đăng kí bảng đấu / Hạng</strong> (A, B → nội dung “Đôi nam A”…) · <strong>Bảng</strong> (nếu đã chia sẵn).
+        Người đã đăng ký tự bỏ qua. File xuất có MSSV/SĐT — đừng chia sẻ công khai.
       </p>
 
       <Modal open={Boolean(plan)} onClose={() => setPlan(null)} title={`Xem trước: ${plan?.file ?? ""}`} maxWidth="max-w-2xl">
         {p && (
           <div className="space-y-4 text-sm">
+            {loaded && loaded.usable.length > 1 && (
+              <fieldset className="rounded-2xl border border-slate-100 p-3">
+                <legend className="px-1 font-bold text-slate-900">Sheet sẽ nhập</legend>
+                <div className="flex flex-wrap gap-2">
+                  {loaded.usable.map((name) => {
+                    const on = loaded.picked.includes(name);
+                    return (
+                      <label key={name} className={`inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-full border px-3 text-sm font-semibold ${on ? "border-primary bg-red-50 text-red-800" : "border-slate-200 text-slate-600"}`}>
+                        <input type="checkbox" className="h-4 w-4 accent-red-600" checked={on}
+                          onChange={() => setLoaded({ ...loaded, picked: on ? loaded.picked.filter((x) => x !== name) : [...loaded.picked, name] })} />
+                        {name}
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="mt-2 text-xs text-slate-500">
+                  File có cả sheet câu trả lời Google Form lẫn sheet theo nội dung → mặc định chỉ chọn các sheet theo nội dung (danh sách đã chốt).
+                  Chọn cả hai cũng không nhân đôi: người trùng MSSV / SĐT tự bỏ qua.
+                </p>
+              </fieldset>
+            )}
+            {p.notes.length > 0 && (
+              <ul className="space-y-1 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-amber-900">
+                {p.notes.map((n) => <li key={n} className="flex gap-2"><Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />{n}</li>)}
+              </ul>
+            )}
             {p.byCategory.length > 0 ? (
               <ul className="divide-y divide-slate-100 rounded-2xl border border-slate-100">
                 {p.byCategory.map((g) => (
