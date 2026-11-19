@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { ArrowUpRight, CalendarClock, MapPin, Shuffle, Smartphone, Trophy } from "lucide-react";
 import { api } from "./lib/api";
 import type { TournamentSummary } from "./lib/types";
+import { sortTournaments } from "./lib/tournamentOrder";
 import { CardSkeleton, EmptyState } from "./components/ui";
 
 const STATUS_LABEL: Record<TournamentSummary["status"], string> = {
@@ -24,16 +25,18 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api<TournamentSummary[]>("/tournaments").then(setItems).catch((e: Error) => setError(e.message));
+    api<TournamentSummary[]>("/tournaments").then((ts) => setItems(sortTournaments(ts))).catch((e: Error) => setError(e.message));
   }, []);
 
   const featured = items?.find((t) => t.status === "ongoing") ?? items?.find((t) => t.status === "published") ?? items?.[0];
 
   return (
-    <div className="space-y-12">
+    <div className="space-y-10">
       <section className="theme-fixed overflow-hidden rounded-3xl bg-black shadow-xl">
         <Image src="/smash-open-cup-2026.webp" alt="Smash Open Cup 2026 — giải cầu lông mở rộng của Smash Team"
-          width={1640} height={924} priority className="h-auto w-full" />
+          width={1640} height={924} priority
+          // Cắt gọn banner (giữ logo + tựa giải) để danh sách giải hiện ngay màn hình đầu.
+          className="h-48 w-full object-cover object-[50%_30%] sm:h-64 lg:h-80" />
         <div className="flex flex-wrap items-center justify-between gap-4 border-t-4 border-primary px-5 py-5 sm:px-8">
           <div>
             <p className="text-xs font-bold uppercase tracking-widest text-red-400">Smash Team · 2026</p>
@@ -49,22 +52,10 @@ export default function HomePage() {
         </div>
       </section>
 
-      <ul className="grid gap-4 sm:grid-cols-3">
-        {FEATURES.map(({ icon: Icon, t, d }) => (
-          <li key={t} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-            <div className="w-10 h-10 rounded-xl bg-black flex items-center justify-center mb-3" aria-hidden>
-              <Icon className="w-5 h-5 text-white" />
-            </div>
-            <h2 className="font-bold text-slate-900">{t}</h2>
-            <p className="mt-1 text-sm text-slate-500">{d}</p>
-          </li>
-        ))}
-      </ul>
-
       <section aria-labelledby="list-h">
         <div className="mb-5 flex items-end justify-between gap-4 border-b border-slate-100 pb-4">
           <div>
-            <h2 id="list-h" className="text-3xl font-bold tracking-tight text-slate-900">Các giải</h2>
+            <h2 id="list-h" className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Các giải</h2>
             <p className="text-slate-500 mt-1">Lịch thi đấu, bảng đấu và nhánh loại trực tiếp cập nhật theo thời gian thực.</p>
           </div>
         </div>
@@ -87,6 +78,18 @@ export default function HomePage() {
           ))}
         </ul>
       </section>
+
+      <ul className="grid gap-4 sm:grid-cols-3">
+        {FEATURES.map(({ icon: Icon, t, d }) => (
+          <li key={t} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+            <div className="w-10 h-10 rounded-xl bg-black flex items-center justify-center mb-3" aria-hidden>
+              <Icon className="w-5 h-5 text-white" />
+            </div>
+            <h2 className="font-bold text-slate-900">{t}</h2>
+            <p className="mt-1 text-sm text-slate-500">{d}</p>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
