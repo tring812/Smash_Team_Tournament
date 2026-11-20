@@ -153,11 +153,28 @@ export interface TournamentEvent {
   id: string;
   action: "draw" | "redraw" | "disqualify" | "reinstate" | "swap" | "edit_entry" | "schedule"
     | "category_create" | "category_update" | "category_delete"
-    | "call_match" | "uncall_match" | "move_match" | "court_referee" | "athlete_update" | "rules_update";
+    | "call_match" | "uncall_match" | "move_match" | "court_referee" | "athlete_update" | "rules_update"
+    | "referee_create" | "referee_update" | "referee_remove";
   details: Record<string, unknown>;
   created_at: string;
   actor: string;
   category_code: string | null;
+}
+
+/** Trọng tài của giải kèm tài khoản (GET /tournaments/:id/referees — chỉ BTC). */
+export interface RefereeAccount {
+  id: string;
+  username: string | null;
+  full_name: string;
+  disabled_at: string | null;
+  last_login_at: string | null;
+  has_password: boolean;
+  account_role: "admin" | "user";
+  other_tournaments: number;
+  matches_assigned: number;
+  courts: number[];
+  /** BTC này được sửa / khoá / đặt lại mật khẩu (tài khoản không làm ở giải của BTC khác). */
+  can_manage: boolean;
 }
 
 export interface Staff {

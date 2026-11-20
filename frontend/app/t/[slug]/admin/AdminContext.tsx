@@ -33,6 +33,7 @@ export const ACTION_LABEL: Record<TournamentEvent["action"], string> = {
   swap: "Đổi bảng", edit_entry: "Sửa đội", schedule: "Xếp lịch",
   category_create: "Tạo nội dung", category_update: "Sửa nội dung", category_delete: "Xoá nội dung",
   call_match: "Gọi vào sân", uncall_match: "Rút trận", move_match: "Dời trận", court_referee: "Trọng tài sân", athlete_update: "Sửa hồ sơ VĐV", rules_update: "Luật điểm theo vòng",
+  referee_create: "Tạo TK trọng tài", referee_update: "Sửa TK trọng tài", referee_remove: "Gỡ trọng tài",
 };
 
 /** Tóm tắt 1 dòng nhật ký để hiển thị. */
@@ -59,6 +60,9 @@ export function describeEvent(ev: TournamentEvent): string {
       const parts = [a.group ? "vòng bảng" : null, ...Object.keys(a.knockout ?? {}).map((k) => (k === "*" ? "mọi vòng loại" : k === "1" ? "chung kết" : k === "2" ? "bán kết" : k === "3" ? "tứ kết" : `vòng 1/${2 ** (Number(k) - 1)}`))].filter(Boolean);
       return `${d.code}: ${parts.length ? `luật riêng cho ${parts.join(", ")}` : "bỏ mọi luật riêng (dùng mặc định)"}`;
     }
+    case "referee_create": return `${d.name} (@${d.username})`;
+    case "referee_update": return `${d.name}: ${(d.fields as string[] | undefined)?.map((f) => ({ fullName: "đổi tên", password: "đặt lại mật khẩu", disabled: d.disabled ? "khoá" : "mở khoá" } as Record<string, string>)[f] ?? f).join(", ") ?? ""}`;
+    case "referee_remove": return `${d.name}${d.disabled ? " (đã khoá tài khoản)" : ""}`;
     case "draw": case "redraw": return `${(d.groups as unknown[] | undefined)?.length ?? 0} bảng${d.manual ? " (chia theo file)" : ""}${d.sameAsBefore ? " (chỉ có 1 cách chia)" : ""}`;
     default: return "";
   }

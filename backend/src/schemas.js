@@ -25,6 +25,13 @@ const schemas = {
     password: password.optional(),
     disabled: z.boolean().optional(),
   }).refine((o) => Object.values(o).some((v) => v !== undefined), { message: 'Không có gì để cập nhật' }),
+  // Tài khoản trọng tài do BTC tạo trong trang quản trị giải (luôn là tài khoản thường).
+  createReferee: z.object({ username, fullName: name(255), password }),
+  updateReferee: z.object({
+    fullName: name(255).optional(),
+    password: password.optional(),
+    disabled: z.boolean().optional(),
+  }).refine((o) => Object.values(o).some((v) => v !== undefined), { message: 'Không có gì để cập nhật' }),
   changePassword: z.object({ currentPassword: z.string().min(1).max(128), newPassword: password }),
   uuidParam: z.uuid(),
 
