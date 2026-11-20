@@ -53,11 +53,18 @@ export interface Tournament extends TournamentSummary {
   categories: Category[];
 }
 
+/** Một VĐV của đội: athleteId = hồ sơ VĐV theo giải (phân biệt người trùng tên), không kèm MSSV/SĐT. */
+export interface PlayerRef {
+  athleteId: string | null;
+  name: string;
+}
+
 export interface Side {
   id: string;
   name: string;
   club: string;
   disqualified: boolean;
+  players?: PlayerRef[];
 }
 
 export interface ScoringRules {
@@ -107,6 +114,7 @@ export interface StandingRow {
   club: string;
   disqualified: boolean;
   dqReason: string | null;
+  players?: PlayerRef[];
 }
 
 export interface GroupStanding {

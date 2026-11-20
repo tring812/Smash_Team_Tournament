@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowUpRight, CalendarClock, GitBranch, LayoutGrid, MapPin, MonitorPlay, RefreshCw, Search, UserSearch, X } from "lucide-react";
+import { ArrowUpRight, CalendarClock, GitBranch, LayoutGrid, MapPin, MonitorPlay, RefreshCw, Search, X } from "lucide-react";
 import { api, fmtTime } from "../../lib/api";
 import { usePoll } from "../../lib/usePoll";
 import { useLive } from "../../lib/useLive";
 import type { Bracket, Category, GroupStanding, Match, StandingRow, Tournament } from "../../lib/types";
 import { MatchCard, StandingsTables } from "../../components/MatchViews";
+import { PlayerResults } from "../../components/PlayerResults";
+import { findPeople, hasDiacritics, involves, makeMatcher, peopleOf } from "../../lib/playerSearch";
 import { BracketExplorer, BracketViewToggle, type BracketView } from "../../components/BracketExplorer";
 import {
   AllMatchesTable, CourtView, ScheduleViewToggle, SCHEDULE_VIEWS, TimeView, dayKey, dayLabel, type ScheduleView,
@@ -25,14 +27,6 @@ const TABS: { id: HubTab; label: string; icon: typeof CalendarClock }[] = [
   { id: "groups", label: "Bảng đấu", icon: LayoutGrid },
   { id: "bracket", label: "Loại trực tiếp", icon: GitBranch },
 ];
-
-/** So khớp tên không phân biệt hoa thường / dấu: "nguyen an" khớp "Nguyễn Ân". */
-const fold = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/gi, "d").toLowerCase().replace(/\s+/g, " ").trim();
-/** Mọi từ trong ô tìm đều phải có trong tên hoặc CLB (gõ "an uit" → An của UIT). */
-const matcher = (q: string) => {
-  const words = fold(q).split(" ").filter(Boolean);
-  return words.length ? (name: string, club = "") => { const hay = fold(`${name} ${club}`); return words.every((w) => hay.includes(w)); } : null;
-};
 
 const clock = new Intl.DateTimeFormat("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
@@ -63,15 +57,16 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
   // Bảng xếp hạng: tab Bảng đấu, hoặc tab Lịch khi đang tìm VĐV (để báo "Bảng C · hạng 3").
   // Nội dung đang chọn, hoặc mọi nội dung đã bốc thăm.
   const searching = Boolean(qParam.trim());
+  // Khi tìm VĐV: lấy MỌI nội dung đã bốc thăm để thẻ VĐV liệt kê đủ các nội dung người đó đánh.
   const standingCats: Category[] = tab === "groups" || (tab === "schedule" && searching)
-    ? (cat ? [cat] : cats.filter((c) => c.stage !== "setup")) : [];
+    ? (cat && !searching ? [cat] : cats.filter((c) => c.stage !== "setup")) : [];
   const standingKey = standingCats.map((c) => c.id).join(",");
 
   // Có điểm / gọi sân / dời trận → tải lại ngay; polling 10s (30s khi đang nhận trực tiếp) chỉ là dự phòng.
   const { tick, live: streaming } = useLive(t.data?.id);
   const matches = usePoll(
-    (s) => (t.data ? api<Match[]>(`/tournaments/${t.data.id}/matches${tab === "schedule" && cat ? `?categoryId=${cat.id}` : ""}`, { signal: s }) : Promise.resolve([])),
-    [t.data?.id, cat?.id, tab, tick], streaming ? 30_000 : 10_000,
+    (s) => (t.data ? api<Match[]>(`/tournaments/${t.data.id}/matches${tab === "schedule" && cat && !searching ? `?categoryId=${cat.id}` : ""}`, { signal: s }) : Promise.resolve([])),
+    [t.data?.id, cat?.id, tab, tick, searching], streaming ? 30_000 : 10_000,
   );
   const groups = usePoll(
     (s) => Promise.all(standingCats.map(async (c) => ({ category: c, groups: await api<GroupStanding[]>(`/categories/${c.id}/standings`, { signal: s }) }))),
@@ -93,15 +88,29 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
   const days = useMemo(() => [...new Set(all.filter((m) => m.scheduledAt).map((m) => m.scheduledAt as string))]
     .reduce<{ key: string; iso: string }[]>((acc, iso) => (acc.some((d) => d.key === dayKey(iso)) ? acc : [...acc, { key: dayKey(iso), iso }]), [])
     .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)), [all]);
-  const hit = useMemo(() => matcher(q), [q]);
-  const isMine = (m: Match) => !hit || [m.a, m.b].some((x) => x && hit(x.name, x.club));
-  const shown = all.filter((m) => (!day || (m.scheduledAt && dayKey(m.scheduledAt) === day)) && (!court || String(m.court) === court) && isMine(m));
-  const live = all.filter((m) => m.status === "live" && isMine(m));
-  const rowHit = hit ? (r: StandingRow) => hit(r.name, r.club) : undefined;
-  // Khi tìm: chỉ giữ bảng có VĐV khớp; "found" = VĐV đó đang ở bảng nào, hạng mấy.
-  const standings = (groups.data ?? []).map((x) => ({ ...x, groups: rowHit ? x.groups.filter((g) => g.standings.some(rowHit)) : x.groups }))
+  const hit = useMemo(() => makeMatcher(q), [q]);
+  // Gom kết quả theo từng VĐV (mọi nội dung). Ưu tiên khớp tên; chỉ khi không ai khớp tên mới tính CLB / trường.
+  // Gõ có dấu mà không ra ai (vd sai dấu "Bão" thay vì "Bảo") → thử lại kiểu bỏ dấu.
+  const { people, approx } = useMemo(() => {
+    if (!hit) return { people: [], approx: false };
+    const strict = findPeople(hit, all, groups.data ?? []);
+    if (strict.length || !hasDiacritics(q)) return { people: strict, approx: false };
+    const loose = makeMatcher(q, true);
+    const found = loose ? findPeople(loose, all, groups.data ?? []) : [];
+    return { people: found, approx: found.length > 0 };
+  }, [hit, q, all, groups.data]);
+  const mine = useMemo(() => (hit ? involves(people) : null), [hit, people]);
+  const isMine = (m: Match) => !mine || mine(m);
+  const inCat = (m: Match) => !cat || m.category.id === cat.id;
+  const shown = all.filter((m) => inCat(m) && (!day || (m.scheduledAt && dayKey(m.scheduledAt) === day)) && (!court || String(m.court) === court) && isMine(m));
+  const live = all.filter((m) => m.status === "live" && inCat(m) && isMine(m));
+  const peopleKeys = new Set(people.map((p) => p.key));
+  const rowHit = hit ? (r: StandingRow) => peopleOf(r).some((pl) => peopleKeys.has(pl.key)) : undefined;
+  // Khi tìm: chỉ giữ bảng có VĐV khớp.
+  const standings = (groups.data ?? []).filter((x) => !cat || x.category.id === cat.id)
+    .map((x) => ({ ...x, groups: rowHit ? x.groups.filter((g) => g.standings.some(rowHit)) : x.groups }))
     .filter((x) => !rowHit || x.groups.length);
-  const found = rowHit ? standings.flatMap((x) => x.groups.flatMap((g) => g.standings.filter(rowHit).map((r) => ({ r, g, c: x.category })))) : [];
+  const personMatches = mine ? all.filter(mine).length : 0;
 
   const setParam = (k: string, v: string) => {
     const p = new URLSearchParams(search.toString());
@@ -177,28 +186,10 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
           </form>
           {hit && (
             <div aria-live="polite" className="mt-3 rounded-2xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
-              {found.length || (tab === "schedule" && shown.length) ? (
-                <>
-                  <p className="font-bold">
-                    {tab === "schedule" ? `${shown.length} trận` : `Có tên trong ${found.length} bảng`}
-                    {tab === "schedule" && found.length > 0 && <> · có tên trong {found.length} bảng</>}
-                  </p>
-                  {found.length > 0 && (
-                    <ul className="mt-2 flex flex-wrap gap-2">
-                      {found.slice(0, 8).map(({ r, g, c }) => (
-                        <li key={`${c.id}-${r.entryId}`}>
-                          <Link href={tab === "groups" ? `#g-${g.groupId}` : tabHref("groups")} scroll={tab === "groups"}
-                            className="flex min-h-11 flex-wrap items-center gap-x-1.5 rounded-3xl bg-white px-3 py-1.5 font-semibold shadow-sm ring-1 ring-amber-300 hover:ring-amber-700">
-                            <UserSearch className="h-4 w-4 text-amber-700" aria-hidden />{r.name}
-                            <span className="font-normal text-slate-600">· {c.code} Bảng {g.name}{r.rank ? ` · hạng ${r.rank}` : ""}</span>
-                          </Link>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </>
+              {people.length ? (
+                <PlayerResults people={people} matchCount={personMatches} groupsHref={tabHref("groups")} approx={approx ? q.trim() : null} />
               ) : (
-                <p>Không tìm thấy “{q.trim()}”. Thử gõ ít chữ hơn (vd chỉ tên), hoặc chọn “Tất cả nội dung”.
+                <p>Không tìm thấy “{q.trim()}”. Thử gõ ít chữ hơn (vd chỉ tên), hoặc gõ không dấu.
                   VĐV chỉ có trong lịch sau khi BTC bốc thăm.</p>
               )}
             </div>
@@ -276,7 +267,7 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
             <EmptyState title={hit ? "Không có bảng nào có tên này" : "Chưa bốc thăm chia bảng"} />
           ) : standings.map(({ category, groups: gs }) => (
             <div key={category.id} className="space-y-3">
-              {standingCats.length > 1 && <h2 className="headline text-2xl">{category.code} · {category.name}</h2>}
+              {!cat && standings.length > 0 && <h2 className="headline text-2xl">{category.code} · {category.name}</h2>}
               <StandingsTables groups={gs} highlight={rowHit} />
             </div>
           ))}
