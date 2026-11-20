@@ -229,3 +229,8 @@ body {
    Vùng nền tối cố định (sidebar, chân trang, TV) giữ slate-400 vì ở đó nó đã đủ tương phản. */
 .text-slate-400 { color: var(--color-slate-500); }
 :is(.theme-fixed.text-slate-400, .theme-fixed .text-slate-400) { color: var(--color-slate-400); }
+
+/* Thanh tab đáy trên điện thoại (SiteNav) che phần cuối trang → chừa chỗ bằng đúng chiều cao thanh. */
+@media (max-width: 767.98px) {
+  body:has([data-tabbar]) { padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px)); }
+}
