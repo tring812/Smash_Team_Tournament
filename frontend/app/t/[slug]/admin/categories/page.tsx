@@ -17,11 +17,22 @@ const PRESETS = {
 } as const;
 
 /** Dòng "Tên 1 / Tên 2 ; CLB" → entry (giải mở rộng: không ELO, không hạt giống). Dòng trống bỏ qua. */
+/**
+ * Mỗi dòng: `tên ; CLB ; MSSV ; SĐT` (đôi: `tên A / tên B ; CLB ; MSSV A / MSSV B ; SĐT A / SĐT B`).
+ * Chỉ tên là bắt buộc; MSSV/SĐT giúp phân biệt người trùng tên và nhận ra một người đánh nhiều nội dung.
+ */
 function parseEntries(text: string, doubles: boolean) {
   return text.split("\n").map((l) => l.trim()).filter(Boolean).map((line) => {
-    const [players = "", club = ""] = line.split(";").map((s) => s.trim());
-    const [p1 = "", p2] = players.split("/").map((s) => s.trim());
-    return { player1Name: p1, player2Name: doubles ? (p2 ?? "") : null, club };
+    const [players = "", club = "", sids = "", phones = ""] = line.split(";").map((s) => s.trim());
+    const pair = (v: string) => v.split("/").map((s) => s.trim());
+    const [p1 = "", p2] = pair(players);
+    const [s1, s2] = pair(sids);
+    const [ph1, ph2] = pair(phones);
+    return {
+      player1Name: p1, player2Name: doubles ? (p2 ?? "") : null, club,
+      player1StudentId: s1 || null, player1Phone: ph1 || null,
+      ...(doubles ? { player2StudentId: s2 || null, player2Phone: ph2 || null } : {}),
+    };
   });
 }
 
@@ -87,8 +98,8 @@ export default function CategoriesPage() {
               <label className="flex flex-col gap-2 text-sm">
                 <span className="font-bold text-slate-600">Dán danh sách đăng ký (mỗi dòng 1 {cat.is_doubles ? "cặp" : "VĐV"}) — hoặc dùng Nhập từ Excel ở trên</span>
                 <textarea value={bulk} onChange={(e) => setBulk(e.target.value)} rows={5} required className={`${textInputClass} font-mono text-sm`}
-                  placeholder={cat.is_doubles ? "Nguyễn An / Trần Chi ; CLB Quận 7\nLê Bình / Phạm Dung" : "Nguyễn An ; CLB Quận 7\nLê Bình"} />
-                <span className="text-xs text-slate-500">Định dạng: tên{cat.is_doubles ? " / tên" : ""} ; CLB (CLB có thể bỏ trống). Bốc thăm <strong>ngẫu nhiên</strong> và tự tách VĐV cùng CLB ra các bảng.</span>
+                  placeholder={cat.is_doubles ? "Nguyễn An / Trần Chi ; CLB Quận 7 ; 21520001 / 21520002 ; 0901234567 / 0912345678\nLê Bình / Phạm Dung" : "Nguyễn An ; CLB Quận 7 ; 21520001 ; 0901234567\nLê Bình"} />
+                <span className="text-xs text-slate-500">Định dạng: tên{cat.is_doubles ? " / tên" : ""} ; CLB ; MSSV{cat.is_doubles ? " / MSSV" : ""} ; SĐT{cat.is_doubles ? " / SĐT" : ""} — chỉ tên là bắt buộc; MSSV/SĐT giúp phân biệt người trùng tên. Bốc thăm <strong>ngẫu nhiên</strong> và tự tách VĐV cùng CLB ra các bảng.</span>
               </label>
               <div><Button type="submit" disabled={busy}><Plus className="w-4 h-4" aria-hidden />Thêm vào danh sách</Button></div>
             </form>

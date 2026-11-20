@@ -6,8 +6,11 @@
  *  1. MSSV (thẻ sinh viên) — mạnh nhất. 2. Số điện thoại.
  *     MSSV và SĐT trỏ tới 2 người khác nhau → từ chối (gõ nhầm của một trong hai).
  *  3. Không có MSSV/SĐT → khớp theo tên chuẩn hoá: đúng 1 hồ sơ cùng tên → dùng lại; 0 → tạo mới;
- *     ≥ 2 → từ chối và yêu cầu MSSV/SĐT để phân biệt (không đoán).
+ *     ≥ 2 → nếu đúng 1 người cùng CLB thì là người đó, không thì từ chối và yêu cầu MSSV/SĐT (không đoán).
  *  Có MSSV/SĐT mà chưa khớp ai: nếu có đúng 1 hồ sơ cùng tên CHƯA có MSSV/SĐT (dữ liệu cũ) → gắn vào hồ sơ đó.
+ *  `newAthlete: true` (BTC xác nhận "người khác, chỉ trùng tên") → bỏ bước khớp theo tên, luôn tạo hồ sơ mới
+ *  (vẫn khớp MSSV/SĐT nếu có — định danh mạnh luôn thắng).
+ *  Email chỉ để liên lạc: sai định dạng thì bỏ qua (không từ chối cả dòng).
  *
  * MSSV/SĐT/email là dữ liệu cá nhân: chỉ hàm cho BTC trả ra; nhật ký chỉ ghi TÊN TRƯỜNG đã sửa, không ghi giá trị.
  */
@@ -18,7 +21,8 @@ const { withTx, requireOrganizer, logEvent } = require('./tournamentService');
 /** @typedef {import('./tournamentService').Queryable} Queryable */
 /** @typedef {import('./tournamentService').Viewer} Viewer */
 /**
- * @typedef {{ name: string, studentId?: string|null, phone?: string|null, email?: string|null, club?: string }} PersonInput
+ * @typedef {{ name: string, studentId?: string|null, phone?: string|null, email?: string|null, club?: string,
+ *             newAthlete?: boolean }} PersonInput
  */
 
 /** Khớp với SQL backfill trong 006_athletes.sql. */
@@ -56,7 +60,8 @@ async function resolveAthlete(c, tid, p) {
   const phone = p.phone ? normalizePhone(p.phone) : null;
   if (p.studentId && !sid) throw unprocessable(`MSSV "${p.studentId}" của ${name} không hợp lệ (4–20 chữ/số)`);
   if (p.phone && !phone) throw unprocessable(`SĐT "${p.phone}" của ${name} không hợp lệ`);
-  const email = p.email ? String(p.email).trim().toLowerCase().slice(0, 254) : null;
+  const rawEmail = p.email ? String(p.email).trim().toLowerCase() : '';
+  const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) && rawEmail.length <= 254 ? rawEmail : null;
   const club = (p.club ?? '').trim().slice(0, 120);
 
   const find = async (col, v) => (v
@@ -72,9 +77,12 @@ async function resolveAthlete(c, tid, p) {
     throw conflict('ATHLETE_MISMATCH', `SĐT ${phone} đã đăng ký cho ${describe(found)} — MSSV ${sid} không khớp`);
   }
 
-  if (!found) {
+  if (!found && !p.newAthlete) {
     const { rows: same } = await c.query('SELECT * FROM athletes WHERE tournament_id = $1 AND name_key = $2', [tid, key]);
     if (!sid && !phone) {
+      // Nhiều người cùng tên: CLB trùng đúng 1 người → chính là người đó (vd 2 Nguyễn Thành Đạt khác trường).
+      const byClub = same.length > 1 && club ? same.filter((x) => x.club && x.club.trim().toLowerCase() === club.toLowerCase()) : [];
+      if (byClub.length === 1) same.splice(0, same.length, byClub[0]);
       if (same.length > 1) {
         throw unprocessable(`Có ${same.length} VĐV tên "${name}" — nhập MSSV hoặc SĐT để phân biệt`);
       }

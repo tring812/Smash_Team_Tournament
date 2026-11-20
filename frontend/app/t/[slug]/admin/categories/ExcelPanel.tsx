@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { AlertTriangle, Download, FileSpreadsheet, FileUp, Info } from "lucide-react";
+import { AlertTriangle, Download, FileSpreadsheet, FileUp, Info, Users } from "lucide-react";
 import { api } from "../../../../lib/api";
-import { defaultSheets, downloadTemplate, exportEntries, planImport, readWorkbook, usableSheets, type RawSheet } from "../../../../lib/excel";
+import { defaultSheets, downloadTemplate, exportEntries, planImport, readWorkbook, usableSheets, type NameDecision, type RawSheet } from "../../../../lib/excel";
 import type { Athlete, Category, Entry } from "../../../../lib/types";
 import { Button, Modal } from "../../../../components/ui";
 import { useAdmin } from "../AdminContext";
@@ -19,10 +19,15 @@ export function ExcelPanel({ current }: { current: Category | undefined }) {
   const [loaded, setLoaded] = useState<{
     file: string; sheets: RawSheet[]; usable: string[]; picked: string[];
     existing: Record<string, Entry[]>; athletes: Athlete[];
+    /** Lựa chọn của BTC cho dòng trùng tên khác CLB (khoá = NameClash.key). */
+    decisions: Record<string, NameDecision>;
+    /** Nội dung nhập lỗi ở lần bấm "Nhập" trước (các nội dung khác vẫn đã nhập). */
+    failed: { code: string; message: string }[];
   } | null>(null);
+  const [committing, setCommitting] = useState(false);
   const plan = useMemo(() => loaded && {
     file: loaded.file,
-    plan: planImport(loaded.sheets.filter((x) => loaded.picked.includes(x.sheet)), t.categories, current, loaded.existing, loaded.athletes),
+    plan: planImport(loaded.sheets.filter((x) => loaded.picked.includes(x.sheet)), t.categories, current, loaded.existing, loaded.athletes, loaded.decisions),
   }, [loaded, t.categories, current]);
   const setPlan = (v: null) => setLoaded(v);
 
@@ -36,7 +41,7 @@ export function ExcelPanel({ current }: { current: Category | undefined }) {
     try {
       const sheets = await readWorkbook(file);
       const [existing, athletes] = await Promise.all([loadEntries(t.categories.filter((c) => c.stage === "setup")), loadAthletes()]);
-      setLoaded({ file: file.name, sheets, usable: usableSheets(sheets), picked: defaultSheets(sheets, t.categories), existing, athletes });
+      setLoaded({ file: file.name, sheets, usable: usableSheets(sheets), picked: defaultSheets(sheets, t.categories), existing, athletes, decisions: {}, failed: [] });
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -57,18 +62,25 @@ export function ExcelPanel({ current }: { current: Category | undefined }) {
     }
   }
 
+  /**
+   * Ghi từng NỘI DUNG độc lập: một nội dung lỗi (vd dữ liệu sai) không chặn các nội dung còn lại.
+   * Có lỗi → giữ hộp xem trước, tải lại đội đã có (dòng đã vào sẽ tự bỏ qua) và báo lỗi theo từng nội dung.
+   */
   async function commit() {
-    if (!plan) return;
+    if (!plan || !loaded) return;
     const groups = plan.plan.byCategory;
-    const total = groups.reduce((n, g) => n + g.rows.length, 0);
-    const drawn = groups.filter((g) => g.groups).map((g) => g.category.code);
-    const ok = await act(async () => {
-      for (const g of groups) {
+    setCommitting(true);
+    const done: { code: string; n: number; drawn: boolean }[] = [];
+    const failed: { code: string; message: string }[] = [];
+    for (const g of groups) {
+      try {
         const ids: string[] = [];
         for (let i = 0; i < g.rows.length; i += CHUNK) {
           const entries = g.rows.slice(i, i + CHUNK).map(({ p1, p2, club }) => ({
             player1Name: p1.name, player1StudentId: p1.studentId, player1Phone: p1.phone, player1Email: p1.email || null,
+            player1NewAthlete: p1.newAthlete || undefined,
             player2Name: p2?.name ?? null, player2StudentId: p2?.studentId ?? null, player2Phone: p2?.phone ?? null, player2Email: p2?.email || null,
+            player2NewAthlete: p2?.newAthlete || undefined,
             club,
           }));
           const created = await api<{ id: string }[]>(`/categories/${g.category.id}/entries`, { method: "POST", body: { entries } });
@@ -80,9 +92,29 @@ export function ExcelPanel({ current }: { current: Category | undefined }) {
             method: "POST", body: { groups: g.groups.map((x) => ({ name: x.name, entryIds: x.rows.map((r) => ids[r]!) })) },
           });
         }
+        done.push({ code: g.category.code, n: g.rows.length, drawn: Boolean(g.groups) });
+      } catch (err) {
+        failed.push({ code: g.category.code, message: (err as Error).message });
       }
-    }, `Đã nhập ${total} đội vào ${groups.map((g) => g.category.code).join(", ")}${drawn.length ? ` và chia bảng theo file cho ${drawn.join(", ")}` : ""}`);
-    if (ok) setPlan(null);
+    }
+    const total = done.reduce((n, d) => n + d.n, 0);
+    const drawn = done.filter((d) => d.drawn).map((d) => d.code);
+    await act(async () => null, done.length
+      ? `Đã nhập ${total} đội vào ${done.map((d) => d.code).join(", ")}${drawn.length ? ` và chia bảng theo file cho ${drawn.join(", ")}` : ""}`
+        + (failed.length ? ` — ${failed.length} nội dung lỗi, xem trong hộp nhập` : "")
+      : `Chưa nhập được nội dung nào — xem lỗi trong hộp nhập`);
+    if (!failed.length) {
+      setPlan(null);
+    } else {
+      // Đội đã vào sẽ được bỏ qua ở lần nhập lại; BTC sửa file / bỏ chọn sheet lỗi rồi bấm Nhập tiếp.
+      try {
+        const [existing, athletes] = await Promise.all([loadEntries(t.categories.filter((c) => c.stage === "setup")), loadAthletes()]);
+        setLoaded({ ...loaded, existing, athletes, failed });
+      } catch {
+        setLoaded({ ...loaded, failed });
+      }
+    }
+    setCommitting(false);
   }
 
   const p = plan?.plan;
@@ -148,6 +180,44 @@ export function ExcelPanel({ current }: { current: Category | undefined }) {
                 </p>
               </fieldset>
             )}
+            {loaded && loaded.failed.length > 0 && (
+              <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-3 text-red-800">
+                <p className="flex items-center gap-2 font-bold"><AlertTriangle className="h-4 w-4" aria-hidden />Lần nhập trước: {loaded.failed.length} nội dung lỗi (các nội dung khác đã vào)</p>
+                <ul className="mt-1 space-y-1">{loaded.failed.map((f) => <li key={f.code}><span className="font-semibold">{f.code}:</span> {f.message}</li>)}</ul>
+                <p className="mt-1 text-xs">Sửa file rồi chọn lại file, hoặc bấm Nhập để thử lại — đội đã vào tự bỏ qua.</p>
+              </div>
+            )}
+            {p.nameClashes.length > 0 && (
+              <fieldset className="rounded-2xl border border-amber-300 bg-amber-50 p-3 text-amber-800">
+                <legend className="flex items-center gap-2 px-1 font-bold"><Users className="h-4 w-4" aria-hidden />{p.nameClashes.length} VĐV trùng tên người khác, không có MSSV / SĐT</legend>
+                <p className="text-xs">Chỉ có tên thì không biết chắc là một người hay hai. Khác CLB → mặc định là <strong>người khác</strong> (tạo hồ sơ riêng). Nếu đúng là cùng một người thì chọn &quot;Cùng người&quot;.</p>
+                <ul className="mt-2 space-y-2">
+                  {p.nameClashes.map((c) => (
+                    <li key={c.key} className="rounded-xl bg-white/70 p-2 text-sm text-slate-700">
+                      <p><span className="font-semibold text-slate-900">{c.name}</span>{c.club ? ` · ${c.club}` : ""} <span className="text-xs text-slate-500">({c.sheet} · dòng {c.row} · {c.code})</span></p>
+                      <p className="text-xs text-slate-500">Trùng tên với: {c.others.join("; ")}</p>
+                      <div className="mt-1 flex flex-wrap gap-2" role="radiogroup" aria-label={`${c.name} dòng ${c.row}`}>
+                        {(["new", "same"] as const).map((d) => (
+                          <label key={d} className={`inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-full border px-3 text-sm font-semibold ${c.decision === d ? "border-primary bg-red-50 text-red-800" : "border-slate-200 text-slate-600"}`}>
+                            <input type="radio" className="accent-red-600" name={c.key} checked={c.decision === d}
+                              onChange={() => loaded && setLoaded({ ...loaded, decisions: { ...loaded.decisions, [c.key]: d } })} />
+                            {d === "new" ? "Người khác" : "Cùng người"}
+                          </label>
+                        ))}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </fieldset>
+            )}
+            {p.warnings.length > 0 && (
+              <details className="rounded-2xl border border-amber-300 bg-amber-50 p-3 text-amber-800">
+                <summary className="flex cursor-pointer items-center gap-2 font-bold"><Info className="h-4 w-4" aria-hidden />{p.warnings.length} dòng có ô bị bỏ qua — vẫn nhập</summary>
+                <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto">
+                  {p.warnings.slice(0, 100).map((w, i) => <li key={i}><span className="font-semibold">{w.sheet} · dòng {w.row}:</span> {w.message}</li>)}
+                </ul>
+              </details>
+            )}
             {p.notes.length > 0 && (
               <ul className="space-y-1 rounded-2xl border border-amber-300 bg-amber-50 p-3 text-amber-800">
                 {p.notes.map((n) => <li key={n} className="flex gap-2"><Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />{n}</li>)}
@@ -195,7 +265,7 @@ export function ExcelPanel({ current }: { current: Category | undefined }) {
 
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setPlan(null)}>Huỷ</Button>
-              <Button variant="primary" disabled={total === 0} loading={busy} onClick={() => void commit()}>Nhập {total} đội</Button>
+              <Button variant="primary" disabled={total === 0 || busy} loading={committing} onClick={() => void commit()}>Nhập {total} đội</Button>
             </div>
           </div>
         )}

@@ -178,7 +178,7 @@ Trường bị khoá hiện mờ kèm lý do; server kiểm tra lại (lỗi 409
 
 **Đội / VĐV:**
 - **Nhập / xuất Excel / CSV Google Form** (khung *Excel* đầu trang), xem [6.8](#68-nhập--xuất-excel--csv). Mỗi VĐV gắn với một **hồ sơ** — xem [6.9](#69-vận-động-viên) và [7.10](#710-nhận-diện-vđv).
-- **Dán danh sách đăng ký**: mỗi dòng `tên ; CLB` (đôi: `tên / tên ; CLB`), CLB có thể bỏ trống. Chỉ khi chưa bốc thăm.
+- **Dán danh sách đăng ký**: mỗi dòng `tên ; CLB ; MSSV ; SĐT` (đôi: `tên A / tên B ; CLB ; MSSV A / MSSV B ; SĐT A / SĐT B`); chỉ tên bắt buộc. Có MSSV/SĐT thì không mất định danh khi phải dán tay thay vì nhập file. Chỉ khi chưa bốc thăm.
 - **Xoá đội**: chỉ khi chưa bốc thăm.
 - **Sửa đội** (thay VĐV, đổi đồng đội, đổi CLB): khi đội chưa thi đấu trận nào.
 - **Bốc thăm** chia bảng (xem [7.1](#71-bốc-thăm-ngẫu-nhiên)) và **Bốc thăm lại** (xác nhận trong hộp thoại).
@@ -371,7 +371,12 @@ Mỗi giải có danh sách **hồ sơ VĐV** riêng. Khi thêm đội (dán, Ex
 | — | SĐT khớp người đã có MSSV khác | **Từ chối** (`ATHLETE_MISMATCH`) |
 | 3 | Có MSSV/SĐT mới, và có đúng 1 hồ sơ cùng tên **chưa có** MSSV/SĐT | Gắn MSSV/SĐT vào hồ sơ đó (dữ liệu cũ) |
 | 4 | Chỉ có tên: đúng 1 hồ sơ cùng tên → dùng; chưa có → tạo mới | |
-| — | Chỉ có tên mà có **≥ 2** hồ sơ cùng tên | **Từ chối** — yêu cầu MSSV/SĐT, không đoán |
+| 4b | Chỉ có tên, **≥ 2** hồ sơ cùng tên nhưng **đúng 1 người cùng CLB** | Dùng người cùng CLB (vd "Nguyễn Thành Đạt ; VLU") |
+| — | Chỉ có tên, ≥ 2 hồ sơ cùng tên và CLB không phân biệt được | **Từ chối** — yêu cầu MSSV/SĐT, không đoán |
+| — | BTC chọn **"Người khác"** ở bước xem trước nhập file (`playerNNewAthlete`) | Bỏ bước khớp theo tên → **tạo hồ sơ mới** dù trùng tên (MSSV/SĐT nếu có vẫn khớp như bước 1–2) |
+
+- **Trùng tên khi nhập file**: người KHÔNG có MSSV/SĐT trùng tên với hồ sơ có sẵn hoặc với dòng khác trong file → nếu **khác CLB**, hộp xem trước liệt kê "N VĐV trùng tên người khác" (kèm người trùng: tên · CLB · có MSSV/SĐT không) với lựa chọn **Người khác** (mặc định) / **Cùng người**; cùng CLB hoặc thiếu CLB → coi là cùng người như trước. Không cần đổi tên kiểu "Nguyễn Thành Đạt (VLU)" nữa.
+- **Email** chỉ để liên lạc: sai định dạng (vd ô MAIL ghi tên người) → bỏ email, dòng vẫn nhập (xem trước báo "dòng có ô bị bỏ qua"); server cũng không từ chối cả lô vì email.
 
 - Tên so sánh không phân biệt hoa thường và khoảng trắng thừa; MSSV/SĐT chuẩn hoá như [6.8](#68-nhập--xuất-excel--csv).
 - Một người không đăng ký 2 lần cùng nội dung (`ATHLETE_ALREADY_ENTERED`); 2 VĐV của một đội phải là 2 người khác nhau.

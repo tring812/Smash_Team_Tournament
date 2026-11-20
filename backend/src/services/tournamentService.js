@@ -360,7 +360,8 @@ async function deleteCategory(pool, viewer, categoryId) {
  * @param {Array<{ player1Name: string, player2Name?: string|null, player1UserId?: string|null,
  *                 player2UserId?: string|null, club?: string, rating?: number|null, seed?: number|null,
  *                 player1StudentId?: string|null, player1Phone?: string|null, player1Email?: string|null,
- *                 player2StudentId?: string|null, player2Phone?: string|null, player2Email?: string|null }>} list
+ *                 player2StudentId?: string|null, player2Phone?: string|null, player2Email?: string|null,
+ *                 player1NewAthlete?: boolean, player2NewAthlete?: boolean }>} list
  */
 async function addEntries(pool, viewer, categoryId, list) {
   // eslint-disable-next-line global-require -- athleteService require tournamentService (vòng) → nạp muộn
@@ -380,16 +381,16 @@ async function addEntries(pool, viewer, categoryId, list) {
       if (cat.is_doubles !== Boolean(e.player2Name)) {
         throw unprocessable(`${line}: nội dung ${cat.is_doubles ? 'đôi cần 2' : 'đơn chỉ cần 1'} VĐV`);
       }
-      const resolve = async (n, sid, phone, email) => {
+      const resolve = async (n, sid, phone, email, newAthlete) => {
         try {
-          return await resolveAthlete(c, cat.tournament_id, { name: n, studentId: sid, phone, email, club: e.club });
+          return await resolveAthlete(c, cat.tournament_id, { name: n, studentId: sid, phone, email, club: e.club, newAthlete });
         } catch (err) {
           if (err instanceof Error && 'status' in err) err.message = `${line}: ${err.message}`;
           throw err;
         }
       };
-      const a1 = await resolve(e.player1Name, e.player1StudentId, e.player1Phone, e.player1Email);
-      const a2 = e.player2Name ? await resolve(e.player2Name, e.player2StudentId, e.player2Phone, e.player2Email) : null;
+      const a1 = await resolve(e.player1Name, e.player1StudentId, e.player1Phone, e.player1Email, e.player1NewAthlete);
+      const a2 = e.player2Name ? await resolve(e.player2Name, e.player2StudentId, e.player2Phone, e.player2Email, e.player2NewAthlete) : null;
       if (a2 && a2.id === a1.id) throw unprocessable(`${line}: hai VĐV của đội là cùng một người (${a1.full_name})`);
       for (const a of [a1, a2].filter(Boolean)) {
         if (inCategory.has(a.id)) throw conflict('ATHLETE_ALREADY_ENTERED', `${line}: ${a.full_name} đã đăng ký nội dung ${cat.code}`);
