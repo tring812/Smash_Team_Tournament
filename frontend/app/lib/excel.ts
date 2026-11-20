@@ -139,8 +139,9 @@ function matchOne(text: string, rowDiv: string | null, categories: Category[]): 
   if (byCode) return { cat: byCode };
   const plain = stripParen(text);
   const split = (c: Category) => splitDivision(c.name);
-  // 1) tên trùng nguyên văn (kể cả hạng trong tên) và không mâu thuẫn hạng của dòng
-  const exact = categories.find((x) => norm(x.name) === norm(plain) && (!rowDiv || !split(x).div || split(x).div === rowDiv));
+  // 1) tên trùng nguyên văn (kể cả hạng trong tên) và đúng hạng của dòng. Dòng có hạng mà nội dung không chia hạng
+  //    → để bước 2 xử lý: ưu tiên "Đôi nam A" nếu có, không thì gộp (merged → có ghi chú).
+  const exact = categories.find((x) => norm(x.name) === norm(plain) && (!rowDiv || split(x).div === rowDiv));
   if (exact) return { cat: exact };
   // 2) tên = gốc + hạng ("ĐÔI NAM A") hoặc gốc + hạng của dòng
   const own = splitDivision(plain);
