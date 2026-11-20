@@ -6,7 +6,6 @@ import { KeyRound, Lock, LockOpen, Pencil, Search, ShieldCheck, UserPlus, Users 
 import { api, fmtTime, loginUrl } from "../lib/api";
 import { usePoll } from "../lib/usePoll";
 import type { Account, Viewer } from "../lib/types";
-import { ThemeToggle } from "../components/ThemeToggle";
 import { Button, Card, CardSkeleton, EmptyState, Field, Modal, Notice, PageHeader, Select } from "../components/ui";
 
 /** Sinh mật khẩu tạm dễ đọc (bỏ ký tự dễ nhầm 0/O, 1/l). */
@@ -87,13 +86,6 @@ export default function AccountsPage() {
         )} />
 
       {msg && <Notice kind={msg.kind}>{msg.text}</Notice>}
-
-      <Card title="Giao diện trên máy này">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-slate-500">Hệ thống (mặc định) · Sáng · Tối. Lưu riêng cho từng máy — TV nhà thi đấu, điện thoại trọng tài chọn khác nhau được.</p>
-          <ThemeToggle />
-        </div>
-      </Card>
 
       <ChangePassword />
 

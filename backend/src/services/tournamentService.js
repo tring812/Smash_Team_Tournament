@@ -1198,14 +1198,24 @@ async function getTournament(db, slug, viewer) {
 /** @param {Queryable} db @param {Viewer|null} viewer */
 async function listTournaments(db, viewer) {
   const isAdmin = viewer?.role === 'admin';
+  // my_role: vai trò của người xem trong giải (BTC / trọng tài), null với khán giả.
+  // is_referee: có nhiệm vụ trọng tài (vai trò referee, phụ trách một sân, hoặc được gán riêng một trận)
+  //   → thanh điều hướng chỉ hiện mục "Trọng tài" cho những tài khoản này.
   const { rows } = await db.query(
-    `SELECT t.id, t.slug, t.name, t.venue, t.starts_at, t.status FROM tournaments t
-      WHERE t.status <> 'draft' OR $1::boolean
-         OR EXISTS (SELECT 1 FROM tournament_staff s WHERE s.tournament_id = t.id AND s.user_id = $2::uuid)
+    `SELECT t.id, t.slug, t.name, t.venue, t.starts_at, t.status,
+            s.role AS my_role,
+            ($2::uuid IS NOT NULL AND (
+               s.role = 'referee'
+               OR EXISTS (SELECT 1 FROM court_referees cr WHERE cr.tournament_id = t.id AND cr.user_id = $2::uuid)
+               OR EXISTS (SELECT 1 FROM matches m WHERE m.tournament_id = t.id AND m.referee_user_id = $2::uuid)
+            )) AS is_referee
+       FROM tournaments t
+       LEFT JOIN tournament_staff s ON s.tournament_id = t.id AND s.user_id = $2::uuid
+      WHERE t.status <> 'draft' OR $1::boolean OR s.user_id IS NOT NULL
       ORDER BY t.starts_at DESC LIMIT 100`,
     [isAdmin, viewer?.id ?? null],
   );
-  return rows;
+  return rows.map((r) => ({ ...r, my_role: r.my_role ?? null, is_referee: Boolean(r.is_referee) }));
 }
 
 /**

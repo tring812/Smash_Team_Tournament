@@ -97,7 +97,7 @@ Quyền **luôn kiểm tra ở server** (đọc lại vai trò từ DB mỗi req
 | `/t/<slug>/admin/staff` | Quản trị — Ban tổ chức | BTC |
 | `/t/<slug>/admin/log` | Quản trị — Nhật ký thao tác | BTC |
 
-Thanh điều hướng nổi có **Giải đấu · Lịch thi đấu · Bảng đấu · Trọng tài · Tạo giải** (tuỳ quyền); tên người dùng dẫn tới **Tài khoản**. "Lịch thi đấu" và "Bảng đấu" mở **đúng tab** của trang giải (giải đang xem, hoặc giải nổi bật), nên bấm từ thanh điều hướng hay từ trang giải đều ra **cùng một giao diện**. Trên điện thoại các mục này là nút biểu tượng có nhãn. Trang quản trị có sidebar đen riêng (thu thành nút ☰ trên điện thoại).
+Thanh điều hướng nổi: logo · **Lịch thi đấu ▾** (mở danh sách giải để chọn: đang diễn ra → sắp diễn ra → nháp → đã kết thúc) · **Trọng tài** (chỉ tài khoản có nhiệm vụ trọng tài: vai trò trọng tài của giải, phụ trách sân, hoặc được gán trận) · nút tài khoản. **Menu tài khoản**: tên + vai trò, **Quản lý giải** (admin: mọi giải; BTC: giải mình là BTC → trang quản trị), **Tạo giải mới** (admin), **Quản lý tài khoản** (admin) / **Đổi mật khẩu**, chọn giao diện, đăng xuất; Esc hoặc bấm ra ngoài để đóng. Điện thoại: thanh trên còn logo + tài khoản, **thanh tab đáy** Trang chủ · Lịch đấu (bảng chọn giải trượt lên) · Trọng tài; ẩn ở màn nhập điểm `/ref/<id>`. Trang quản trị có sidebar đen riêng (thu thành nút ☰ trên điện thoại).
 
 <sub>[↑ Back to contents](#contents)</sub>
 
@@ -395,7 +395,7 @@ Mỗi giải có danh sách **hồ sơ VĐV** riêng. Khi thêm đội (dán, Ex
 - **MSSV, SĐT, email là dữ liệu cá nhân**: chỉ API dành cho BTC trả ra (`/tournaments/:id/athletes`); danh sách đội công khai chỉ có tên, CLB và id hồ sơ. Nhật ký sửa hồ sơ chỉ ghi **tên trường** đã sửa, không ghi giá trị. Hồ sơ không còn ở đội nào bị xoá. File Excel xuất ra có MSSV/SĐT — BTC tự bảo quản.
 - **Kênh trực tiếp (SSE)** `/tournaments/:id/stream` chỉ báo "giải vừa đổi", không mang dữ liệu → client gọi lại API thường, quyền xem không đổi; giải nháp chỉ BTC mở được. Tối đa 1.000 kết nối/instance (quá → 503, client dùng polling).
 - Mọi truy vấn SQL tham số hoá; mọi dữ liệu vào kiểm tra bằng zod; lỗi trả `application/problem+json` không lộ chi tiết nội bộ.
-- **Giao diện Hệ thống / Sáng / Tối**: chọn ở chân trang, sidebar quản trị và trang Tài khoản; mặc định theo hệ thống, lưu **riêng từng máy** (`localStorage`, không theo tài khoản). Script nhỏ trong `<head>` đặt giao diện trước khi vẽ (không loé trắng). Màu đều lấy từ biến CSS nên đổi một chỗ; vùng cố ý tối (sidebar, TV, banner, chân trang) giữ nguyên. Đã quét tương phản chữ WCAG AA trên các trang chính ở cả hai chế độ.
+- **Giao diện Hệ thống / Sáng / Tối**: chọn ở menu tài khoản và sidebar quản trị (khán giả chưa đăng nhập theo cài đặt của máy); mặc định theo hệ thống, lưu **riêng từng máy** (`localStorage`, không theo tài khoản). Script nhỏ trong `<head>` đặt giao diện trước khi vẽ (không loé trắng). Màu đều lấy từ biến CSS nên đổi một chỗ; vùng cố ý tối (sidebar, TV, banner, chân trang) giữ nguyên. Đã quét tương phản chữ WCAG AA trên các trang chính ở cả hai chế độ.
 - **Chỉ khi dev**: `DATABASE_URL=pglite:...` (Postgres WASM, không cần cài Postgres) và `DEV_LOGIN=1` (nút "Dev: Admin / Dev: Trọng tài"). Cấu hình **từ chối** cả hai ở production.
 
 <sub>[↑ Back to contents](#contents)</sub>

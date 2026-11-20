@@ -4,13 +4,21 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Thanh điều hướng**: "Lịch thi đấu ▾" mở danh sách giải để chọn (đang diễn ra → sắp diễn ra → nháp → đã kết thúc), khỏi phải cuộn trang chủ. Mục **"Trọng tài" chỉ hiện với tài khoản có nhiệm vụ trọng tài** (vai trò trọng tài của giải, phụ trách sân, hoặc được gán trận); admin không còn thấy mục này.
+- **Menu tài khoản gom phần quản lý**: danh sách giải mình quản lý được (admin: mọi giải; BTC: giải mình là BTC) dẫn vào trang quản trị, "Tạo giải mới" (admin), "Quản lý tài khoản" (admin) hoặc "Đổi mật khẩu", chọn giao diện, đăng xuất. Bỏ mục "Tạo giải" khỏi thanh trên.
+- Điện thoại: thanh tab đáy Trang chủ · Lịch đấu (mở bảng chọn giải) · Trọng tài.
+- Trang chủ: banner gọn hơn, danh sách giải lên ngay dưới banner (trước phần giới thiệu tính năng), cùng thứ tự với bảng chọn giải.
+- Bỏ bộ chọn giao diện ở chân trang và ở trang Tài khoản (đã có trong menu tài khoản).
+- `GET /tournaments` trả thêm `my_role` (`organizer` | `referee` | `null`) và `is_referee` theo người xem.
+
 ### Added
 - **Ô tìm VĐV** trên tab Lịch thi đấu và Bảng đấu: gõ tên (không dấu cũng được) hoặc CLB → lịch chỉ còn trận của người đó, bảng đấu chỉ còn bảng có tên họ (dòng tô vàng), ô tóm tắt "MS Bảng C · hạng 3". Giữ `?q=` khi chuyển tab, chia sẻ được. Tab Bảng đấu mặc định hiện mọi nội dung đã bốc thăm (có nút "Tất cả nội dung").
 - **Nhập file đăng ký dạng Google Sheets của BTC**: sheet câu trả lời Form có rẽ nhánh (nhiều cột "nội dung", MSSV đồng đội không ghi "partner"), cột **"Đăng kí bảng đấu" = hạng** (Bảng A / Bảng B → nội dung "Đôi nam A" / "Đôi nam B"; giải không chia hạng thì gộp và báo), và **mỗi nội dung một sheet** (tên sheet "ĐÔI NAM A", đôi = 2 dòng cùng STT "ĐỘI n"). Bản xem trước cho **chọn sheet** (mặc định chỉ sheet theo nội dung); bỏ qua cột link minh chứng / chuyển khoản.
 - **Luật điểm theo vòng** (migration `007_round_rules`, `PUT /categories/:id/round-rules`): vòng bảng, mọi vòng loại trực tiếp, và từng vòng (tứ kết / bán kết / chung kết… đếm ngược từ chung kết, đặt được trước khi có nhánh); điểm 21/15/11 hoặc tuỳ chỉnh, 1 game / 2/3 / 3/5. Khoá theo từng trận đã bắt đầu (`RULES_LOCKED`). Bàn điểm, kiểm tra tỉ số và trang công khai dùng luật của vòng.
 - **Bàn điểm: bên giao cầu & ô giao** (bên thắng pha giao tiếp; điểm chẵn → ô phải, lẻ → ô trái), hoàn tác trả lại bên giao, nút sửa bên giao.
 - **Nhắc nghỉ & đổi sân**: nghỉ 60 s khi bên dẫn chạm nửa số điểm (11/8/6), nghỉ 2 phút + đổi sân giữa game, đổi sân ở game quyết định; đếm ngược, rung máy, tự đổi bên trên màn hình.
-- **Giao diện Hệ thống / Sáng / Tối** (chân trang, sidebar quản trị, trang Tài khoản), lưu theo từng máy, không loé trắng khi tải trang.
+- **Giao diện Hệ thống / Sáng / Tối** (menu tài khoản, sidebar quản trị), lưu theo từng máy, không loé trắng khi tải trang. Khán giả chưa đăng nhập theo cài đặt của máy.
 - **Hồ sơ VĐV theo giải, nhận diện bằng MSSV + SĐT** (migration `006_athletes`): một người đánh nhiều nội dung là một hồ sơ; hai người trùng tên khác MSSV là hai người. Chống trùng lịch / gọi sân / gợi ý nghỉ so theo hồ sơ thay vì chuỗi tên. Tên mơ hồ hoặc MSSV/SĐT mâu thuẫn bị từ chối thay vì đoán. Dữ liệu cũ tự tạo hồ sơ theo tên.
 - Trang **Quản trị › Vận động viên** (`GET /tournaments/:id/athletes`, `PATCH /athletes/:id`): tìm theo tên/MSSV/SĐT, gọi điện, sửa hồ sơ (đổi tên cập nhật mọi đội), nhãn trùng tên. MSSV/SĐT/email chỉ BTC thấy.
 - **Nhập CSV Google Form**: nhận cột theo nghĩa (Họ và tên, MSSV, Số điện thoại, Khoa, Nội dung thi đấu chọn nhiều, cột đồng đội), chuẩn hoá SĐT/MSSV, bỏ qua người đã đăng ký theo MSSV → SĐT → tên. File mẫu và file xuất thêm cột MSSV/SĐT.

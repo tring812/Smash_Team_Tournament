@@ -24,6 +24,10 @@ export interface TournamentSummary {
   venue: string;
   starts_at: string;
   status: "draft" | "published" | "ongoing" | "completed";
+  /** Vai trò của người xem trong giải (chỉ có trong GET /tournaments khi đã đăng nhập). */
+  my_role?: "organizer" | "referee" | null;
+  /** Có nhiệm vụ trọng tài ở giải này (vai trò trọng tài, phụ trách sân, hoặc được gán trận). */
+  is_referee?: boolean;
 }
 
 export interface Category {
