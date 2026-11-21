@@ -360,7 +360,8 @@ async function deleteCategory(pool, viewer, categoryId) {
  * @param {Array<{ player1Name: string, player2Name?: string|null, player1UserId?: string|null,
  *                 player2UserId?: string|null, club?: string, rating?: number|null, seed?: number|null,
  *                 player1StudentId?: string|null, player1Phone?: string|null, player1Email?: string|null,
- *                 player2StudentId?: string|null, player2Phone?: string|null, player2Email?: string|null }>} list
+ *                 player2StudentId?: string|null, player2Phone?: string|null, player2Email?: string|null,
+ *                 player1NewAthlete?: boolean, player2NewAthlete?: boolean }>} list
  */
 async function addEntries(pool, viewer, categoryId, list) {
   // eslint-disable-next-line global-require -- athleteService require tournamentService (vòng) → nạp muộn
@@ -380,16 +381,16 @@ async function addEntries(pool, viewer, categoryId, list) {
       if (cat.is_doubles !== Boolean(e.player2Name)) {
         throw unprocessable(`${line}: nội dung ${cat.is_doubles ? 'đôi cần 2' : 'đơn chỉ cần 1'} VĐV`);
       }
-      const resolve = async (n, sid, phone, email) => {
+      const resolve = async (n, sid, phone, email, newAthlete) => {
         try {
-          return await resolveAthlete(c, cat.tournament_id, { name: n, studentId: sid, phone, email, club: e.club });
+          return await resolveAthlete(c, cat.tournament_id, { name: n, studentId: sid, phone, email, club: e.club, newAthlete });
         } catch (err) {
           if (err instanceof Error && 'status' in err) err.message = `${line}: ${err.message}`;
           throw err;
         }
       };
-      const a1 = await resolve(e.player1Name, e.player1StudentId, e.player1Phone, e.player1Email);
-      const a2 = e.player2Name ? await resolve(e.player2Name, e.player2StudentId, e.player2Phone, e.player2Email) : null;
+      const a1 = await resolve(e.player1Name, e.player1StudentId, e.player1Phone, e.player1Email, e.player1NewAthlete);
+      const a2 = e.player2Name ? await resolve(e.player2Name, e.player2StudentId, e.player2Phone, e.player2Email, e.player2NewAthlete) : null;
       if (a2 && a2.id === a1.id) throw unprocessable(`${line}: hai VĐV của đội là cùng một người (${a1.full_name})`);
       for (const a of [a1, a2].filter(Boolean)) {
         if (inCategory.has(a.id)) throw conflict('ATHLETE_ALREADY_ENTERED', `${line}: ${a.full_name} đã đăng ký nội dung ${cat.code}`);
@@ -709,10 +710,11 @@ async function groupStandings(db, categoryId) {
     const byId = new Map(mem.map((e) => [e.id, e]));
     const rows = computeStandings(active.map((e) => e.id), finished, tiebreak).map((r) => ({
       ...r, name: entryLabel(byId.get(r.entryId)), club: byId.get(r.entryId)?.club ?? '', disqualified: false, dqReason: null,
+      players: entryPlayers(byId.get(r.entryId)),
     }));
     const dq = mem.filter((e) => e.disqualified_at).map((e) => ({
       entryId: e.id, rank: null, played: 0, won: 0, lost: 0, gamesFor: 0, gamesAgainst: 0, pointsFor: 0, pointsAgainst: 0,
-      name: entryLabel(e), club: e.club ?? '', disqualified: true, dqReason: e.dq_reason,
+      name: entryLabel(e), club: e.club ?? '', disqualified: true, dqReason: e.dq_reason, players: entryPlayers(e),
     }));
     return { groupId: g.id, name: g.name, complete: finished.length === ms.length, standings: [...rows, ...dq] };
   });
@@ -1140,6 +1142,8 @@ const MATCH_SELECT = `
          m.entry_a_id, m.entry_b_id, m.winner_entry_id,
          ea.player1_name AS a_p1, ea.player2_name AS a_p2, ea.club AS a_club, ea.disqualified_at IS NOT NULL AS a_dq,
          eb.player1_name AS b_p1, eb.player2_name AS b_p2, eb.club AS b_club, eb.disqualified_at IS NOT NULL AS b_dq,
+         ea.player1_athlete_id AS a_p1_aid, ea.player2_athlete_id AS a_p2_aid,
+         eb.player1_athlete_id AS b_p1_aid, eb.player2_athlete_id AS b_p2_aid,
          cat.points_to_win, cat.max_points, cat.games_to_win, cat.round_rules,
          (SELECT max(k.round) FROM matches k WHERE k.category_id = m.category_id AND k.stage = 'knockout') AS ko_rounds
     FROM matches m
@@ -1148,6 +1152,17 @@ const MATCH_SELECT = `
     LEFT JOIN entries ea ON ea.id = m.entry_a_id
     LEFT JOIN entries eb ON eb.id = m.entry_b_id
     LEFT JOIN users ru ON ru.id = m.referee_user_id`;
+
+/**
+ * Từng VĐV của một đội: { athleteId, name }. athleteId (hồ sơ VĐV theo giải) KHÔNG phải dữ liệu cá nhân — chỉ để
+ * client phân biệt hai người trùng tên (ô tìm VĐV gom theo người). MSSV/SĐT không bao giờ trả ở đây.
+ */
+function playersOfEntry(p1, p1Aid, p2, p2Aid) {
+  return [p1 ? { athleteId: p1Aid ?? null, name: p1 } : null, p2 ? { athleteId: p2Aid ?? null, name: p2 } : null].filter(Boolean);
+}
+
+/** @param {any} e entries row */
+const entryPlayers = (e) => (e ? playersOfEntry(e.player1_name, e.player1_athlete_id, e.player2_name, e.player2_athlete_id) : []);
 
 /** Định dạng trận cho client. */
 function presentMatch(r) {
@@ -1172,8 +1187,14 @@ function presentMatch(r) {
     version: r.version,
     updatedAt: r.updated_at,
     referee: r.referee_user_id ? { id: r.referee_user_id, name: r.referee_name } : null,
-    a: r.entry_a_id ? { id: r.entry_a_id, name: label(r.a_p1, r.a_p2), club: r.a_club, disqualified: Boolean(r.a_dq) } : null,
-    b: r.entry_b_id ? { id: r.entry_b_id, name: label(r.b_p1, r.b_p2), club: r.b_club, disqualified: Boolean(r.b_dq) } : null,
+    a: r.entry_a_id ? {
+      id: r.entry_a_id, name: label(r.a_p1, r.a_p2), club: r.a_club, disqualified: Boolean(r.a_dq),
+      players: playersOfEntry(r.a_p1, r.a_p1_aid, r.a_p2, r.a_p2_aid),
+    } : null,
+    b: r.entry_b_id ? {
+      id: r.entry_b_id, name: label(r.b_p1, r.b_p2), club: r.b_club, disqualified: Boolean(r.b_dq),
+      players: playersOfEntry(r.b_p1, r.b_p1_aid, r.b_p2, r.b_p2_aid),
+    } : null,
     winner: r.winner_entry_id ? (r.winner_entry_id === r.entry_a_id ? 'a' : 'b') : null,
     rules: effectiveRules(r, r.stage, r.round, r.ko_rounds),
   };

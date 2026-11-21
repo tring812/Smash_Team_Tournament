@@ -4,16 +4,11 @@ import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { KeyRound, Lock, LockOpen, Pencil, Search, ShieldCheck, UserPlus, Users } from "lucide-react";
 import { api, fmtTime, loginUrl } from "../lib/api";
+import { tempPassword } from "../lib/password";
 import { usePoll } from "../lib/usePoll";
 import type { Account, Viewer } from "../lib/types";
 import { Button, Card, CardSkeleton, EmptyState, Field, Modal, Notice, PageHeader, Select } from "../components/ui";
 
-/** Sinh mật khẩu tạm dễ đọc (bỏ ký tự dễ nhầm 0/O, 1/l). */
-function tempPassword() {
-  const abc = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const buf = crypto.getRandomValues(new Uint32Array(12));
-  return Array.from(buf, (n) => abc[n % abc.length]).join("");
-}
 
 type Draft = { id?: string; username: string; hadUsername?: boolean; fullName: string; role: "admin" | "user"; password: string };
 

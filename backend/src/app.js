@@ -10,6 +10,7 @@ const svc = require('./services/tournamentService');
 const users = require('./services/userService');
 const courts = require('./services/courtService');
 const athletes = require('./services/athleteService');
+const referees = require('./services/refereeService');
 const live = require('./liveBus');
 const auth = require('./auth');
 const { schemas } = require('./schemas');
@@ -151,6 +152,24 @@ function createApp({ pool, config }) {
   api.delete('/tournaments/:id/staff/:userId', auth.requireAuth, async (req, res) => {
     await svc.removeStaff(pool, me(req), id(req.params.id), id(req.params.userId));
     res.status(204).end();
+  });
+  // ── Tài khoản trọng tài của giải (BTC tự quản lý, xem refereeService) ──
+  api.get('/tournaments/:id/referees', auth.requireAuth, async (req, res) => {
+    res.json(await referees.listReferees(pool, me(req), id(req.params.id)));
+  });
+  api.post('/tournaments/:id/referees', auth.requireAuth, async (req, res) => {
+    const u = await referees.createReferee(pool, me(req), id(req.params.id), schemas.createReferee.parse(req.body));
+    log('info', 'referee_created', { request_id: req.id, user_id: u.id, by: me(req).id, tournament_id: req.params.id });
+    res.status(201).json(u);
+  });
+  api.patch('/tournaments/:id/referees/:userId', auth.requireAuth, async (req, res) => {
+    const patch = schemas.updateReferee.parse(req.body);
+    const u = await referees.updateReferee(pool, me(req), id(req.params.id), id(req.params.userId), patch);
+    log('info', 'referee_updated', { request_id: req.id, user_id: u.id, by: me(req).id, fields: Object.keys(patch) });
+    res.json(u);
+  });
+  api.delete('/tournaments/:id/referees/:userId', auth.requireAuth, async (req, res) => {
+    res.json(await referees.removeReferee(pool, me(req), id(req.params.id), id(req.params.userId)));
   });
   api.post('/tournaments/:id/categories', auth.requireAuth, async (req, res) => {
     res.status(201).json(await svc.createCategory(pool, me(req), id(req.params.id), schemas.createCategory.parse(req.body)));

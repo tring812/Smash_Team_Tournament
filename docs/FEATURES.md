@@ -178,7 +178,7 @@ Trường bị khoá hiện mờ kèm lý do; server kiểm tra lại (lỗi 409
 
 **Đội / VĐV:**
 - **Nhập / xuất Excel / CSV Google Form** (khung *Excel* đầu trang), xem [6.8](#68-nhập--xuất-excel--csv). Mỗi VĐV gắn với một **hồ sơ** — xem [6.9](#69-vận-động-viên) và [7.10](#710-nhận-diện-vđv).
-- **Dán danh sách đăng ký**: mỗi dòng `tên ; CLB` (đôi: `tên / tên ; CLB`), CLB có thể bỏ trống. Chỉ khi chưa bốc thăm.
+- **Dán danh sách đăng ký**: mỗi dòng `tên ; CLB ; MSSV ; SĐT` (đôi: `tên A / tên B ; CLB ; MSSV A / MSSV B ; SĐT A / SĐT B`); chỉ tên bắt buộc. Có MSSV/SĐT thì không mất định danh khi phải dán tay thay vì nhập file. Chỉ khi chưa bốc thăm.
 - **Xoá đội**: chỉ khi chưa bốc thăm.
 - **Sửa đội** (thay VĐV, đổi đồng đội, đổi CLB): khi đội chưa thi đấu trận nào.
 - **Bốc thăm** chia bảng (xem [7.1](#71-bốc-thăm-ngẫu-nhiên)) và **Bốc thăm lại** (xác nhận trong hộp thoại).
@@ -214,8 +214,15 @@ Số sân / phút mỗi trận chỉ áp cho lần xếp đó, không đổi c�
 - **Dời** một trận: đổi giờ dự kiến và/hoặc sân mà không phải xếp lại cả giai đoạn. Chặn trùng sân hoặc trùng VĐV trong cùng khung giờ (± số phút mỗi trận). Trận đang ở sân chỉ **chuyển sân**.
 - **Nhập điểm** (mở bàn trọng tài) hoặc **Mở lại** trận đã kết thúc để sửa tỉ số — xem [7.7](#77-mở-lại-trận).
 
-### 6.6 Ban tổ chức
-- Tìm tài khoản theo tên hoặc tên đăng nhập → thêm làm **Trọng tài** hoặc **BTC**; gỡ khỏi giải. Tài khoản bị khoá không thêm được. Chưa có tài khoản → quản trị viên tạo ở `/accounts`.
+### 6.6 Ban tổ chức & trọng tài
+- **Tài khoản trọng tài** — BTC tự quản lý, không cần nhờ quản trị viên:
+  - **Tạo**: họ tên → tên đăng nhập tự gợi ý ("Nguyễn Thị Lan" → `lan.nguyen`, sửa được), mật khẩu sinh ngẫu nhiên → tạo xong vào giải làm trọng tài ngay; hộp thoại hiện **tên đăng nhập + mật khẩu một lần** kèm nút **Sao chép** để gửi cho trọng tài.
+  - **Danh sách**: tên, `@tên đăng nhập`, lần đăng nhập cuối (hoặc "chưa đăng nhập lần nào"), sân phụ trách, số trận, số giải khác đang làm; nhãn **Đã khoá** / **Chưa có mật khẩu**.
+  - **Sửa**: đổi tên · **đặt lại mật khẩu** (hiện mật khẩu mới một lần) · **khoá / mở khoá**. Đặt lại mật khẩu hoặc khoá → mọi thiết bị đang đăng nhập bị đăng xuất.
+  - **Gỡ khỏi giải**: bỏ vai trò trọng tài và phụ trách sân ở giải này (trận đã chấm giữ nguyên). Nếu người đó không còn làm ở giải nào khác → **tài khoản bị khoá** (không xoá cứng, mở khoá lại được).
+  - **Phạm vi quyền**: BTC chỉ sửa được tài khoản thường **không là BTC ở đâu** và **mọi giải người đó đang làm đều do BTC này quản lý** — BTC giải A không chiếm được tài khoản trọng tài đang làm cho giải B của người khác (với tài khoản đó chỉ có nút Gỡ). Quản trị viên sửa được mọi trọng tài. Mật khẩu không bao giờ ghi vào nhật ký.
+- **Thêm tài khoản có sẵn**: tìm theo tên hoặc tên đăng nhập → thêm làm **Trọng tài** hoặc **BTC**. Tài khoản bị khoá không thêm được.
+- **Ban tổ chức**: danh sách BTC của giải, gỡ được.
 
 ### 6.7 Nhật ký thao tác
 - Mọi thao tác điều hành (xem [8](#8-nhật-ký--kiểm-soát)): thời gian, loại, nội dung, mô tả, người làm. Không sửa, không xoá được.
@@ -364,7 +371,12 @@ Mỗi giải có danh sách **hồ sơ VĐV** riêng. Khi thêm đội (dán, Ex
 | — | SĐT khớp người đã có MSSV khác | **Từ chối** (`ATHLETE_MISMATCH`) |
 | 3 | Có MSSV/SĐT mới, và có đúng 1 hồ sơ cùng tên **chưa có** MSSV/SĐT | Gắn MSSV/SĐT vào hồ sơ đó (dữ liệu cũ) |
 | 4 | Chỉ có tên: đúng 1 hồ sơ cùng tên → dùng; chưa có → tạo mới | |
-| — | Chỉ có tên mà có **≥ 2** hồ sơ cùng tên | **Từ chối** — yêu cầu MSSV/SĐT, không đoán |
+| 4b | Chỉ có tên, **≥ 2** hồ sơ cùng tên nhưng **đúng 1 người cùng CLB** | Dùng người cùng CLB (vd "Nguyễn Thành Đạt ; VLU") |
+| — | Chỉ có tên, ≥ 2 hồ sơ cùng tên và CLB không phân biệt được | **Từ chối** — yêu cầu MSSV/SĐT, không đoán |
+| — | BTC chọn **"Người khác"** ở bước xem trước nhập file (`playerNNewAthlete`) | Bỏ bước khớp theo tên → **tạo hồ sơ mới** dù trùng tên (MSSV/SĐT nếu có vẫn khớp như bước 1–2) |
+
+- **Trùng tên khi nhập file**: người KHÔNG có MSSV/SĐT trùng tên với hồ sơ có sẵn hoặc với dòng khác trong file → nếu **khác CLB**, hộp xem trước liệt kê "N VĐV trùng tên người khác" (kèm người trùng: tên · CLB · có MSSV/SĐT không) với lựa chọn **Người khác** (mặc định) / **Cùng người**; cùng CLB hoặc thiếu CLB → coi là cùng người như trước. Không cần đổi tên kiểu "Nguyễn Thành Đạt (VLU)" nữa.
+- **Email** chỉ để liên lạc: sai định dạng (vd ô MAIL ghi tên người) → bỏ email, dòng vẫn nhập (xem trước báo "dòng có ô bị bỏ qua"); server cũng không từ chối cả lô vì email.
 
 - Tên so sánh không phân biệt hoa thường và khoảng trắng thừa; MSSV/SĐT chuẩn hoá như [6.8](#68-nhập--xuất-excel--csv).
 - Một người không đăng ký 2 lần cùng nội dung (`ATHLETE_ALREADY_ENTERED`); 2 VĐV của một đội phải là 2 người khác nhau.
@@ -419,6 +431,8 @@ Tiền tố `/api`. Request ghi phải có header `X-Requested-With: fetch`. L�
 | POST | `/tournaments/:id/schedule` `{stage, startAt?, courts?, slotMinutes?}` | BTC | Xếp lịch vòng bảng / loại trực tiếp |
 | GET | `/tournaments/:id/events` | BTC | Nhật ký thao tác |
 | GET · PUT · DELETE | `/tournaments/:id/staff[/:userId]` | BTC | BTC & trọng tài |
+| GET · POST | `/tournaments/:id/referees` `{username, fullName, password}` | BTC | Danh sách trọng tài kèm tài khoản (`can_manage`) · tạo tài khoản trọng tài + thêm vào giải |
+| PATCH · DELETE | `/tournaments/:id/referees/:userId` `{fullName?, password?, disabled?}` | BTC | Đổi tên / đặt lại mật khẩu / khoá – mở khoá · gỡ khỏi giải (khoá tài khoản nếu không còn làm giải nào) |
 | POST | `/tournaments/:id/categories` | BTC | **Tạo** nội dung |
 | PATCH · DELETE | `/categories/:id` | BTC | **Sửa · xoá** nội dung |
 | PUT | `/categories/:id/round-rules` `{rules: [{stage: group\|knockout, fromEnd?: 1..6\|null, pointsToWin, maxPoints, gamesToWin}]}` | BTC | Luật điểm theo vòng (thay toàn bộ; `[]` = bỏ hết). `fromEnd`: 1 = chung kết, 2 = bán kết, 3 = tứ kết; `null` = mọi vòng loại |

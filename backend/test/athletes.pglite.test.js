@@ -151,6 +151,38 @@ describe('Hồ sơ VĐV & bảng có sẵn (PGlite)', { skip: hasPglite ? false 
     await svc.deleteCategory(pool, ADMIN, tmp.id);
     assert.ok((await athletesOf()).some((a) => a.student_id === '21520004'), 'người còn ở nội dung khác vẫn giữ');
   });
+  test('trùng tên, khác người: newAthlete tạo hồ sơ riêng thay vì báo "đã đăng ký"', async () => {
+    const md = await svc.createCategory(pool, ADMIN, t.id, { code: 'MD2', name: 'Đôi nam 2', isDoubles: true, groupCount: 1 });
+    await svc.addEntries(pool, ADMIN, md.id, [{ player1Name: 'Nguyễn Thành Đạt', player1Phone: '0901000001', player2Name: 'Trần Phú', club: 'UEF' }]);
+    // Không MSSV/SĐT, trùng tên → mặc định coi là cùng người → bị chặn trùng nội dung (hành vi cũ).
+    await assert.rejects(svc.addEntries(pool, ADMIN, md.id, [{ player1Name: 'Nguyễn Thành Đạt', player2Name: 'Nguyễn Viết Huy', club: 'VLU' }]),
+      (err) => err.code === 'ATHLETE_ALREADY_ENTERED');
+    // BTC xác nhận "người khác" → hồ sơ mới, nhập được.
+    const [e] = await svc.addEntries(pool, ADMIN, md.id, [{ player1Name: 'Nguyễn Thành Đạt', player1NewAthlete: true, player2Name: 'Nguyễn Viết Huy', club: 'VLU' }]);
+    const { rows } = await pool.query(`SELECT id, club FROM athletes WHERE tournament_id = $1 AND name_key = 'nguyễn thành đạt' ORDER BY created_at`, [t.id]);
+    assert.equal(rows.length, 2);
+    assert.equal(e.player1_athlete_id, rows[1].id);
+    assert.equal(rows[1].club, 'VLU');
+  });
+
+  test('nhiều hồ sơ cùng tên: CLB trùng đúng 1 người thì dùng người đó, không thì vẫn hỏi MSSV/SĐT', async () => {
+    const s2 = await svc.createCategory(pool, ADMIN, t.id, { code: 'S2', name: 'Đơn 2', isDoubles: false, groupCount: 1 });
+    const [e] = await svc.addEntries(pool, ADMIN, s2.id, [{ player1Name: 'Nguyễn Thành Đạt', club: 'VLU' }]);
+    const { rows } = await pool.query(`SELECT club FROM athletes WHERE id = $1`, [e.player1_athlete_id]);
+    assert.equal(rows[0].club, 'VLU');
+    await assert.rejects(svc.addEntries(pool, ADMIN, s2.id, [{ player1Name: 'Nguyễn Thành Đạt', club: 'HUTECH' }]), /nhập MSSV hoặc SĐT/);
+  });
+
+  test('email sai định dạng bị bỏ qua, không làm hỏng cả lô', async () => {
+    const es = await svc.createCategory(pool, ADMIN, t.id, { code: 'ES', name: 'Email', isDoubles: false, groupCount: 1 });
+    const out = await svc.addEntries(pool, ADMIN, es.id, [
+      { player1Name: 'Nguyễn Hữu Bằng', player1Email: 'Bằng Nguyễn Hữu', player1Phone: '0901000002' },
+      { player1Name: 'Người Có Mail', player1Email: 'ok@example.com' },
+    ]);
+    assert.equal(out.length, 2);
+    const { rows } = await pool.query(`SELECT full_name, email FROM athletes WHERE id = ANY($1) ORDER BY full_name`, [out.map((x) => x.player1_athlete_id)]);
+    assert.deepEqual(rows.map((r) => r.email), [null, 'ok@example.com']);
+  });
 });
 
 describe('Migration 006: tạo hồ sơ cho dữ liệu cũ (PGlite)', { skip: hasPglite ? false : 'chưa cài @electric-sql/pglite' }, () => {

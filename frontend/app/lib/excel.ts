@@ -21,9 +21,27 @@ import type { Athlete, Category, Entry } from "./types";
 export type CellValue = string | number | boolean | Date | null | undefined;
 export interface RawSheet { sheet: string; data: CellValue[][] }
 
-export interface Person { name: string; studentId: string | null; phone: string | null; email: string | null }
+export interface Person {
+  name: string; studentId: string | null; phone: string | null; email: string | null;
+  /** BTC xác nhận: người KHÁC, chỉ trùng tên với hồ sơ đã có → server tạo hồ sơ mới. */
+  newAthlete?: boolean;
+}
 export interface ImportRow { sheet: string; row: number; code: string; p1: Person; p2: Person | null; club: string; group: string | null }
 export interface ImportIssue { sheet: string; row: number; message: string }
+/**
+ * VĐV không có MSSV/SĐT mà TRÙNG TÊN với người đã có (trong giải hoặc dòng khác của file) và khác CLB.
+ * Chỉ có tên thì không biết chắc là một người hay hai → BTC chọn ở bước xem trước.
+ */
+export interface NameClash {
+  /** Khoá ổn định của ô người này trong file: "sheet|dòng|p1" → dùng làm khoá lựa chọn. */
+  key: string;
+  sheet: string; row: number; code: string;
+  name: string; club: string;
+  /** Những người cùng tên đã có (tên + CLB + có MSSV/SĐT hay không). */
+  others: string[];
+  decision: NameDecision;
+}
+export type NameDecision = "same" | "new";
 export interface ImportPlan {
   /** Theo nội dung: các đội sẽ thêm (chỉ nội dung đang nhận đăng ký). `groups`: chia bảng theo file. */
   byCategory: { category: Category; rows: ImportRow[]; groups: { name: string; rows: number[] }[] | null }[];
@@ -32,6 +50,10 @@ export interface ImportPlan {
   skipped: ImportIssue[];
   /** Lưu ý chung (vd file chia hạng A/B nhưng giải chưa có nội dung theo hạng). */
   notes: string[];
+  /** Dòng vẫn nhập nhưng có ô bị bỏ qua (vd email sai định dạng). */
+  warnings: ImportIssue[];
+  /** Trùng tên khác CLB, không có MSSV/SĐT — BTC chọn "cùng người" / "người khác". */
+  nameClashes: NameClash[];
 }
 
 export const MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -218,7 +240,8 @@ function knownFor(entries: Entry[], athletes: Map<string, Athlete>): Known {
 }
 const isKnown = (k: Known, p: Person) => (p.studentId ? k.sids.has(p.studentId) : false)
   || (p.phone ? k.phones.has(p.phone) : false)
-  || (!p.studentId && !p.phone && k.names.has(nameKey(p.name)));
+  || (!p.studentId && !p.phone && !p.newAthlete && k.names.has(nameKey(p.name)));
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const remember = (k: Known, p: Person) => {
   if (p.studentId) k.sids.add(p.studentId);
   if (p.phone) k.phones.add(p.phone);
@@ -228,11 +251,48 @@ const remember = (k: Known, p: Person) => {
 /**
  * Đọc các sheet → kế hoạch nhập đã kiểm tra (thuần, không gọi mạng — test được).
  * @param existing đội đã có theo categoryId  @param athletes hồ sơ VĐV của giải (BTC) để so MSSV/SĐT
+ * @param decisions lựa chọn của BTC cho các dòng trùng tên (khoá = NameClash.key)
  */
 export function planImport(sheets: RawSheet[], categories: Category[], fallback: Category | undefined,
-  existing: Record<string, Entry[]>, athletes: Athlete[] = []): ImportPlan {
+  existing: Record<string, Entry[]>, athletes: Athlete[] = [], decisions: Record<string, NameDecision> = {}): ImportPlan {
   const errors: ImportIssue[] = [];
   const skipped: ImportIssue[] = [];
+  const warnings: ImportIssue[] = [];
+  const clashes = new Map<string, NameClash>();
+  /**
+   * Người đã biết trong CẢ GIẢI theo tên (hồ sơ có sẵn + người ở các dòng trước của file) → phát hiện trùng tên.
+   * `slot` = ô của dòng đã thêm người đó (để không tự so với chính mình khi một dòng đăng ký nhiều nội dung).
+   */
+  type Seen = { club: string; label: string; slot: string | null };
+  const byName = new Map<string, Seen[]>();
+  const seen = (name: string, s: Seen) => byName.set(nameKey(name), [...(byName.get(nameKey(name)) ?? []), s]);
+  for (const a of athletes) {
+    const ids = [a.student_id ? `MSSV ${a.student_id}` : null, a.phone ? "có SĐT" : null].filter(Boolean).join(", ");
+    seen(a.full_name, { club: a.club ?? "", label: `${a.full_name}${a.club ? ` · ${a.club}` : ""}${ids ? ` (${ids})` : ""}`, slot: null });
+  }
+  /**
+   * Người KHÔNG có MSSV/SĐT trùng tên người khác: cùng CLB (hoặc thiếu CLB) → coi là cùng người như trước;
+   * khác CLB → mặc định là NGƯỜI KHÁC (newAthlete) nhưng đưa vào danh sách để BTC đổi lại nếu cần.
+   */
+  const decide = (p: Person, slot: string, at: { sheet: string; row: number }, code: string, club: string) => {
+    if (p.studentId || p.phone) return;
+    const others = (byName.get(nameKey(p.name)) ?? []).filter((o) => o.slot !== slot);
+    if (!others.length) return;
+    const clubDiff = Boolean(club) && others.every((o) => o.club && norm(o.club) !== norm(club));
+    const choice = decisions[slot] ?? (clubDiff ? "new" : "same");
+    if (clubDiff || decisions[slot]) {
+      if (!clashes.has(slot)) {
+        clashes.set(slot, { key: slot, ...at, code, name: p.name, club, others: [...new Set(others.map((o) => o.label))], decision: choice });
+      }
+    }
+    if (choice === "new") p.newAthlete = true;
+  };
+  const added = new Set<string>();
+  const note = (p: Person, slot: string, club: string) => {
+    if (added.has(slot)) return;
+    added.add(slot);
+    seen(p.name, { club, label: `${p.name}${club ? ` · ${club}` : ""} (dòng ${slot.split("|")[1]} sheet ${slot.split("|")[0]})`, slot });
+  };
   const athleteById = new Map(athletes.map((a) => [a.id, a]));
   const buckets = new Map<string, ImportRow[]>();
   const known = new Map<string, Known>();
@@ -305,7 +365,11 @@ export function planImport(sheets: RawSheet[], categories: Category[], fallback:
         if (rawSid && !studentId) return `MSSV "${rawSid}" của ${name} không hợp lệ (4–20 chữ/số)`;
         if (rawPhone && !phone) return `SĐT "${rawPhone}" của ${name} không hợp lệ`;
         if (name.length > NAME_MAX) return `Tên dài quá ${NAME_MAX} ký tự`;
-        return { name, studentId, phone, email: col(src, `${pre}Email` as Field) || null };
+        // Email chỉ để liên lạc: sai định dạng (vd ô ghi tên người) → bỏ email, vẫn nhập dòng.
+        const rawEmail = col(src, `${pre}Email` as Field);
+        const email = rawEmail && EMAIL_RE.test(rawEmail) && rawEmail.length <= 254 ? rawEmail.toLowerCase() : null;
+        if (rawEmail && !email) warnings.push({ ...at, message: `Email "${rawEmail}" của ${name} không hợp lệ — bỏ qua email, vẫn nhập` });
+        return { name, studentId, phone, email };
       };
 
       const rowDiv = col(row, "division") ? divisionOf(col(row, "division")) : null;
@@ -325,6 +389,9 @@ export function planImport(sheets: RawSheet[], categories: Category[], fallback:
       if (club.length > CLUB_MAX) { errors.push({ ...at, message: `Tên CLB dài quá ${CLUB_MAX} ký tự` }); continue; }
       const p1 = person(p1Name, "p1");
       if (typeof p1 === "string") { errors.push({ ...at, message: p1 }); continue; }
+      const slot1 = `${s.sheet}|${at.row}|p1`;
+      const slot2 = `${s.sheet}|${at.row}|p2`;
+      decide(p1, slot1, at, cats[0]?.code ?? "", club);
       const group = col(row, "group") ? groupLabel(col(row, "group")) : null;
       const multi = cats.length > 1;
 
@@ -340,6 +407,7 @@ export function planImport(sheets: RawSheet[], categories: Category[], fallback:
           if (!p2Name) { errors.push({ ...at, message: `${cat.code} là nội dung đôi — thiếu họ tên đồng đội` }); continue; }
           const x = person(p2Name, "p2");
           if (typeof x === "string") { errors.push({ ...at, message: x }); continue; }
+          decide(x, slot2, at, cat.code, club);
           p2 = x;
         } else if (p2Name && !multi && !catCell) {
           errors.push({ ...at, message: `${cat.code} là nội dung đơn — bỏ trống cột đồng đội` });
@@ -350,6 +418,8 @@ export function planImport(sheets: RawSheet[], categories: Category[], fallback:
         if (dup) { skipped.push({ ...at, message: `${cat.code}: ${dup.name}${dup.studentId ? ` (${dup.studentId})` : ""} đã đăng ký — bỏ qua` }); continue; }
         remember(k, p1);
         if (p2) remember(k, p2);
+        note(p1, slot1, club);
+        if (p2) note(p2, slot2, club);
         buckets.set(cat.id, [...(buckets.get(cat.id) ?? []), { ...at, code: cat.code, p1, p2, club, group }]);
       }
     }
@@ -376,7 +446,7 @@ export function planImport(sheets: RawSheet[], categories: Category[], fallback:
     return { category, rows, groups };
   });
   errors.sort((a, b) => (a.sheet === b.sheet ? a.row - b.row : 0));
-  return { byCategory, errors, skipped, notes: [...notes] };
+  return { byCategory, errors, skipped, notes: [...notes], warnings, nameClashes: [...clashes.values()] };
 }
 
 // ───────── Đọc file ─────────

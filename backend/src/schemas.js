@@ -25,6 +25,13 @@ const schemas = {
     password: password.optional(),
     disabled: z.boolean().optional(),
   }).refine((o) => Object.values(o).some((v) => v !== undefined), { message: 'Không có gì để cập nhật' }),
+  // Tài khoản trọng tài do BTC tạo trong trang quản trị giải (luôn là tài khoản thường).
+  createReferee: z.object({ username, fullName: name(255), password }),
+  updateReferee: z.object({
+    fullName: name(255).optional(),
+    password: password.optional(),
+    disabled: z.boolean().optional(),
+  }).refine((o) => Object.values(o).some((v) => v !== undefined), { message: 'Không có gì để cập nhật' }),
   changePassword: z.object({ currentPassword: z.string().min(1).max(128), newPassword: password }),
   uuidParam: z.uuid(),
 
@@ -78,10 +85,14 @@ const schemas = {
       // Định danh VĐV (thẻ sinh viên / SĐT) — chuẩn hoá & kiểm tra kỹ ở athleteService.
       player1StudentId: z.string().trim().max(30).nullable().optional(),
       player1Phone: z.string().trim().max(30).nullable().optional(),
-      player1Email: z.email().max(254).nullable().optional().or(z.literal('')),
+      // Email không dùng để định danh → sai định dạng thì athleteService bỏ qua, KHÔNG làm hỏng cả lô nhập.
+      player1Email: z.string().trim().max(254).nullable().optional(),
+      // true = người KHÁC dù trùng tên với hồ sơ đã có (BTC xác nhận ở bước xem trước khi nhập).
+      player1NewAthlete: z.boolean().optional(),
       player2StudentId: z.string().trim().max(30).nullable().optional(),
       player2Phone: z.string().trim().max(30).nullable().optional(),
-      player2Email: z.email().max(254).nullable().optional().or(z.literal('')),
+      player2Email: z.string().trim().max(254).nullable().optional(),
+      player2NewAthlete: z.boolean().optional(),
     })).min(1).max(256),
   }),
   schedule: z.object({
