@@ -52,7 +52,7 @@ export function MatchCard({ m, compact = false }: { m: Match; compact?: boolean 
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
           <span className="font-medium">{matchTitle(m)}</span>
           <span className="flex items-center gap-2">
-            {m.court && <span className="rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-700">Sân {m.court}</span>}
+            {m.court && <span className="whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-700">Sân {m.court}</span>}
             <span className="tabular">{fmtTime(m.scheduledAt)}</span>
             <StatusBadge status={m.status} called={Boolean(m.calledAt)} />
           </span>
