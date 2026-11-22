@@ -50,7 +50,21 @@ export interface Tournament extends TournamentSummary {
   courts: number;
   slot_minutes: number;
   viewerRole: "admin" | "organizer" | "referee" | null;
+  /** Người xem được xoá giải (quản trị viên hoặc người tạo giải). */
+  canDelete: boolean;
   categories: Category[];
+}
+
+/** Giải đã xoá còn khôi phục được (GET /deleted-tournaments). */
+export interface DeletedTournament {
+  id: string;
+  slug: string;
+  name: string;
+  starts_at: string;
+  deleted_at: string;
+  /** Sau mốc này máy chủ xoá hẳn. */
+  purge_at: string;
+  deleted_by: string | null;
 }
 
 /** Một VĐV của đội: athleteId = hồ sơ VĐV theo giải (phân biệt người trùng tên), không kèm MSSV/SĐT. */

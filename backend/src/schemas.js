@@ -45,12 +45,14 @@ const schemas = {
   }),
   updateTournament: z.object({
     name: name(200).min(3).optional(),
+    slug: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/).max(80).optional(),
     venue: z.string().trim().max(200).optional(),
     startsAt: z.iso.datetime({ offset: true }).optional(),
     courts: z.number().int().min(1).max(50).optional(),
     slotMinutes: z.number().int().min(5).max(240).optional(),
     status: z.enum(['draft', 'published', 'ongoing', 'completed']).optional(),
   }),
+  deleteTournament: z.object({ confirmSlug: z.string().max(80) }),
   staff: z.object({ role: z.enum(['organizer', 'referee']) }),
 
   createCategory: z.object({

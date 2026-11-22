@@ -134,6 +134,18 @@ function createApp({ pool, config }) {
   api.post('/tournaments', auth.requireAuth, async (req, res) => {
     res.status(201).json(await svc.createTournament(pool, me(req), schemas.createTournament.parse(req.body)));
   });
+  // Giải đã xoá còn khôi phục được.
+  api.get('/deleted-tournaments', auth.requireAuth, async (req, res) => {
+    res.json(await svc.listDeletedTournaments(pool, me(req)));
+  });
+  api.delete('/tournaments/:id', auth.requireAuth, async (req, res) => {
+    const out = await svc.deleteTournament(pool, me(req), id(req.params.id), schemas.deleteTournament.parse(req.body ?? {}).confirmSlug);
+    touch(res, out.id);
+    res.json(out);
+  });
+  api.post('/tournaments/:id/restore', auth.requireAuth, async (req, res) => {
+    res.json(await svc.restoreTournament(pool, me(req), id(req.params.id)));
+  });
   api.get('/tournaments/:slug', async (req, res) => {
     const slug = String(req.params.slug).slice(0, 80);
     res.json(await svc.getTournament(pool, slug, me(req)));
