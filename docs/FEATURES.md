@@ -233,7 +233,7 @@ File `.xlsx` hoặc `.csv` được **đọc và tạo ngay trên trình duyệt
 | Nút | Kết quả |
 |---|---|
 | **File mẫu** | `mau-danh-sach-vdv-<giải>.xlsx`: sheet *Danh sách* (cột `Nội dung · VĐV 1 · MSSV 1 · SĐT 1 · VĐV 2 · MSSV 2 · SĐT 2 · CLB · Bảng`, có dòng ví dụ) + sheet *Hướng dẫn* |
-| **Nhập Excel / CSV** | Đọc file → hộp **Xem trước**: bảng tổng hợp (Hợp lệ · Có lỗi · Cần xác nhận · Trùng, và hợp lệ / lỗi / trùng theo từng nội dung), số đội sẽ thêm theo từng nội dung, bao nhiêu dòng có MSSV/SĐT, **chia bảng theo file** (nếu có), dòng lỗi (kèm sheet + số dòng), người đã đăng ký bị bỏ qua → bấm **Nhập N đội** |
+| **Nhập Excel / CSV** | Đọc file → hộp **Xem trước**: bảng tổng hợp (Hợp lệ · Có lỗi · Cần xác nhận · Trùng, và hợp lệ / lỗi / trùng theo từng nội dung), số đội sẽ thêm theo từng nội dung, bao nhiêu dòng có MSSV/SĐT, **chia bảng theo file** (nếu có), dòng lỗi (kèm sheet + số dòng), người đã đăng ký bị bỏ qua → bấm **Nhập N đội** · nút **Tạo nội dung còn thiếu** (file chia hạng mà giải chưa có "Đôi nam A"…: tạo theo cặp Nội dung × Hạng, chép luật điểm / số bảng của nội dung gốc rồi tự xếp lại) · cột **Ghi chú** có chữ "sai", "chưa", "nợ", "chuyển" → **Cần kiểm tra**, chỉ nhập dòng BTC tick · số **VĐV đánh nhiều nội dung** · nhập song song các nội dung không chung VĐV, hiện tiến độ "Đã nhập k/n nội dung…" |
 | **Xuất <mã>** / **Xuất toàn giải** | Mỗi nội dung 1 sheet + sheet *Tất cả*; cùng cột với file nhập (+ STT, Trạng thái), **có MSSV/SĐT** → file chứa dữ liệu cá nhân, không chia sẻ công khai |
 
 Nhận cột theo **nghĩa** (không phân biệt hoa thường/dấu/thứ tự; dòng tiêu đề trong 10 dòng đầu) — dùng thẳng được file **CSV tải từ Google Form**:
