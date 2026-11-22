@@ -5,6 +5,7 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Bàn điểm sau khi xác nhận** hiện tỉ số cuối (vd 21–0) thay vì 0–0, và giữ biên bản để xem.
 - **Bàn điểm khoá khi giải "Đã kết thúc"**: trước đây máy chủ từ chối nhưng giao diện vẫn cho chọn bên giao và bấm điểm, số điểm hiện lên rồi giữ nguyên. Nay hiện banner "Giải đã kết thúc — khoá nhập điểm" và làm mờ mọi nút; thao tác bị máy chủ từ chối thì **trả điểm về như trước**. Mọi API trả trận có thêm `tournamentStatus`.
 
 ### Changed
@@ -16,6 +17,9 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 - `GET /tournaments` trả thêm `my_role` (`organizer` | `referee` | `null`) và `is_referee` theo người xem.
 
 ### Added
+- **Biên bản diễn biến điểm dưới Bàn điểm** theo mẫu biên bản giấy: mỗi pha cầu một cột, số ghi ở hàng người giao pha kế tiếp, G/N đầu game, vạch "Nghỉ" / "Đổi sân", ✎ khi sửa người giao hoặc BTC sửa tay, ⏳ cho pha chưa lưu (mất mạng). Trang chỉ xem `/bien-ban/<matchId>` (công khai, tự làm mới) có **In / Tải PDF** khổ A4 ngang; nút **Biên bản** ở trang Trận đấu & trọng tài và trên thẻ trận công khai.
+- **Chọn người giao và người nhận khi đánh đôi**: đầu mỗi game chọn đội giao → ai giao → ai nhận; máy tự tính vị trí trái/phải và người giao mọi pha sau theo luật BWF; nhãn giao/nhận kèm tên; **Sửa người giao** chọn đúng VĐV.
+- API biên bản: `POST /matches/:id/rallies`, `DELETE /matches/:id/rallies/last`, `GET /matches/:id` trả thêm `rallies`. **Migration 010** (`match_rallies`; nhật ký thêm sửa người giao / hoàn tác pha cầu / xác nhận kết quả).
 - **Trùng tên khi nhập VĐV**: người không có MSSV/SĐT trùng tên người khác và **khác CLB** → hộp xem trước hỏi **Người khác** (mặc định) / **Cùng người**; chọn "người khác" thì server tạo hồ sơ riêng (`player1NewAthlete` / `player2NewAthlete`) thay vì báo "đã đăng ký". Nhiều hồ sơ cùng tên mà đúng 1 người cùng CLB → tự nhận đúng người đó.
 - **Nhập Excel không còn dừng giữa chừng**: mỗi nội dung ghi độc lập; nội dung lỗi được báo riêng (giữ hộp xem trước, đội đã vào tự bỏ qua khi nhập lại), các nội dung khác vẫn vào. Email sai định dạng bị bỏ qua kèm cảnh báo thay vì làm hỏng cả nội dung (cả ở client lẫn server).
 - **Dán danh sách** nhận thêm MSSV và SĐT: `tên ; CLB ; MSSV ; SĐT` (đôi: `A / B ; CLB ; MSSV A / MSSV B ; SĐT A / SĐT B`).

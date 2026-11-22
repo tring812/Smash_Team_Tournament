@@ -146,11 +146,14 @@ Cho biết **trận nào, đánh ở sân nào, lúc mấy giờ, tỉ số bao 
 
 - **Bàn trọng tài** `/ref`: danh sách trận mình được nhập — trận gán riêng cho mình, trận ở **sân mình phụ trách**, hoặc trận chưa có trọng tài thuộc giải mình làm trọng tài. Trận đang đánh / vừa được gọi vào sân lên đầu, ưu tiên sân của mình.
 - **Giải đã kết thúc** (`status = completed`): máy chủ từ chối nhập điểm (`409 TOURNAMENT_CLOSED`); Bàn điểm đọc `tournamentStatus` của trận, hiện banner "Giải đã kết thúc — khoá nhập điểm" và khoá mọi nút. Thao tác nào bị máy chủ từ chối (lỗi 4xx) thì Bàn điểm **trả điểm và bên giao về như trước** (tải lại tỉ số máy chủ, bỏ nháp trên máy).
-- **Nhập điểm** `/ref/<matchId>`: chạm nửa màn hình bên ghi điểm; tự nhận biết hết game theo **luật điểm của vòng đó** (hiện ở đầu màn hình, vd "11 điểm, trần 15 · 1 game" — xem [7.6](#76-tính-điểm)); hoàn tác; **Xác nhận kết quả** khi đủ số game thắng; **Bỏ cuộc** (chọn bên thắng).
-- **Bên giao cầu & ô giao**: đầu trận hỏi "Bên nào giao cầu trước?" (bốc thăm / tung cầu). Sau đó tự theo luật rally: bên thắng pha cầu giao pha tiếp (kể cả đầu game sau); nhãn **"Giao cầu · ô PHẢI / TRÁI"** trên nửa màn hình của bên giao — điểm của bên giao **chẵn → ô phải, lẻ → ô trái**. **Hoàn tác** trả lại đúng bên giao trước đó; nút **Sửa bên giao** khi trọng tài bấm nhầm. Lưu trên máy trọng tài (không đồng bộ). Đánh đôi: chỉ báo bên + ô giao, không theo dõi VĐV nào giao.
+- **Nhập điểm** `/ref/<matchId>`: chạm nửa màn hình của đội thắng pha cầu; tự nhận biết hết game theo **luật điểm của vòng đó** (hiện ở đầu màn hình, vd "11 điểm, trần 15 · 1 game" — xem [7.6](#76-tính-điểm)); hoàn tác; **Xác nhận kết quả** khi đủ số game thắng; **Bỏ cuộc** (chọn bên thắng).
+- **Người giao & người nhận**: đầu mỗi game chọn **đội giao → ai giao → ai nhận** (đánh đôi; game sau mặc định đội thắng game trước giao). Đánh đơn chỉ chọn bên giao (game sau tự để bên thắng game trước giao). Sau đó máy tự tính theo luật BWF đánh đôi: đội giao thắng pha → **cùng người giao**, hai VĐV đội giao đổi ô; đội nhận thắng pha → được giao, **không đổi ô**, người giao = VĐV đang đứng ở ô theo điểm đội mình (**chẵn → PHẢI, lẻ → TRÁI**). Nhãn **"Giao · ô PHẢI/TRÁI · <tên>"** và **"Nhận · <tên>"** trên nửa màn hình mỗi đội. **Sửa người giao** chọn lại đúng VĐV đang giao (không chỉ đội).
+- **Biên bản diễn biến điểm** (dưới các nút Hoàn tác / Đổi sân / Bỏ cuộc, có nút thu gọn) theo mẫu biên bản giấy: hàng = từng VĐV (đôi 4 hàng, kẻ đậm giữa 2 đội; đơn 2 hàng), cột tên cố định bên trái với **G** (giao đầu game) / **N** (nhận đầu game); **cột 0** ghi "0" ở hàng người giao và người nhận; **mỗi pha cầu thêm 1 cột**, số điểm mới của đội thắng ghi ở **hàng VĐV sẽ giao pha kế tiếp**; mỗi game một khối "G1 · 19–21"; vạch nét đứt **"Nghỉ"** ở mốc nửa game (**"Đổi sân"** ở game quyết định); ✎ trên cột đã **sửa người giao** hoặc **BTC sửa tay tỉ số**; ô mới nhất tô nhạt, tự cuộn tới; pha chưa lưu được hiện mờ kèm ⏳. Thanh **chỉ để xem** — chạm ô không đổi điểm. **Hoàn tác** xoá cột cuối; **Đổi sân** chỉ đổi trái/phải trên màn hình.
+- **Xem biên bản ngoài Bàn điểm** `/bien-ban/<matchId>`: trang chỉ xem (công khai khi giải đã công bố, không có MSSV/SĐT), trận đang đánh tự làm mới; nút **In / Tải PDF** ra A4 ngang (tên giải, nội dung, sân, trọng tài, giờ bắt đầu / kết thúc, tỉ số, chỗ ký). Có nút **Biên bản** ở trang Trận đấu & trọng tài (BTC) và liên kết **Biên bản** trên thẻ trận đang đánh / đã xong ở trang công khai.
+- **Sau khi xác nhận** Bàn điểm hiện **tỉ số cuối** (vd 21–0), không về 0–0, và giữ biên bản để xem.
 - **Nhắc nghỉ & đổi sân** (thẻ đếm ngược, rung máy nếu điện thoại hỗ trợ): bên dẫn chạm **nửa số điểm thắng** (21 → 11, 15 → 8, 11 → 6) → **nghỉ 60 giây**; hết một game (chưa hết trận) → **nghỉ 2 phút, đổi sân**; **game quyết định** (game 3 của 2/3, game 5 của 3/5) chạm mốc nghỉ → **đổi sân**. Khi đổi sân, màn hình tự đổi bên trái/phải cho khớp vị trí VĐV.
-- Hai máy cùng nhập một trận: máy chậm hơn nhận thông báo "đã tải lại bản mới nhất" (khoá lạc quan theo `version`), không ghi đè điểm của nhau.
-- **Mất mạng không mất điểm**: mỗi lần chạm được lưu ngay vào bản nháp trên máy (`localStorage`) **trước khi** gửi. Mất kết nối → màn hình báo "điểm đã lưu trên máy này", tự gửi lại (2 s → tối đa 15 s, và ngay khi có mạng). Tải lại trang / mở lại máy → khôi phục điểm chưa gửi và lịch sử **Hoàn tác**. Nếu trong lúc đó máy khác đã sửa trận (version trên máy chủ đã khác) → **bỏ** bản nháp, không ghi đè, và báo cho trọng tài. Còn điểm chưa gửi thì chưa cho **Xác nhận kết quả**.
+- Hai máy cùng nhập một trận: mỗi pha gửi kèm `expectedSeq`; máy chậm hơn nhận `409 RALLY_CONFLICT` và "Biên bản vừa được cập nhật từ thiết bị khác — đã tải lại", không ghi đè của nhau.
+- **Mất mạng không mất điểm**: mỗi pha / hoàn tác được đưa vào **hàng chờ trên máy** (`localStorage`) **trước khi** gửi, gửi lần lượt. Mất kết nối → màn hình báo số thao tác đã lưu trên máy, tự gửi lại (2 s → tối đa 15 s, và ngay khi có mạng); biên bản hiện các pha đó mờ kèm ⏳. Hoàn tác một pha chưa gửi chỉ bỏ nó khỏi hàng chờ. Tải lại trang → khôi phục hàng chờ; nếu máy chủ đã khác (máy khác vừa bấm) → **bỏ** hàng chờ, không ghi đè, và báo cho trọng tài. Còn pha chưa gửi thì chưa cho **Xác nhận kết quả**.
 - Trọng tài **không** nhập được trận của giải còn Nháp, trận đã kết thúc, trận đã huỷ, trận đã phân công cho trọng tài khác (gán riêng cho trận, hoặc trọng tài phụ trách sân của trận).
 
 <sub>[↑ Back to contents](#contents)</sub>
@@ -392,6 +395,7 @@ Mỗi giải có danh sách **hồ sơ VĐV** riêng. Khi thêm đội (dán, Ex
 | Nhật ký | Ghi gì | Tính chất |
 |---|---|---|
 | **Nhật ký thao tác BTC** (`tournament_events`) | Tạo / sửa / xoá nội dung, bốc thăm, bốc thăm lại, truất quyền, huỷ truất quyền, đổi bảng, sửa đội, xếp lịch — kèm người làm, thời gian, chi tiết | Append-only (trigger chặn sửa/xoá); xoá nội dung **không** xoá nhật ký của nó |
+| **Biên bản** (`match_rallies`) | Mỗi pha cầu, chọn người giao/nhận, sửa người giao, BTC sửa tay tỉ số (`seq` tăng dần, khoá chính `(match_id, seq)`) | Chỉ thêm vào cuối; Hoàn tác xoá sự kiện cuối. Nhật ký BTC chỉ ghi **sửa người giao**, **hoàn tác pha cầu**, **xác nhận kết quả** — không ghi từng điểm |
 | **Nhật ký điểm** (`match_score_events`) | Mỗi lần lưu điểm, xác nhận, bỏ cuộc, mở lại, phân công trọng tài | Append-only — dùng giải quyết tranh chấp tỉ số |
 
 <sub>[↑ Back to contents](#contents)</sub>
@@ -447,8 +451,10 @@ Tiền tố `/api`. Request ghi phải có header `X-Requested-With: fetch`. L�
 | POST | `/categories/:id/knockout` | BTC | Tạo nhánh loại trực tiếp |
 | PATCH · DELETE | `/entries/:id` | BTC | Sửa · xoá đội |
 | POST | `/entries/:id/disqualify` `{reason}` · `/entries/:id/reinstate` | BTC | Truất quyền · huỷ truất quyền |
-| GET | `/matches/:id` · `/referee/queue` | công khai · trọng tài | Chi tiết trận · hàng đợi trọng tài |
-| PUT | `/matches/:id/score` `{action, version, games, walkoverWinner?}` | Trọng tài / BTC | Lưu điểm, xác nhận, bỏ cuộc |
+| GET | `/matches/:id` · `/referee/queue` | công khai · trọng tài | Chi tiết trận (kèm `rallies` — biên bản: ô VĐV a1/a2/b1/b2, không có người bấm) · hàng đợi trọng tài |
+| PUT | `/matches/:id/score` `{action, version, games, walkoverWinner?}` | Trọng tài / BTC | Lưu điểm, xác nhận, bỏ cuộc. Trận có biên bản mà tỉ số khác biên bản → ghi mốc `override` (BTC sửa tay) |
+| POST | `/matches/:id/rallies` `{type: start\|point\|fix_server, side?, server?, receiver?, expectedSeq}` | Trọng tài / BTC | Thêm 1 sự kiện biên bản; máy chủ tự tính tỉ số + người giao, cập nhật `games` cùng giao dịch; lệch `expectedSeq` → `409 RALLY_CONFLICT` |
+| DELETE | `/matches/:id/rallies/last?expectedSeq=N` | Trọng tài / BTC | Hoàn tác sự kiện cuối (chỉ khi trận chưa xác nhận) |
 | POST · PUT | `/matches/:id/reopen` · `/matches/:id/referee` | BTC | Mở lại trận · phân công trọng tài |
 | GET | `/tournaments/:id/courts` | BTC | Bảng điều phối: từng sân (trọng tài, trận đang chiếm, gợi ý) + hàng chờ |
 | PUT | `/tournaments/:id/courts/:court/referee` `{refereeUserId}` | BTC | Giao / bỏ trọng tài phụ trách sân |
@@ -478,6 +484,7 @@ erDiagram
   categories ||--o{ matches : "có"
   entries ||--o{ matches : "đội A / B"
   matches ||--o{ match_score_events : "nhật ký điểm"
+  matches ||--o{ match_rallies : "biên bản"
   tournaments ||--o{ tournament_events : "nhật ký BTC"
   categories |o--o{ tournament_events : "về nội dung"
   users ||--o{ tournament_events : "người làm"
