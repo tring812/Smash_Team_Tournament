@@ -119,6 +119,29 @@ export function ExcelPanel({ current }: { current: Category | undefined }) {
 
   const p = plan?.plan;
   const total = p?.byCategory.reduce((n, g) => n + g.rows.length, 0) ?? 0;
+  /** Bảng tổng hợp theo nội dung: số đội hợp lệ, dòng lỗi, dòng trùng. Lỗi chưa rõ nội dung gom vào một dòng riêng. */
+  const summary = useMemo(() => {
+    if (!p) return [];
+    const rows = new Map<string, { label: string; ok: number; err: number; dup: number }>();
+    const get = (code: string) => {
+      let r = rows.get(code);
+      if (!r) {
+        const c = t.categories.find((x) => x.code === code);
+        r = { label: c ? c.name : code, ok: 0, err: 0, dup: 0 };
+        rows.set(code, r);
+      }
+      return r;
+    };
+    for (const g of p.byCategory) get(g.category.code).ok += g.rows.length;
+    for (const e of p.errors) {
+      if (e.codes?.length) e.codes.forEach((c) => get(c).err++);
+      else get("").err++;
+    }
+    for (const s of p.skipped) s.codes?.forEach((c) => get(c).dup++);
+    const order = (code: string) => { const i = t.categories.findIndex((c) => c.code === code); return i < 0 ? Infinity : i; };
+    return [...rows.entries()].sort(([a], [b]) => order(a) - order(b))
+      .map(([code, r]) => ({ code, ...r, label: code ? r.label : "Chưa xác định nội dung" }));
+  }, [p, t.categories]);
   const btn = "inline-flex min-h-11 items-center gap-2 rounded-full border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition-colors hover:border-slate-400 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed";
 
   return (
@@ -176,7 +199,7 @@ export function ExcelPanel({ current }: { current: Category | undefined }) {
                 </div>
                 <p className="mt-2 text-xs text-slate-500">
                   File có cả sheet câu trả lời Google Form lẫn sheet theo nội dung → mặc định chỉ chọn các sheet theo nội dung (danh sách đã chốt).
-                  Chọn cả hai cũng không nhân đôi: người trùng MSSV / SĐT tự bỏ qua.
+                  Trùng chỉ xét trong cùng một tab: người có ở hai tab cùng vào một nội dung sẽ báo lỗi (không tự bỏ qua) — vì vậy chỉ nên chọn một loại sheet.
                 </p>
               </fieldset>
             )}
@@ -186,6 +209,64 @@ export function ExcelPanel({ current }: { current: Category | undefined }) {
                 <ul className="mt-1 space-y-1">{loaded.failed.map((f) => <li key={f.code}><span className="font-semibold">{f.code}:</span> {f.message}</li>)}</ul>
                 <p className="mt-1 text-xs">Sửa file rồi chọn lại file, hoặc bấm Nhập để thử lại — đội đã vào tự bỏ qua.</p>
               </div>
+            )}
+            <section aria-labelledby="import-summary-h" className="rounded-2xl border border-slate-100 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 id="import-summary-h" className="font-bold text-slate-900">Tổng hợp dữ liệu đăng ký</h3>
+                <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${p.errors.length || p.nameClashes.length ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
+                  {p.errors.length || p.nameClashes.length ? "Cần kiểm tra" : "Sẵn sàng nhập"}
+                </span>
+              </div>
+              <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {([
+                  ["Hợp lệ", total, "text-emerald-700", "đội sẽ nhập"],
+                  ["Có lỗi", p.errors.length, p.errors.length ? "text-red-700" : "text-slate-400", "dòng không nhập"],
+                  ["Cần xác nhận", p.nameClashes.length, p.nameClashes.length ? "text-amber-700" : "text-slate-400", "trùng tên"],
+                  ["Trùng", p.skipped.length, "text-slate-500", "bỏ qua"],
+                ] as const).map(([label, n, tone, hint]) => (
+                  <div key={label} className="flex flex-col rounded-xl bg-slate-50 p-3">
+                    <dt className="text-sm font-semibold text-slate-700">
+                      {label}<span className="block text-xs font-normal text-slate-500">{hint}</span>
+                    </dt>
+                    <dd className={`order-first text-2xl font-bold tabular-nums ${tone}`}>{n}</dd>
+                  </div>
+                ))}
+              </dl>
+              {summary.length > 0 && (
+                <div className="mt-3 overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <caption className="sr-only">Phân loại theo nội dung</caption>
+                    <thead>
+                      <tr className="whitespace-nowrap border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-500">
+                        <th scope="col" className="py-2 pr-2 font-semibold">Nội dung</th>
+                        <th scope="col" className="px-2 py-2 text-right font-semibold">Hợp lệ</th>
+                        <th scope="col" className="px-2 py-2 text-right font-semibold">Lỗi</th>
+                        <th scope="col" className="py-2 pl-2 text-right font-semibold">Trùng</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {summary.map((r) => (
+                        <tr key={r.code || "?"}>
+                          <th scope="row" className="py-2 pr-2 text-left font-medium text-slate-900">
+                            {r.code && <span className="mr-1.5 text-xs font-bold text-slate-500">{r.code}</span>}{r.label}
+                          </th>
+                          <td className="px-2 py-2 text-right tabular-nums text-slate-900">{r.ok}</td>
+                          <td className={`px-2 py-2 text-right tabular-nums ${r.err ? "font-bold text-red-700" : "text-slate-400"}`}>{r.err}</td>
+                          <td className="py-2 pl-2 text-right tabular-nums text-slate-500">{r.dup}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+            {p.errors.length > 0 && (
+              <details open className="rounded-2xl border border-red-200 bg-red-50 p-3 text-red-800">
+                <summary className="flex cursor-pointer items-center gap-2 font-bold"><AlertTriangle className="h-4 w-4" aria-hidden />{p.errors.length} dòng lỗi cần xử lý — sẽ KHÔNG được nhập</summary>
+                <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto">
+                  {p.errors.slice(0, 100).map((e, i) => <li key={i}><span className="font-semibold">{e.sheet} · dòng {e.row}:</span> {e.message}</li>)}
+                </ul>
+              </details>
             )}
             {p.nameClashes.length > 0 && (
               <fieldset className="rounded-2xl border border-amber-300 bg-amber-50 p-3 text-amber-800">
@@ -245,14 +326,6 @@ export function ExcelPanel({ current }: { current: Category | undefined }) {
               </ul>
             ) : <p className="rounded-2xl bg-slate-50 p-3 text-slate-600">Không có đội mới nào để nhập.</p>}
 
-            {p.errors.length > 0 && (
-              <details open className="rounded-2xl border border-red-200 bg-red-50 p-3 text-red-800">
-                <summary className="flex cursor-pointer items-center gap-2 font-bold"><AlertTriangle className="h-4 w-4" aria-hidden />{p.errors.length} dòng lỗi — sẽ KHÔNG được nhập</summary>
-                <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto">
-                  {p.errors.slice(0, 100).map((e, i) => <li key={i}><span className="font-semibold">{e.sheet} · dòng {e.row}:</span> {e.message}</li>)}
-                </ul>
-              </details>
-            )}
             {p.skipped.length > 0 && (
               <details className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-slate-700">
                 <summary className="flex cursor-pointer items-center gap-2 font-bold"><Info className="h-4 w-4" aria-hidden />{p.skipped.length} dòng trùng — bỏ qua</summary>
