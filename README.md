@@ -385,6 +385,8 @@ Chi tiết: [docs/FEATURES.md § Đăng nhập & bảo mật](docs/FEATURES.md#9
 
 - [docs/FEATURES.md](docs/FEATURES.md) — toàn bộ chức năng, phân quyền, quy tắc nghiệp vụ, API chi tiết, sơ đồ dữ liệu.
 - [CHANGELOG.md](CHANGELOG.md) — lịch sử thay đổi.
+- [CONTRIBUTING.md](CONTRIBUTING.md) — quy ước nhánh, commit và pull request.
+- [AGENTS.md](AGENTS.md) — quy tắc viết code cho người và AI agent (lệnh kiểm tra, backend, migration, frontend, bảo mật).
 - [docs/ANALYSIS.md](docs/ANALYSIS.md) — phân tích ban đầu (thiết kế SSO cũ, đã thay thế; giữ làm tư liệu).
 
 <sub>[↑ Back to contents](#contents)</sub>
