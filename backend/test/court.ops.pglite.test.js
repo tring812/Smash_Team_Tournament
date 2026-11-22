@@ -184,9 +184,22 @@ describe('Điều phối sân (PGlite)', { skip: hasPglite ? false : 'chưa cài
     assert.equal(b.courts[3].current, null);
     const resting = b.queue.filter((q) => q.restingMinutes > 0).map((q) => q.match.id);
     assert.ok(resting.length > 0);
-    const suggested = new Set(b.courts.map((c) => c.suggestionId).filter(Boolean));
-    const fresh = b.queue.filter((q) => !q.restingMinutes && !q.busyWith.length);
-    if (fresh.length) assert.ok([...suggested].every((id) => !resting.includes(id)) || fresh.length < suggested.size, 'ưu tiên gợi ý trận không có VĐV đang nghỉ');
+    // Gợi ý tham lam theo từng sân, không 2 gợi ý chung VĐV: sân nào gợi ý trận có VĐV đang nghỉ thì lúc đó
+    // KHÔNG được còn trận nào không ai nghỉ, không ai bận, chưa gợi ý và không chung VĐV với các gợi ý trước.
+    const byId = new Map(b.queue.map((q) => [q.match.id, q]));
+    const takenIds = new Set();
+    const takenPeople = new Set();
+    for (const c of b.courts) {
+      const q = c.suggestionId ? byId.get(c.suggestionId) : null;
+      if (!q) continue;
+      if (q.restingMinutes > 0) {
+        const alt = b.queue.find((x) => !x.restingMinutes && !x.busyWith.length && !takenIds.has(x.match.id)
+          && x.match.id !== q.match.id && !names(x.match).some((n) => takenPeople.has(n)));
+        assert.ok(!alt, `sân ${c.court} gợi ý trận có VĐV đang nghỉ trong khi còn trận không ai nghỉ: ${alt && names(alt.match)}`);
+      }
+      takenIds.add(q.match.id);
+      names(q.match).forEach((n) => takenPeople.add(n));
+    }
     const actions = (await svc.listEvents(pool, ADMIN, t.id)).map((e) => e.action);
     for (const a of ['call_match', 'uncall_match', 'move_match', 'court_referee']) assert.ok(actions.includes(a), a);
   });
