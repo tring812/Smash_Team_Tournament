@@ -74,4 +74,26 @@ function scheduleMatches(matches, opts) {
   return out;
 }
 
-module.exports = { scheduleMatches };
+/**
+ * Số LƯỢT VĐV không được nghỉ: một người đánh 2 khung giờ liền nhau (khung n và n+1) tính 1 lượt.
+ * @param {{ id: string, participants: string[] }[]} matches @param {{ id: string, slot: number }[]} slots
+ * @returns {number}
+ */
+function countNoRest(matches, slots) {
+  const slotOf = new Map(slots.map((s) => [s.id, s.slot]));
+  /** @type {Map<string, number[]>} */
+  const byPlayer = new Map();
+  for (const m of matches) {
+    const slot = slotOf.get(m.id);
+    if (slot === undefined) continue;
+    for (const p of new Set(m.participants)) byPlayer.set(p, [...(byPlayer.get(p) ?? []), slot]);
+  }
+  let n = 0;
+  for (const list of byPlayer.values()) {
+    list.sort((a, b) => a - b);
+    for (let i = 1; i < list.length; i += 1) if (list[i] - list[i - 1] === 1) n += 1;
+  }
+  return n;
+}
+
+module.exports = { scheduleMatches, countNoRest };

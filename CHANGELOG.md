@@ -5,6 +5,10 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 ## [Unreleased]
 
 ### Changed
+- **Bốc thăm** hỏi xác nhận trước khi bốc; **Bốc thăm lại** cảnh báo số trận đã xếp lịch sẽ mất lịch.
+- **Xếp lịch** báo thêm số lượt VĐV không được nghỉ (đánh 2 khung giờ liền nhau); kết quả API có `noRest`.
+- **Điều phối sân**: hỏi lại khi gọi trận trước giờ khai mạc và khi rút về trận đã có điểm; hộp Chuyển sân làm mờ sân hiện tại / sân đang có trận.
+- **Trận đấu & trọng tài**: thêm bộ lọc **Mời ra sân**.
 - **Thanh điều hướng**: "Lịch thi đấu ▾" mở danh sách giải để chọn (đang diễn ra → sắp diễn ra → nháp → đã kết thúc), khỏi phải cuộn trang chủ. Mục **"Trọng tài" chỉ hiện với tài khoản có nhiệm vụ trọng tài** (vai trò trọng tài của giải, phụ trách sân, hoặc được gán trận); admin không còn thấy mục này.
 - **Menu tài khoản gom phần quản lý**: danh sách giải mình quản lý được (admin: mọi giải; BTC: giải mình là BTC) dẫn vào trang quản trị, "Tạo giải mới" (admin), "Quản lý tài khoản" (admin) hoặc "Đổi mật khẩu", chọn giao diện, đăng xuất. Bỏ mục "Tạo giải" khỏi thanh trên.
 - Điện thoại: thanh tab đáy Trang chủ · Lịch đấu (mở bảng chọn giải) · Trọng tài.
