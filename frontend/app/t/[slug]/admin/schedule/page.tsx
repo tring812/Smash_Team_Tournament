@@ -23,8 +23,9 @@ export default function SchedulePage() {
     if (f.startAt) body.startAt = vnLocalToIso(f.startAt);
     if (f.courts) body.courts = Number(f.courts);
     if (f.slotMinutes) body.slotMinutes = Number(f.slotMinutes);
-    return act(() => api<{ scheduled: number; endsAt: string }>(`/tournaments/${t.id}/schedule`, { method: "POST", body }),
-      (r) => `Đã xếp ${r.scheduled} trận, dự kiến xong lúc ${fmtTime(r.endsAt)}`);
+    return act(() => api<{ scheduled: number; endsAt: string; noRest?: number }>(`/tournaments/${t.id}/schedule`, { method: "POST", body }),
+      (r) => `Đã xếp ${r.scheduled} trận, dự kiến xong lúc ${fmtTime(r.endsAt)}`
+        + (r.noRest ? ` — ${r.noRest} lượt VĐV phải đánh 2 khung giờ liền nhau (không được nghỉ): thêm sân hoặc tăng phút/trận nếu cần` : " — mọi VĐV đều được nghỉ giữa 2 trận"));
   }
 
   const block = (stage: Stage, title: string, desc: string, Icon: typeof LayoutGrid) => (

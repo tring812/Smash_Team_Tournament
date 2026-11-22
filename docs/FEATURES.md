@@ -181,7 +181,7 @@ Trường bị khoá hiện mờ kèm lý do; server kiểm tra lại (lỗi 409
 - **Dán danh sách đăng ký**: mỗi dòng `tên ; CLB ; MSSV ; SĐT` (đôi: `tên A / tên B ; CLB ; MSSV A / MSSV B ; SĐT A / SĐT B`); chỉ tên bắt buộc. Có MSSV/SĐT thì không mất định danh khi phải dán tay thay vì nhập file. Chỉ khi chưa bốc thăm.
 - **Xoá đội**: chỉ khi chưa bốc thăm.
 - **Sửa đội** (thay VĐV, đổi đồng đội, đổi CLB): khi đội chưa thi đấu trận nào.
-- **Bốc thăm** chia bảng (xem [7.1](#71-bốc-thăm-ngẫu-nhiên)) và **Bốc thăm lại** (xác nhận trong hộp thoại).
+- **Bốc thăm** chia bảng (xem [7.1](#71-bốc-thăm-ngẫu-nhiên)) — hỏi xác nhận trước khi bốc (số đội, số bảng; sau khi bốc không thêm / xoá đội được) — và **Bốc thăm lại** (xác nhận trong hộp thoại; cảnh báo số trận vòng bảng đã xếp giờ / sân sẽ mất lịch).
 - **Đổi bảng**: đổi chỗ 2 đội ở 2 bảng khác nhau; lịch vòng tròn của 2 bảng đó được tạo lại. Chỉ khi 2 bảng chưa có trận bắt đầu.
 - **Truất quyền** (bắt buộc ghi lý do) và **Huỷ truất quyền** — xem [7.4](#74-truất-quyền-thi-đấu).
 - **Tạo nhánh loại trực tiếp** khi mọi bảng đã đánh xong.
@@ -200,16 +200,17 @@ Màn hình BTC dùng suốt ngày thi đấu — **lịch giờ chỉ là dự k
 - **Hàng chờ**: mọi trận đủ 2 đội chưa vào sân, sắp theo giờ dự kiến; nhãn đỏ "X đang ở sân N" (không gọi được), nhãn vàng "Nghỉ thêm ~N′"; gọi nhanh vào sân trống bất kỳ, hoặc **Dời** (đồng hồ).
 - Lỗi (sân đang bận, VĐV đang ở sân khác…) hiện ngay trong hộp thoại, giữ nguyên lựa chọn.
 - Khán giả thấy trận đã gọi với nhãn vàng **"Mời ra sân"** trên lịch thi đấu.
+- Gọi trận **trước giờ khai mạc** → hỏi lại ("Giải chưa khai mạc — vẫn gọi?"). **Rút về** một trận đã có điểm → hỏi lại. Hộp **Chuyển sân** làm mờ sân hiện tại và sân đang có trận, chọn sẵn sân trống đầu tiên. Nhãn "Đã gọi / Đang đánh · x phút" tự cập nhật mỗi 30 giây.
 
 ### 6.4 Xếp lịch sân (lịch dự kiến)
 Hai biểu mẫu độc lập (xem [7.5](#75-xếp-lịch-sân)):
 - **Vòng bảng**: giờ bắt đầu (bỏ trống = giờ khai mạc), số sân, phút/trận.
 - **Loại trực tiếp**: **bắt buộc** ngày giờ (có thể khác ngày vòng bảng), số sân, phút/trận.
 
-Số sân / phút mỗi trận chỉ áp cho lần xếp đó, không đổi cấu hình giải. Báo số trận đã xếp và giờ dự kiến xong.
+Số sân / phút mỗi trận chỉ áp cho lần xếp đó, không đổi cấu hình giải. Báo số trận đã xếp, giờ dự kiến xong và **số lượt VĐV không được nghỉ** (đánh 2 khung giờ liền nhau) — `noRest` trong kết quả `POST /tournaments/:id/schedule` và nhật ký.
 
 ### 6.5 Trận đấu & trọng tài
-- Lọc theo trạng thái (Tất cả / Đang đánh / Sắp đánh / Kết thúc / Đã huỷ) và nội dung.
+- Lọc theo trạng thái (Tất cả / **Mời ra sân** — đã gọi vào sân, chưa có điểm / Đang đánh / Sắp đánh / Kết thúc / Đã huỷ) và nội dung.
 - **Phân công trọng tài** từng trận (hoặc "Ai cũng được" — khi đó trọng tài phụ trách sân sẽ chấm).
 - **Dời** một trận: đổi giờ dự kiến và/hoặc sân mà không phải xếp lại cả giai đoạn. Chặn trùng sân hoặc trùng VĐV trong cùng khung giờ (± số phút mỗi trận). Trận đang ở sân chỉ **chuyển sân**.
 - **Nhập điểm** (mở bàn trọng tài) hoặc **Mở lại** trận đã kết thúc để sửa tỉ số — xem [7.7](#77-mở-lại-trận).
@@ -233,7 +234,7 @@ File `.xlsx` hoặc `.csv` được **đọc và tạo ngay trên trình duyệt
 | Nút | Kết quả |
 |---|---|
 | **File mẫu** | `mau-danh-sach-vdv-<giải>.xlsx`: sheet *Danh sách* (cột `Nội dung · VĐV 1 · MSSV 1 · SĐT 1 · VĐV 2 · MSSV 2 · SĐT 2 · CLB · Bảng`, có dòng ví dụ) + sheet *Hướng dẫn* |
-| **Nhập Excel / CSV** | Đọc file → hộp **Xem trước**: số đội sẽ thêm theo từng nội dung, bao nhiêu dòng có MSSV/SĐT, **chia bảng theo file** (nếu có), dòng lỗi (kèm sheet + số dòng), người đã đăng ký bị bỏ qua → bấm **Nhập N đội** |
+| **Nhập Excel / CSV** | Đọc file → hộp **Xem trước**: bảng tổng hợp (Hợp lệ · Có lỗi · Cần xác nhận · Trùng, và hợp lệ / lỗi / trùng theo từng nội dung), số đội sẽ thêm theo từng nội dung, bao nhiêu dòng có MSSV/SĐT, **chia bảng theo file** (nếu có), dòng lỗi (kèm sheet + số dòng), người đã đăng ký bị bỏ qua → bấm **Nhập N đội** · nút **Tạo nội dung còn thiếu** (file chia hạng mà giải chưa có "Đôi nam A"…: tạo theo cặp Nội dung × Hạng, chép luật điểm / số bảng của nội dung gốc rồi tự xếp lại) · cột **Ghi chú** có chữ "sai", "chưa", "nợ", "chuyển" → **Cần kiểm tra**, chỉ nhập dòng BTC tick · số **VĐV đánh nhiều nội dung** · nhập song song các nội dung không chung VĐV, hiện tiến độ "Đã nhập k/n nội dung…" |
 | **Xuất <mã>** / **Xuất toàn giải** | Mỗi nội dung 1 sheet + sheet *Tất cả*; cùng cột với file nhập (+ STT, Trạng thái), **có MSSV/SĐT** → file chứa dữ liệu cá nhân, không chia sẻ công khai |
 
 Nhận cột theo **nghĩa** (không phân biệt hoa thường/dấu/thứ tự; dòng tiêu đề trong 10 dòng đầu) — dùng thẳng được file **CSV tải từ Google Form**:
@@ -250,7 +251,8 @@ Nhận cột theo **nghĩa** (không phân biệt hoa thường/dấu/thứ tự
 Bỏ qua: `Dấu thời gian`, `STT`, `Ghi chú`, `Trạng thái`. Quy tắc:
 - Chỉ nhận nội dung **chưa bốc thăm** (đã bốc thăm → 1 lỗi gộp cho cả nhóm dòng); nội dung đôi bắt buộc đồng đội; nội dung đơn phải để trống cột đồng đội (trừ ô chọn nhiều nội dung — khi đó đồng đội chỉ dùng cho nội dung đôi).
 - MSSV/SĐT sai định dạng → lỗi dòng. SĐT `+84 901 234 567`, `0901-234-567`, `901234567` (Excel mất số 0) đều thành `0901234567`; MSSV bỏ khoảng trắng/gạch, viết hoa.
-- **Người đã đăng ký** nội dung đó (theo MSSV → SĐT → tên) → bỏ qua. Sửa dòng lỗi rồi nhập lại **cả file** vẫn an toàn.
+- **Người đã đăng ký** nội dung đó trên hệ thống (theo MSSV → SĐT → tên) → bỏ qua. Sửa dòng lỗi rồi nhập lại **cả file** vẫn an toàn.
+- **Trùng trong file chỉ xét trong cùng một tab**: dòng lặp lại người ở dòng trước của cùng tab → bỏ qua. Người có ở **tab khác** mà hai tab cùng vào một nội dung (vd tab "ĐƠN NAM A" và "ĐƠN NAM B" gộp vào "Đơn nam" vì giải chưa chia hạng) → **báo lỗi** chỉ rõ tab + dòng, không âm thầm bỏ qua; tạo nội dung theo hạng hoặc bỏ chọn một tab.
 - **Chia bảng theo file**: dùng khi đã chia bảng sẵn (lễ bốc thăm trực tiếp). Chỉ áp dụng khi **mọi** dòng của nội dung có cột Bảng, nội dung **chưa có đội nào** trước đó và mỗi bảng ≥ 2 đội — nếu không, vẫn nhập đội nhưng KHÔNG chia bảng (báo lỗi rõ lý do), BTC bốc thăm như thường. Số bảng của nội dung đổi theo file; bốc thăm phụ (phá hoà) vẫn ngẫu nhiên.
 - Tối đa 2.000 dòng, 5 MB. CSV phải là UTF-8 (Google Form mặc định; Excel: *Lưu thành → CSV UTF-8*). File `.xls` cũ: lưu lại thành `.xlsx`.
 
