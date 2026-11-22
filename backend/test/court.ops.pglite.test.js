@@ -159,4 +159,15 @@ describe('Điều phối sân (PGlite)', { skip: hasPglite ? false : 'chưa cài
     const m = (await matchesOf()).find((x) => x.status === 'scheduled' && !x.calledAt);
     await rejectsWith(courts.callMatch(pool, REF, m.id, { court: 1 }), 403);
   });
+
+  // Chạy CUỐI: đóng giải.
+  test('giải đã kết thúc: trận trả tournamentStatus để Bàn điểm khoá; máy chủ từ chối nhập điểm', async () => {
+    const m = (await matchesOf()).find((x) => ['pending', 'scheduled'].includes(x.status) && x.a && x.b);
+    assert.ok(['published', 'ongoing'].includes(m.tournamentStatus));
+    await svc.updateTournament(pool, ADMIN, t.id, { status: 'completed' });
+    const closed = await svc.getMatch(pool, m.id);
+    assert.equal(closed.tournamentStatus, 'completed');
+    await rejectsWith(svc.recordScore(pool, ADMIN, m.id, { action: 'save', version: closed.version, games: [[1, 0]] }), 409, 'TOURNAMENT_CLOSED');
+    assert.deepEqual((await svc.getMatch(pool, m.id)).games, []);
+  });
 });

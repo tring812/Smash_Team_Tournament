@@ -1144,10 +1144,11 @@ const MATCH_SELECT = `
          eb.player1_name AS b_p1, eb.player2_name AS b_p2, eb.club AS b_club, eb.disqualified_at IS NOT NULL AS b_dq,
          ea.player1_athlete_id AS a_p1_aid, ea.player2_athlete_id AS a_p2_aid,
          eb.player1_athlete_id AS b_p1_aid, eb.player2_athlete_id AS b_p2_aid,
-         cat.points_to_win, cat.max_points, cat.games_to_win, cat.round_rules,
+         cat.points_to_win, cat.max_points, cat.games_to_win, cat.round_rules, mt.status AS tournament_status,
          (SELECT max(k.round) FROM matches k WHERE k.category_id = m.category_id AND k.stage = 'knockout') AS ko_rounds
     FROM matches m
     JOIN categories cat ON cat.id = m.category_id
+    JOIN tournaments mt ON mt.id = m.tournament_id
     LEFT JOIN groups g ON g.id = m.group_id
     LEFT JOIN entries ea ON ea.id = m.entry_a_id
     LEFT JOIN entries eb ON eb.id = m.entry_b_id
@@ -1170,6 +1171,8 @@ function presentMatch(r) {
   return {
     id: r.id,
     tournamentId: r.tournament_id,
+    // Giải đã kết thúc ('completed') → Bàn điểm khoá nhập điểm.
+    tournamentStatus: r.tournament_status,
     category: { id: r.category_id, code: r.category_code, name: r.category_name },
     stage: r.stage,
     groupName: r.group_name,

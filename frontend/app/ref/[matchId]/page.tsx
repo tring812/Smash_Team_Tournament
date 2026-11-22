@@ -96,9 +96,17 @@ export default function ScoringPage() {
   const [serve, setServeState] = useState<Serve>({ server: null, stack: [] });
   const [reminder, setReminder] = useState<(Reminder & { id: number }) | null>(null);
   const reminderSeq = useRef(0);
-  const setServe = useCallback((s: Serve) => { setServeState(s); writeServe(matchId, s); }, [matchId]);
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- đọc localStorage (hệ thống ngoài) 1 lần khi mở trận
-  useEffect(() => { setServeState(readServe(matchId)); }, [matchId]);
+  /** Bên giao mới nhất + bên giao ứng với lần lưu thành công gần nhất (để trả lại khi máy chủ từ chối). */
+  const serveRef = useRef<Serve>({ server: null, stack: [] });
+  const confirmedServe = useRef<Serve>({ server: null, stack: [] });
+  const setServe = useCallback((s: Serve) => { serveRef.current = s; setServeState(s); writeServe(matchId, s); }, [matchId]);
+  useEffect(() => {
+    const s = readServe(matchId);
+    serveRef.current = s;
+    confirmedServe.current = s;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- đọc localStorage (hệ thống ngoài) 1 lần khi mở trận
+    setServeState(s);
+  }, [matchId]);
 
   const version = useRef(0);
   const pending = useRef<Game[] | null>(null);
@@ -117,6 +125,18 @@ export default function ScoringPage() {
     version.current = m.version;
     if (["finished", "walkover", "bye", "cancelled"].includes(m.status)) clearDraft(m.id);
   }, []);
+
+  /** Thao tác bị máy chủ từ chối → bỏ nháp, tải lại tỉ số máy chủ, trả bên giao về lần lưu được gần nhất. */
+  const rollback = useCallback(async (reason: string) => {
+    clearDraft(matchId);
+    setHistory([]);
+    setServeState(confirmedServe.current);
+    serveRef.current = confirmedServe.current;
+    writeServe(matchId, confirmedServe.current);
+    try { adopt(await api<Match>(`/matches/${matchId}`)); } catch { /* giữ màn hình, vẫn báo lỗi */ }
+    setSync("error");
+    setMessage(`${reason} — đã trả điểm về như trước.`);
+  }, [matchId, adopt]);
 
   /**
    * Gửi snapshot mới nhất; các lần chạm trong lúc đang gửi được gộp thành 1 request tiếp theo.
@@ -139,6 +159,7 @@ export default function ScoringPage() {
           retryDelay.current = 2_000;
           if (!pending.current) {
             writeDraft(matchId, { baseVersion: m.version, games: snap, history: latest.current.history, synced: true });
+            confirmedServe.current = serveRef.current;
             setSync("saved");
             setMessage(null);
           }
@@ -160,16 +181,17 @@ export default function ScoringPage() {
             retryTimer.current = setTimeout(() => { void flushRef.current(); }, wait);
             return;
           } else {
+            // Máy chủ TỪ CHỐI (vd giải đã kết thúc): trả điểm + bên giao về đúng như máy chủ đang giữ.
             pending.current = null;
-            setSync("error");
-            setMessage((e as Error).message);
+            await rollback((e as Error).message);
+            return;
           }
         }
       }
     };
     inflight.current = run().finally(() => { inflight.current = null; });
     return inflight.current;
-  }, [matchId, adopt]);
+  }, [matchId, adopt, rollback]);
 
   useEffect(() => { flushRef.current = flush; }, [flush]);
 
@@ -180,6 +202,7 @@ export default function ScoringPage() {
       if (!alive) return;
       adopt(m);
       const d = readDraft(matchId);
+      if (d && m.tournamentStatus === "completed") { clearDraft(matchId); return; } // giải đã đóng: không gửi lại nháp
       if (!d || ["finished", "walkover", "bye", "cancelled"].includes(m.status)) return;
       if (d.baseVersion !== m.version) {
         clearDraft(matchId);
@@ -214,7 +237,9 @@ export default function ScoringPage() {
   const last = games[games.length - 1];
   const lastState = last ? gameState(last, rules) : "in_progress";
   const closed = ["finished", "walkover", "bye"].includes(match.status);
-  const canScore = !closed && !prog.winner && match.a && match.b;
+  /** Giải đã kết thúc: máy chủ từ chối mọi thao tác → khoá toàn bộ Bàn điểm. */
+  const locked = match.tournamentStatus === "completed";
+  const canScore = !closed && !locked && !prog.winner && match.a && match.b;
   const current: Game = last && lastState === "in_progress" ? last : [0, 0];
 
   function point(side: "a" | "b", delta: 1 | -1) {
@@ -252,13 +277,14 @@ export default function ScoringPage() {
 
   function undo() {
     const prev = history[history.length - 1];
-    if (!prev || closed) return;
+    if (!prev || closed || locked) return;
     if (serve.stack.length) setServe({ server: serve.stack[serve.stack.length - 1] ?? null, stack: serve.stack.slice(0, -1) });
     setReminder(null);
     commit(prev, history.slice(0, -1));
   }
 
   async function finish(action: "finish" | "walkover", walkoverWinner?: "a" | "b") {
+    if (locked) return;
     await flush();
     if (pending.current) {
       setMessage("Còn điểm chưa gửi được (mất mạng). Chờ có mạng rồi xác nhận lại.");
@@ -273,7 +299,8 @@ export default function ScoringPage() {
       setConfirmWo(null);
       setMessage(action === "finish" ? "Đã xác nhận kết quả trận." : "Đã ghi nhận bỏ cuộc.");
     } catch (e) {
-      setMessage((e as Error).message);
+      if (retriable(e)) setMessage((e as Error).message);
+      else await rollback((e as Error).message);
     }
   }
 
@@ -291,6 +318,12 @@ export default function ScoringPage() {
       <p className="sr-only" aria-live="assertive">
         {`${match.a?.name}: ${current[0]}, ${match.b?.name}: ${current[1]}. Game ${prog.gamesA}-${prog.gamesB}.`}
       </p>
+
+      {locked && (
+        <div role="status" className="mb-3 rounded-2xl border-2 border-slate-300 bg-slate-100 p-3 text-center font-bold text-slate-800">
+          Giải đã kết thúc — khoá nhập điểm
+        </div>
+      )}
 
       {canScore && !serve.server && (
         <div className="mb-3 rounded-2xl border-2 border-sky-500 bg-sky-50 p-3 text-center">
@@ -339,7 +372,7 @@ export default function ScoringPage() {
 
       {reminder && <ReminderBanner key={reminder.id} r={reminder} onClose={() => setReminder(null)} />}
 
-      {!closed && (
+      {!closed && !locked && (
         <div className="mt-4 grid grid-cols-3 gap-2">
           <button type="button" onClick={undo} disabled={!history.length} className="min-h-12 rounded-2xl border border-line font-semibold disabled:opacity-50">
             Hoàn tác
@@ -353,7 +386,7 @@ export default function ScoringPage() {
         </div>
       )}
 
-      {prog.winner && !closed && (
+      {prog.winner && !closed && !locked && (
         <div className="mt-4 rounded-2xl border-2 border-success p-4 text-center">
           <p className="font-semibold">{match[prog.winner]?.name} thắng {prog.gamesA}-{prog.gamesB}. Xác nhận để cập nhật bảng/nhánh.</p>
           <button type="button" onClick={() => finish("finish")} className="mt-3 min-h-12 rounded-full bg-primary px-6 font-extrabold text-on-primary">
@@ -362,7 +395,7 @@ export default function ScoringPage() {
         </div>
       )}
 
-      {confirmWo && !closed && (
+      {confirmWo && !closed && !locked && (
         <fieldset className="mt-4 rounded-2xl border border-live p-4">
           <legend className="px-1 font-semibold text-live">Xử thắng do đối phương bỏ cuộc</legend>
           <div className="flex flex-wrap gap-4">
@@ -384,7 +417,7 @@ export default function ScoringPage() {
           sync === "offline" ? <span className="font-semibold text-amber-700">Mất kết nối — điểm đã lưu trên máy này, sẽ tự gửi khi có mạng</span> :
           sync === "saving" ? <span className="text-muted">Đang lưu…</span> :
           sync === "saved" ? <span className="text-success">Đã lưu</span> : null}
-        {sync === "error" && (
+        {sync === "error" && !locked && (
           <button type="button" onClick={() => { pending.current = games; void flush(); }} className="ml-2 underline">Thử lại</button>
         )}
       </p>

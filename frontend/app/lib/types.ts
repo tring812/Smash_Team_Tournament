@@ -76,6 +76,8 @@ export interface ScoringRules {
 export interface Match {
   id: string;
   tournamentId: string;
+  /** Trạng thái giải của trận — "completed" thì Bàn điểm khoá nhập điểm. */
+  tournamentStatus: "draft" | "published" | "ongoing" | "completed";
   category: { id: string; code: string; name: string };
   stage: "group" | "knockout";
   groupName: string | null;
