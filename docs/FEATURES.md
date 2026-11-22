@@ -60,7 +60,8 @@ Không có đăng ký công khai: mọi tài khoản do quản trị viên tạo
 | Xem giải đang ở trạng thái **Nháp** | — | — | ✓ | ✓ |
 | Nhập điểm trận (được phân công hoặc chưa phân công) | — | ✓ | ✓ | ✓ |
 | Tạo giải | — | — | — | ✓ |
-| Sửa giải, đổi trạng thái | — | — | ✓ | ✓ |
+| Sửa giải (tên, đường dẫn, địa điểm, giờ, số sân, phút/trận), đổi trạng thái | — | — | ✓ | ✓ |
+| Xoá / khôi phục giải (chỉ **người tạo giải** trong số BTC) | — | — | người tạo | ✓ |
 | Thêm / sửa / xoá nội dung thi đấu | — | — | ✓ | ✓ |
 | Nhập đội, bốc thăm, đổi bảng, sửa đội, truất quyền | — | — | ✓ | ✓ |
 | Xếp lịch, phân công trọng tài, mở lại trận | — | — | ✓ | ✓ |
@@ -160,6 +161,8 @@ Cho biết **trận nào, đánh ở sân nào, lúc mấy giờ, tỉ số bao 
 - Thẻ số liệu: số nội dung, số đội đăng ký, trận đã xong / tổng, số trận đang đánh.
 - Đổi **trạng thái giải**: Nháp (chỉ BTC thấy) → Công bố → Đang diễn ra (tự chuyển khi có điểm đầu tiên) → Đã kết thúc (khoá nhập điểm).
 - Danh sách nội dung kèm giai đoạn; 6 thao tác gần nhất trong nhật ký.
+- **Thông tin giải**: sửa tên, đường dẫn (slug — link cũ không mở được nữa), địa điểm, giờ bắt đầu, số sân, phút/trận. Đổi số sân hoặc phút/trận mà còn trận đã xếp lịch chưa đánh → hỏi **"Xếp lại lịch N trận chưa đánh?"** (sang trang Xếp lịch; trận đã gọi / đang đánh giữ nguyên).
+- **Vùng nguy hiểm — Xoá giải** (chỉ quản trị viên hoặc người tạo giải): gõ lại đường dẫn để xác nhận; không xoá được giải **Đang diễn ra**. Xoá **mềm**: giải biến khỏi mọi danh sách, đường dẫn, hàng đợi trọng tài và mọi thao tác ngay; **khôi phục trong 7 ngày** ở trang chủ (mục "Giải đã xoá", chỉ người có quyền xoá thấy). Quá 7 ngày máy chủ **xoá hẳn** dây chuyền: nội dung, đội, VĐV, trận, biên bản, nhật ký, phân công trọng tài.
 
 ### 6.2 Nội dung & VĐV
 **CRUD nội dung thi đấu** (MS, WS, MD, WD, XD…):
@@ -426,7 +429,9 @@ Tiền tố `/api`. Request ghi phải có header `X-Requested-With: fetch`. L�
 | PATCH | `/admin/users/:id` `{fullName?, role?, password?, disabled?}` | quản trị viên | Sửa, đặt lại mật khẩu, khoá / mở khoá |
 | GET | `/tournaments` · `/tournaments/:slug` | công khai (Nháp: BTC) | Danh sách giải · chi tiết giải + nội dung |
 | POST | `/tournaments` | Quản trị viên | Tạo giải |
-| PATCH | `/tournaments/:id` | BTC | Sửa giải, đổi trạng thái |
+| PATCH | `/tournaments/:id` `{name?, slug?, venue?, startsAt?, courts?, slotMinutes?, status?}` | BTC | Sửa giải, đổi trạng thái (slug trùng → `409 SLUG_TAKEN`) |
+| DELETE | `/tournaments/:id` `{confirmSlug}` | Quản trị viên / người tạo giải | Xoá mềm (khôi phục 7 ngày); giải đang diễn ra → `409 TOURNAMENT_ONGOING` |
+| POST · GET | `/tournaments/:id/restore` · `/deleted-tournaments` | Quản trị viên / người tạo giải | Khôi phục (quá hạn → `409 RESTORE_EXPIRED`) · giải đã xoá còn khôi phục được |
 | GET | `/tournaments/:id/matches?court&status&categoryId` | công khai | Lịch / danh sách trận |
 | POST | `/tournaments/:id/schedule` `{stage, startAt?, courts?, slotMinutes?}` | BTC | Xếp lịch vòng bảng / loại trực tiếp |
 | GET | `/tournaments/:id/events` | BTC | Nhật ký thao tác |

@@ -13,6 +13,8 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 - `GET /tournaments` trả thêm `my_role` (`organizer` | `referee` | `null`) và `is_referee` theo người xem.
 
 ### Added
+- **Xoá giải**: mục "Vùng nguy hiểm" cuối trang Tổng quan (quản trị viên hoặc người tạo giải), gõ lại đường dẫn để xác nhận, không xoá được giải đang diễn ra. Xoá mềm — **khôi phục trong 7 ngày** ở trang chủ (mục "Giải đã xoá"), quá hạn máy chủ xoá hẳn toàn bộ dữ liệu của giải. API `DELETE /tournaments/:id`, `POST /tournaments/:id/restore`, `GET /deleted-tournaments`; **migration 011** (`tournaments.deleted_at`, `deleted_by`).
+- **Sửa thông tin giải** ở trang Tổng quan: tên, đường dẫn (slug), địa điểm, giờ bắt đầu, số sân, phút/trận; đổi số sân / phút mỗi trận thì hỏi có xếp lại lịch các trận chưa đánh không. `PATCH /tournaments/:id` nhận thêm `slug`.
 - **Trùng tên khi nhập VĐV**: người không có MSSV/SĐT trùng tên người khác và **khác CLB** → hộp xem trước hỏi **Người khác** (mặc định) / **Cùng người**; chọn "người khác" thì server tạo hồ sơ riêng (`player1NewAthlete` / `player2NewAthlete`) thay vì báo "đã đăng ký". Nhiều hồ sơ cùng tên mà đúng 1 người cùng CLB → tự nhận đúng người đó.
 - **Nhập Excel không còn dừng giữa chừng**: mỗi nội dung ghi độc lập; nội dung lỗi được báo riêng (giữ hộp xem trước, đội đã vào tự bỏ qua khi nhập lại), các nội dung khác vẫn vào. Email sai định dạng bị bỏ qua kèm cảnh báo thay vì làm hỏng cả nội dung (cả ở client lẫn server).
 - **Dán danh sách** nhận thêm MSSV và SĐT: `tên ; CLB ; MSSV ; SĐT` (đôi: `A / B ; CLB ; MSSV A / MSSV B ; SĐT A / SĐT B`).

@@ -60,6 +60,14 @@ const dtf = new Intl.DateTimeFormat("vi-VN", {
 });
 export const fmtTime = (iso: string | null) => (iso ? dtf.format(new Date(iso)) : "Chưa xếp");
 
+/** ISO → "2026-12-05T08:00" theo giờ Việt Nam (giá trị cho input datetime-local). */
+export function isoToVnLocal(iso: string): string {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Ho_Chi_Minh", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(new Date(iso)).map((x) => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
+}
+
 /** "2026-12-05T08:00" (input datetime-local, giờ VN) → ISO có offset +07:00. */
 export function vnLocalToIso(local: string): string {
   return `${local.length === 16 ? `${local}:00` : local}+07:00`;

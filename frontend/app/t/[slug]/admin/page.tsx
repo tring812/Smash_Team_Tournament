@@ -8,6 +8,7 @@ import { usePoll } from "../../../lib/usePoll";
 import type { Match, TournamentEvent } from "../../../lib/types";
 import { Card, PageHeader, Select, StatCard } from "../../../components/ui";
 import { ACTION_LABEL, STAGE_LABEL, describeEvent, useAdmin } from "./AdminContext";
+import { DangerZone, TournamentInfoCard } from "./TournamentSettings";
 
 export default function AdminOverview() {
   const { slug } = useParams<{ slug: string }>();
@@ -73,6 +74,9 @@ export default function AdminOverview() {
           )}
         </Card>
       </div>
+
+      <TournamentInfoCard key={`${t.id}-${t.slug}-${t.starts_at}-${t.courts}-${t.slot_minutes}-${t.name}-${t.venue}`} matches={matches.data} />
+      <DangerZone />
     </div>
   );
 }

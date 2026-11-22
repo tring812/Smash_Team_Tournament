@@ -56,11 +56,15 @@ async function withTx(pool, fn) {
  */
 async function roleIn(db, tournamentId, viewer) {
   if (!viewer) return null;
-  if (viewer.role === 'admin') return 'admin';
   const { rows } = await db.query(
-    'SELECT role FROM tournament_staff WHERE tournament_id = $1 AND user_id = $2',
+    `SELECT t.deleted_at, s.role FROM tournaments t
+       LEFT JOIN tournament_staff s ON s.tournament_id = t.id AND s.user_id = $2
+      WHERE t.id = $1`,
     [tournamentId, viewer.id],
   );
+  // Giải đã xoá (mềm): không ai thao tác được nữa — chỉ khôi phục (restoreTournament).
+  if (rows[0]?.deleted_at) return null;
+  if (viewer.role === 'admin') return 'admin';
   return rows[0]?.role ?? null;
 }
 
@@ -153,22 +157,102 @@ async function createTournament(pool, viewer, input) {
 }
 
 /**
- * Sửa thông tin giải (organizer).
+ * Sửa thông tin giải (organizer): tên, đường dẫn (slug), địa điểm, giờ bắt đầu, số sân, phút/trận, trạng thái.
+ * Không tự xếp lại lịch — giao diện hỏi BTC có xếp lại các trận chưa đánh không.
  * @param {Queryable} db @param {Viewer} viewer @param {string} tid
- * @param {{ name?: string, venue?: string, startsAt?: string, courts?: number, slotMinutes?: number, status?: string }} patch
+ * @param {{ name?: string, slug?: string, venue?: string, startsAt?: string, courts?: number, slotMinutes?: number, status?: string }} patch
  */
 async function updateTournament(db, viewer, tid, patch) {
   await requireOrganizer(db, tid, viewer);
+  try {
+    const { rows } = await db.query(
+      `UPDATE tournaments SET
+         name = COALESCE($2, name), venue = COALESCE($3, venue), starts_at = COALESCE($4, starts_at),
+         courts = COALESCE($5, courts), slot_minutes = COALESCE($6, slot_minutes), status = COALESCE($7, status),
+         slug = COALESCE($8, slug)
+       WHERE id = $1 AND deleted_at IS NULL RETURNING *`,
+      [tid, patch.name ?? null, patch.venue ?? null, patch.startsAt ?? null, patch.courts ?? null,
+        patch.slotMinutes ?? null, patch.status ?? null, patch.slug ?? null],
+    );
+    if (!rows[0]) throw notFound('Không tìm thấy giải');
+    return rows[0];
+  } catch (err) {
+    if (/** @type {any} */ (err).code === '23505') throw conflict('SLUG_TAKEN', 'Đường dẫn (slug) đã được dùng');
+    throw err;
+  }
+}
+
+/** Số ngày được khôi phục giải đã xoá. */
+const RESTORE_DAYS = 7;
+
+/**
+ * Chỉ quản trị viên hoặc người tạo giải được xoá / khôi phục.
+ * @param {{ created_by: string }} t @param {Viewer|null} viewer
+ */
+const canDelete = (t, viewer) => Boolean(viewer) && (viewer?.role === 'admin' || t.created_by === viewer?.id);
+
+/**
+ * XOÁ giải (mềm): giải biến khỏi mọi danh sách / đường dẫn; khôi phục được trong 7 ngày, sau đó xoá hẳn.
+ * Phải gõ lại đúng slug để xác nhận. Không xoá giải "Đang diễn ra".
+ * @param {Pool} pool @param {Viewer} viewer @param {string} tid @param {string} confirmSlug
+ */
+async function deleteTournament(pool, viewer, tid, confirmSlug) {
+  return withTx(pool, async (c) => {
+    const t = (await c.query('SELECT * FROM tournaments WHERE id = $1 AND deleted_at IS NULL FOR UPDATE', [tid])).rows[0];
+    if (!t) throw notFound('Không tìm thấy giải');
+    if (!canDelete(t, viewer)) throw forbidden('Chỉ quản trị viên hoặc người tạo giải được xoá giải');
+    if (t.status === 'ongoing') throw conflict('TOURNAMENT_ONGOING', 'Giải đang diễn ra — chuyển trạng thái khác rồi mới xoá được');
+    if (confirmSlug !== t.slug) throw unprocessable(`Gõ đúng đường dẫn "${t.slug}" để xác nhận xoá`);
+    await c.query('UPDATE tournaments SET deleted_at = now(), deleted_by = $2 WHERE id = $1', [tid, viewer.id]);
+    return { id: t.id, slug: t.slug, restoreDays: RESTORE_DAYS };
+  });
+}
+
+/**
+ * Khôi phục giải đã xoá (trong 7 ngày).
+ * @param {Pool} pool @param {Viewer} viewer @param {string} tid
+ */
+async function restoreTournament(pool, viewer, tid) {
+  return withTx(pool, async (c) => {
+    const t = (await c.query('SELECT * FROM tournaments WHERE id = $1 AND deleted_at IS NOT NULL FOR UPDATE', [tid])).rows[0];
+    if (!t) throw notFound('Không tìm thấy giải đã xoá');
+    if (!canDelete(t, viewer)) throw forbidden('Chỉ quản trị viên hoặc người tạo giải được khôi phục');
+    if (Date.now() - new Date(t.deleted_at).getTime() > RESTORE_DAYS * 86_400_000) {
+      throw conflict('RESTORE_EXPIRED', `Đã quá ${RESTORE_DAYS} ngày, không khôi phục được`);
+    }
+    const { rows } = await c.query('UPDATE tournaments SET deleted_at = NULL, deleted_by = NULL WHERE id = $1 RETURNING *', [tid]);
+    return rows[0];
+  });
+}
+
+/**
+ * Giải đã xoá còn khôi phục được: quản trị viên thấy tất cả, người khác thấy giải mình tạo.
+ * @param {Queryable} db @param {Viewer} viewer
+ */
+async function listDeletedTournaments(db, viewer) {
   const { rows } = await db.query(
-    `UPDATE tournaments SET
-       name = COALESCE($2, name), venue = COALESCE($3, venue), starts_at = COALESCE($4, starts_at),
-       courts = COALESCE($5, courts), slot_minutes = COALESCE($6, slot_minutes), status = COALESCE($7, status)
-     WHERE id = $1 RETURNING *`,
-    [tid, patch.name ?? null, patch.venue ?? null, patch.startsAt ?? null, patch.courts ?? null,
-      patch.slotMinutes ?? null, patch.status ?? null],
+    `SELECT t.id, t.slug, t.name, t.starts_at, t.deleted_at, t.deleted_at + make_interval(days => $3) AS purge_at,
+            u.full_name AS deleted_by
+       FROM tournaments t LEFT JOIN users u ON u.id = t.deleted_by
+      WHERE t.deleted_at IS NOT NULL AND t.deleted_at > now() - make_interval(days => $3)
+        AND ($1::boolean OR t.created_by = $2)
+      ORDER BY t.deleted_at DESC`,
+    [viewer.role === 'admin', viewer.id, RESTORE_DAYS],
   );
-  if (!rows[0]) throw notFound('Không tìm thấy giải');
-  return rows[0];
+  return rows;
+}
+
+/**
+ * Xoá HẲN các giải đã xoá mềm quá 7 ngày (dây chuyền qua mọi bảng con). Gọi định kỳ từ server.
+ * @param {Queryable} db @param {Date} [now]
+ * @returns {Promise<number>} số giải đã xoá hẳn
+ */
+async function purgeDeletedTournaments(db, now = new Date()) {
+  const { rowCount } = await db.query(
+    'DELETE FROM tournaments WHERE deleted_at IS NOT NULL AND deleted_at < $1::timestamptz - make_interval(days => $2)',
+    [now.toISOString(), RESTORE_DAYS],
+  );
+  return rowCount ?? 0;
 }
 
 /**
@@ -1205,7 +1289,7 @@ function presentMatch(r) {
  * @param {Queryable} db @param {string} slug @param {Viewer|null} viewer
  */
 async function getTournament(db, slug, viewer) {
-  const t = (await db.query('SELECT * FROM tournaments WHERE slug = $1', [slug])).rows[0];
+  const t = (await db.query('SELECT * FROM tournaments WHERE slug = $1 AND deleted_at IS NULL', [slug])).rows[0];
   if (!t) throw notFound('Không tìm thấy giải');
   const role = await roleIn(db, t.id, viewer);
   if (t.status === 'draft' && role !== 'admin' && role !== 'organizer') throw notFound('Không tìm thấy giải');
@@ -1213,7 +1297,8 @@ async function getTournament(db, slug, viewer) {
     `SELECT c.*, (SELECT count(*)::int FROM entries e WHERE e.category_id = c.id) AS entry_count
        FROM categories c WHERE tournament_id = $1 ORDER BY code`, [t.id],
   );
-  return { ...t, viewerRole: role, categories };
+  const { deleted_at: _deletedAt, deleted_by: _deletedBy, ...info } = t;
+  return { ...info, viewerRole: role, canDelete: canDelete(t, viewer), categories };
 }
 
 /** @param {Queryable} db @param {Viewer|null} viewer */
@@ -1232,7 +1317,7 @@ async function listTournaments(db, viewer) {
             )) AS is_referee
        FROM tournaments t
        LEFT JOIN tournament_staff s ON s.tournament_id = t.id AND s.user_id = $2::uuid
-      WHERE t.status <> 'draft' OR $1::boolean OR s.user_id IS NOT NULL
+      WHERE t.deleted_at IS NULL AND (t.status <> 'draft' OR $1::boolean OR s.user_id IS NOT NULL)
       ORDER BY t.starts_at DESC LIMIT 100`,
     [isAdmin, viewer?.id ?? null],
   );
@@ -1290,7 +1375,7 @@ async function refereeQueue(db, viewer) {
     `${MATCH_SELECT}
       JOIN tournaments t ON t.id = m.tournament_id
       LEFT JOIN court_referees cr ON cr.tournament_id = m.tournament_id AND cr.court = m.court
-     WHERE t.status IN ('published', 'ongoing')
+     WHERE t.status IN ('published', 'ongoing') AND t.deleted_at IS NULL
        AND m.status IN ('scheduled', 'live', 'pending')
        AND m.entry_a_id IS NOT NULL AND m.entry_b_id IS NOT NULL
        AND (COALESCE(m.referee_user_id, cr.user_id) = $1 OR (COALESCE(m.referee_user_id, cr.user_id) IS NULL AND (
@@ -1309,7 +1394,7 @@ async function refereeQueue(db, viewer) {
  * @param {Queryable} db @param {string} tid @param {Viewer|null} viewer
  */
 async function assertVisible(db, tid, viewer) {
-  const t = (await db.query('SELECT status FROM tournaments WHERE id = $1', [tid])).rows[0];
+  const t = (await db.query('SELECT status FROM tournaments WHERE id = $1 AND deleted_at IS NULL', [tid])).rows[0];
   if (!t) throw notFound('Không tìm thấy giải');
   if (t.status !== 'draft') return;
   const role = await roleIn(db, tid, viewer);
@@ -1368,7 +1453,7 @@ module.exports = {
   assertVisible, tournamentOfCategory, listEntries, listStaff, searchUsers, listEvents,
   disqualifyEntry, reinstateEntry, swapEntries, updateEntry,
   withTx, roleIn, requireOrganizer, logEvent, nameKey, participantKey, entryLabel, presentMatch, MATCH_SELECT, FINAL_STATUSES,
-  createTournament, updateTournament, upsertStaff, removeStaff, createCategory, updateCategory, deleteCategory,
+  createTournament, updateTournament, deleteTournament, restoreTournament, listDeletedTournaments, purgeDeletedTournaments, upsertStaff, removeStaff, createCategory, updateCategory, deleteCategory,
   addEntries, removeEntry,
   drawGroups, scheduleTournament, groupStandings, generateKnockout,
   recordScore, reopenMatch, assignReferee, setRoundRules,
