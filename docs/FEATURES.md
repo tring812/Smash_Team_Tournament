@@ -60,7 +60,8 @@ Không có đăng ký công khai: mọi tài khoản do quản trị viên tạo
 | Xem giải đang ở trạng thái **Nháp** | — | — | ✓ | ✓ |
 | Nhập điểm trận (được phân công hoặc chưa phân công) | — | ✓ | ✓ | ✓ |
 | Tạo giải | — | — | — | ✓ |
-| Sửa giải, đổi trạng thái | — | — | ✓ | ✓ |
+| Sửa giải (tên, đường dẫn, địa điểm, giờ, số sân, phút/trận), đổi trạng thái | — | — | ✓ | ✓ |
+| Xoá / khôi phục giải (chỉ **người tạo giải** trong số BTC) | — | — | người tạo | ✓ |
 | Thêm / sửa / xoá nội dung thi đấu | — | — | ✓ | ✓ |
 | Nhập đội, bốc thăm, đổi bảng, sửa đội, truất quyền | — | — | ✓ | ✓ |
 | Xếp lịch, phân công trọng tài, mở lại trận | — | — | ✓ | ✓ |
@@ -160,6 +161,8 @@ Cho biết **trận nào, đánh ở sân nào, lúc mấy giờ, tỉ số bao 
 - Thẻ số liệu: số nội dung, số đội đăng ký, trận đã xong / tổng, số trận đang đánh.
 - Đổi **trạng thái giải**: Nháp (chỉ BTC thấy) → Công bố → Đang diễn ra (tự chuyển khi có điểm đầu tiên) → Đã kết thúc (khoá nhập điểm).
 - Danh sách nội dung kèm giai đoạn; 6 thao tác gần nhất trong nhật ký.
+- **Thông tin giải**: sửa tên, đường dẫn (slug — link cũ không mở được nữa), địa điểm, giờ bắt đầu, số sân, phút/trận. Đổi số sân hoặc phút/trận mà còn trận đã xếp lịch chưa đánh → hỏi **"Xếp lại lịch N trận chưa đánh?"** (sang trang Xếp lịch; trận đã gọi / đang đánh giữ nguyên).
+- **Vùng nguy hiểm — Xoá giải** (chỉ quản trị viên hoặc người tạo giải): gõ lại đường dẫn để xác nhận; không xoá được giải **Đang diễn ra**. Xoá **mềm**: giải biến khỏi mọi danh sách, đường dẫn, hàng đợi trọng tài và mọi thao tác ngay; **khôi phục trong 7 ngày** ở trang chủ (mục "Giải đã xoá", chỉ người có quyền xoá thấy). Quá 7 ngày máy chủ **xoá hẳn** dây chuyền: nội dung, đội, VĐV, trận, biên bản, nhật ký, phân công trọng tài.
 
 ### 6.2 Nội dung & VĐV
 **CRUD nội dung thi đấu** (MS, WS, MD, WD, XD…):
@@ -181,7 +184,7 @@ Trường bị khoá hiện mờ kèm lý do; server kiểm tra lại (lỗi 409
 - **Dán danh sách đăng ký**: mỗi dòng `tên ; CLB ; MSSV ; SĐT` (đôi: `tên A / tên B ; CLB ; MSSV A / MSSV B ; SĐT A / SĐT B`); chỉ tên bắt buộc. Có MSSV/SĐT thì không mất định danh khi phải dán tay thay vì nhập file. Chỉ khi chưa bốc thăm.
 - **Xoá đội**: chỉ khi chưa bốc thăm.
 - **Sửa đội** (thay VĐV, đổi đồng đội, đổi CLB): khi đội chưa thi đấu trận nào.
-- **Bốc thăm** chia bảng (xem [7.1](#71-bốc-thăm-ngẫu-nhiên)) và **Bốc thăm lại** (xác nhận trong hộp thoại).
+- **Bốc thăm** chia bảng (xem [7.1](#71-bốc-thăm-ngẫu-nhiên)) — hỏi xác nhận trước khi bốc (số đội, số bảng; sau khi bốc không thêm / xoá đội được) — và **Bốc thăm lại** (xác nhận trong hộp thoại; cảnh báo số trận vòng bảng đã xếp giờ / sân sẽ mất lịch).
 - **Đổi bảng**: đổi chỗ 2 đội ở 2 bảng khác nhau; lịch vòng tròn của 2 bảng đó được tạo lại. Chỉ khi 2 bảng chưa có trận bắt đầu.
 - **Truất quyền** (bắt buộc ghi lý do) và **Huỷ truất quyền** — xem [7.4](#74-truất-quyền-thi-đấu).
 - **Tạo nhánh loại trực tiếp** khi mọi bảng đã đánh xong.
@@ -200,16 +203,17 @@ Màn hình BTC dùng suốt ngày thi đấu — **lịch giờ chỉ là dự k
 - **Hàng chờ**: mọi trận đủ 2 đội chưa vào sân, sắp theo giờ dự kiến; nhãn đỏ "X đang ở sân N" (không gọi được), nhãn vàng "Nghỉ thêm ~N′"; gọi nhanh vào sân trống bất kỳ, hoặc **Dời** (đồng hồ).
 - Lỗi (sân đang bận, VĐV đang ở sân khác…) hiện ngay trong hộp thoại, giữ nguyên lựa chọn.
 - Khán giả thấy trận đã gọi với nhãn vàng **"Mời ra sân"** trên lịch thi đấu.
+- Gọi trận **trước giờ khai mạc** → hỏi lại ("Giải chưa khai mạc — vẫn gọi?"). **Rút về** một trận đã có điểm → hỏi lại. Hộp **Chuyển sân** làm mờ sân hiện tại và sân đang có trận, chọn sẵn sân trống đầu tiên. Nhãn "Đã gọi / Đang đánh · x phút" tự cập nhật mỗi 30 giây.
 
 ### 6.4 Xếp lịch sân (lịch dự kiến)
 Hai biểu mẫu độc lập (xem [7.5](#75-xếp-lịch-sân)):
 - **Vòng bảng**: giờ bắt đầu (bỏ trống = giờ khai mạc), số sân, phút/trận.
 - **Loại trực tiếp**: **bắt buộc** ngày giờ (có thể khác ngày vòng bảng), số sân, phút/trận.
 
-Số sân / phút mỗi trận chỉ áp cho lần xếp đó, không đổi cấu hình giải. Báo số trận đã xếp và giờ dự kiến xong.
+Số sân / phút mỗi trận chỉ áp cho lần xếp đó, không đổi cấu hình giải. Báo số trận đã xếp, giờ dự kiến xong và **số lượt VĐV không được nghỉ** (đánh 2 khung giờ liền nhau) — `noRest` trong kết quả `POST /tournaments/:id/schedule` và nhật ký.
 
 ### 6.5 Trận đấu & trọng tài
-- Lọc theo trạng thái (Tất cả / Đang đánh / Sắp đánh / Kết thúc / Đã huỷ) và nội dung.
+- Lọc theo trạng thái (Tất cả / **Mời ra sân** — đã gọi vào sân, chưa có điểm / Đang đánh / Sắp đánh / Kết thúc / Đã huỷ) và nội dung.
 - **Phân công trọng tài** từng trận (hoặc "Ai cũng được" — khi đó trọng tài phụ trách sân sẽ chấm).
 - **Dời** một trận: đổi giờ dự kiến và/hoặc sân mà không phải xếp lại cả giai đoạn. Chặn trùng sân hoặc trùng VĐV trong cùng khung giờ (± số phút mỗi trận). Trận đang ở sân chỉ **chuyển sân**.
 - **Nhập điểm** (mở bàn trọng tài) hoặc **Mở lại** trận đã kết thúc để sửa tỉ số — xem [7.7](#77-mở-lại-trận).
@@ -233,7 +237,7 @@ File `.xlsx` hoặc `.csv` được **đọc và tạo ngay trên trình duyệt
 | Nút | Kết quả |
 |---|---|
 | **File mẫu** | `mau-danh-sach-vdv-<giải>.xlsx`: sheet *Danh sách* (cột `Nội dung · VĐV 1 · MSSV 1 · SĐT 1 · VĐV 2 · MSSV 2 · SĐT 2 · CLB · Bảng`, có dòng ví dụ) + sheet *Hướng dẫn* |
-| **Nhập Excel / CSV** | Đọc file → hộp **Xem trước**: bảng tổng hợp (Hợp lệ · Có lỗi · Cần xác nhận · Trùng, và hợp lệ / lỗi / trùng theo từng nội dung), số đội sẽ thêm theo từng nội dung, bao nhiêu dòng có MSSV/SĐT, **chia bảng theo file** (nếu có), dòng lỗi (kèm sheet + số dòng), người đã đăng ký bị bỏ qua → bấm **Nhập N đội** |
+| **Nhập Excel / CSV** | Đọc file → hộp **Xem trước**: bảng tổng hợp (Hợp lệ · Có lỗi · Cần xác nhận · Trùng, và hợp lệ / lỗi / trùng theo từng nội dung), số đội sẽ thêm theo từng nội dung, bao nhiêu dòng có MSSV/SĐT, **chia bảng theo file** (nếu có), dòng lỗi (kèm sheet + số dòng), người đã đăng ký bị bỏ qua → bấm **Nhập N đội** · nút **Tạo nội dung còn thiếu** (file chia hạng mà giải chưa có "Đôi nam A"…: tạo theo cặp Nội dung × Hạng, chép luật điểm / số bảng của nội dung gốc rồi tự xếp lại) · cột **Ghi chú** có chữ "sai", "chưa", "nợ", "chuyển" → **Cần kiểm tra**, chỉ nhập dòng BTC tick · số **VĐV đánh nhiều nội dung** · nhập song song các nội dung không chung VĐV, hiện tiến độ "Đã nhập k/n nội dung…" |
 | **Xuất <mã>** / **Xuất toàn giải** | Mỗi nội dung 1 sheet + sheet *Tất cả*; cùng cột với file nhập (+ STT, Trạng thái), **có MSSV/SĐT** → file chứa dữ liệu cá nhân, không chia sẻ công khai |
 
 Nhận cột theo **nghĩa** (không phân biệt hoa thường/dấu/thứ tự; dòng tiêu đề trong 10 dòng đầu) — dùng thẳng được file **CSV tải từ Google Form**:
@@ -334,7 +338,6 @@ stateDiagram-v2
   [*] --> pending: bốc thăm / tạo nhánh
   pending --> scheduled: xếp lịch / dời trận
   scheduled --> pending: dời trận (bỏ giờ)
-  pending --> scheduled: BTC gọi vào sân (called_at)
   scheduled --> live: nhập điểm đầu tiên
   pending --> live: nhập điểm khi chưa xếp lịch
   live --> finished: xác nhận kết quả
@@ -350,13 +353,13 @@ stateDiagram-v2
   [*] --> bye: nhánh thiếu đội
 ```
 
-"Đã gọi vào sân" không phải một trạng thái riêng: trận vẫn `scheduled`, có thêm `called_at` (công khai hiện **"Mời ra sân"**). Rút về hàng chờ = xoá `called_at`.
+"Đã gọi vào sân" không phải một trạng thái riêng: trận giữ nguyên trạng thái chờ (`pending` / `scheduled`), có thêm `called_at` (công khai hiện **"Mời ra sân"**). Gọi trận **không đổi giờ dự kiến** (`scheduled_at`); sân dự kiến được giữ ở `planned_court`. Rút về hàng chờ = xoá `called_at` và trả lại sân dự kiến.
 
 ### 7.9 Điều phối sân
 - **Sân bận** khi có trận đang đánh, hoặc trận đã gọi mà chưa có điểm. **VĐV bận** khi đang ở một trận như vậy (kể cả nội dung khác; so theo tên chuẩn hoá không phân biệt hoa thường).
-- **Gọi trận** (`POST /matches/:id/call`): trận phải đang chờ và đủ 2 đội; sân và mọi VĐV phải rảnh; giờ thi đấu ghi lại = lúc gọi. Hai BTC bấm cùng lúc: khoá theo giải, chỉ một người thành công.
+- **Gọi trận** (`POST /matches/:id/call`): trận phải đang chờ và đủ 2 đội; sân và mọi VĐV phải rảnh. Giờ gọi lưu ở `called_at`; **giờ dự kiến (`scheduled_at`) và sân dự kiến giữ nguyên** (sân dự kiến cất ở `planned_court`, `court` = sân đang dùng). Hai BTC bấm cùng lúc: khoá theo giải, chỉ một người thành công.
 - **Gợi ý trận kế tiếp** cho từng sân trống (tham lam, không 2 gợi ý nào chung VĐV): bỏ trận có VĐV bận → ưu tiên trận mà không VĐV nào vừa đánh xong dưới **10 phút** → ưu tiên trận lịch dự kiến ở chính sân đó → giờ dự kiến sớm nhất → vòng/lượt. BTC vẫn gọi được trận khác (trừ trận có VĐV bận).
-- **Rút trận** chỉ khi chưa có điểm; đã có điểm thì **chuyển sân** (sân mới phải trống).
+- **Rút trận** chỉ khi chưa có điểm; trận về lại **đúng giờ và sân dự kiến** ban đầu (vị trí cũ trong hàng chờ). Đã có điểm thì **chuyển sân** (sân mới phải trống).
 - **Dời trận chờ**: server từ chối nếu trong ± (phút mỗi trận) quanh giờ mới có trận khác cùng sân (`COURT_TAKEN`) hoặc cùng VĐV (`PLAYER_TAKEN`).
 - **Trọng tài hiệu lực** của một trận = trọng tài gán riêng cho trận, nếu không có thì trọng tài phụ trách sân của trận, nếu không có nữa thì bất kỳ trọng tài nào của giải.
 - Mọi thao tác gọi / rút / dời / giao trọng tài sân ghi vào **nhật ký BTC**.
@@ -408,7 +411,7 @@ Mỗi giải có danh sách **hồ sơ VĐV** riêng. Khi thêm đội (dán, Ex
 - **MSSV, SĐT, email là dữ liệu cá nhân**: chỉ API dành cho BTC trả ra (`/tournaments/:id/athletes`); danh sách đội công khai chỉ có tên, CLB và id hồ sơ. Nhật ký sửa hồ sơ chỉ ghi **tên trường** đã sửa, không ghi giá trị. Hồ sơ không còn ở đội nào bị xoá. File Excel xuất ra có MSSV/SĐT — BTC tự bảo quản.
 - **Kênh trực tiếp (SSE)** `/tournaments/:id/stream` chỉ báo "giải vừa đổi", không mang dữ liệu → client gọi lại API thường, quyền xem không đổi; giải nháp chỉ BTC mở được. Tối đa 1.000 kết nối/instance (quá → 503, client dùng polling).
 - Mọi truy vấn SQL tham số hoá; mọi dữ liệu vào kiểm tra bằng zod; lỗi trả `application/problem+json` không lộ chi tiết nội bộ.
-- **Giao diện Hệ thống / Sáng / Tối**: chọn ở menu tài khoản và sidebar quản trị (khán giả chưa đăng nhập theo cài đặt của máy); mặc định theo hệ thống, lưu **riêng từng máy** (`localStorage`, không theo tài khoản). Script nhỏ trong `<head>` đặt giao diện trước khi vẽ (không loé trắng). Màu đều lấy từ biến CSS nên đổi một chỗ; vùng cố ý tối (sidebar, TV, banner, chân trang) giữ nguyên. Đã quét tương phản chữ WCAG AA trên các trang chính ở cả hai chế độ.
+- **Chỉ có giao diện sáng** (đã bỏ bộ chọn Hệ thống / Sáng / Tối): không phụ thuộc cài đặt Tối của máy; lựa chọn cũ còn lưu (`localStorage` khoá `st-theme`) được xoá khi mở trang. Vùng cố ý tối (sidebar quản trị, TV, banner, chân trang) giữ nguyên. Tương phản chữ đạt WCAG AA trên các trang chính.
 - **Chỉ khi dev**: `DATABASE_URL=pglite:...` (Postgres WASM, không cần cài Postgres) và `DEV_LOGIN=1` (nút "Dev: Admin / Dev: Trọng tài"). Cấu hình **từ chối** cả hai ở production.
 
 <sub>[↑ Back to contents](#contents)</sub>
@@ -427,7 +430,9 @@ Tiền tố `/api`. Request ghi phải có header `X-Requested-With: fetch`. L�
 | PATCH | `/admin/users/:id` `{fullName?, role?, password?, disabled?}` | quản trị viên | Sửa, đặt lại mật khẩu, khoá / mở khoá |
 | GET | `/tournaments` · `/tournaments/:slug` | công khai (Nháp: BTC) | Danh sách giải · chi tiết giải + nội dung |
 | POST | `/tournaments` | Quản trị viên | Tạo giải |
-| PATCH | `/tournaments/:id` | BTC | Sửa giải, đổi trạng thái |
+| PATCH | `/tournaments/:id` `{name?, slug?, venue?, startsAt?, courts?, slotMinutes?, status?}` | BTC | Sửa giải, đổi trạng thái (slug trùng → `409 SLUG_TAKEN`) |
+| DELETE | `/tournaments/:id` `{confirmSlug}` | Quản trị viên / người tạo giải | Xoá mềm (khôi phục 7 ngày); giải đang diễn ra → `409 TOURNAMENT_ONGOING` |
+| POST · GET | `/tournaments/:id/restore` · `/deleted-tournaments` | Quản trị viên / người tạo giải | Khôi phục (quá hạn → `409 RESTORE_EXPIRED`) · giải đã xoá còn khôi phục được |
 | GET | `/tournaments/:id/matches?court&status&categoryId` | công khai | Lịch / danh sách trận |
 | POST | `/tournaments/:id/schedule` `{stage, startAt?, courts?, slotMinutes?}` | BTC | Xếp lịch vòng bảng / loại trực tiếp |
 | GET | `/tournaments/:id/events` | BTC | Nhật ký thao tác |
@@ -536,6 +541,7 @@ erDiagram
     int court
     timestamptz scheduled_at
     timestamptz called_at "đã gọi vào sân"
+    int planned_court "sân dự kiến khi đang được gọi"
     uuid next_match_id FK
     int version "khoá lạc quan"
   }

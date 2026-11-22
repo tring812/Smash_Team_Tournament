@@ -79,7 +79,8 @@ failures as they are; never skip or weaken a test to make it pass.
 - Shared response types live in `app/lib/types.ts` — update them together with the backend change.
 - Reuse components from `app/components/ui.tsx` and icons from `lucide-react` before writing new ones.
 - Excel / CSV are parsed in the browser (`app/lib/excel.ts`); the server has no file upload endpoint — keep it that way.
-- Must work on a phone (referees and spectators are mobile-first) and in both light and dark themes.
+- Must work on a phone (referees and spectators are mobile-first). The site is light-theme only (no dark mode); dark areas
+  (admin sidebar, footer, banner, TV screen) are marked `.theme-fixed`.
 
 ## Tests
 

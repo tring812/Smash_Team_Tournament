@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 
 const { BWF_RULES, gameState, evaluateMatch } = require('../src/domain/scoring');
 const { snakeDraw, roundRobin, groupName } = require('../src/domain/draw');
-const { scheduleMatches } = require('../src/domain/schedule');
+const { scheduleMatches, countNoRest } = require('../src/domain/schedule');
 const { computeStandings } = require('../src/domain/standings');
 const { seedOrder, seedsFromGroups, buildBracket, roundLabel } = require('../src/domain/bracket');
 
@@ -98,6 +98,21 @@ describe('draw', () => {
       }
     });
   }
+});
+
+describe('schedule.countNoRest', () => {
+  test('đếm mỗi lần một VĐV đánh 2 khung liền nhau', () => {
+    const ms = [
+      { id: 'm1', participants: ['an', 'binh'] },
+      { id: 'm2', participants: ['an', 'chi'] },
+      { id: 'm3', participants: ['binh', 'dung'] },
+      { id: 'm4', participants: ['an', 'dung'] },
+    ];
+    const slots = [{ id: 'm1', slot: 0 }, { id: 'm2', slot: 1 }, { id: 'm3', slot: 2 }, { id: 'm4', slot: 3 }];
+    // Khung: m1=0, m2=1, m3=2, m4=3 → an: 0,1,3 (1 lượt) · binh: 0,2 (0) · chi: 1 · dung: 2,3 (1 lượt)
+    assert.equal(countNoRest(ms, slots), 2);
+    assert.equal(countNoRest(ms, []), 0);
+  });
 });
 
 describe('schedule', () => {

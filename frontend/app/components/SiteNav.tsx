@@ -10,7 +10,6 @@ import {
 import { api, loginUrl } from "../lib/api";
 import { sortTournaments } from "../lib/tournamentOrder";
 import type { TournamentSummary, Viewer } from "../lib/types";
-import { ThemeToggle } from "./ThemeToggle";
 
 const STATUS: Record<TournamentSummary["status"], { label: string; cls: string }> = {
   ongoing: { label: "Đang diễn ra", cls: "bg-red-50 text-red-700" },
@@ -354,10 +353,6 @@ function AccountMenu({ viewer, tournaments, isReferee, onLogout }: {
               {isAdmin ? <UsersRound className="h-4 w-4" aria-hidden /> : <KeyRound className="h-4 w-4" aria-hidden />}
               {isAdmin ? "Quản lý tài khoản" : "Đổi mật khẩu"}
             </Link>
-            <div className="flex items-center justify-between gap-2 px-3 py-1.5">
-              <span className="text-sm font-medium text-slate-700">Giao diện</span>
-              <ThemeToggle />
-            </div>
           </div>
 
           <div className="mt-1 border-t border-slate-100 pt-1">

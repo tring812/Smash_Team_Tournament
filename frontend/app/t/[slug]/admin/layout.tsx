@@ -7,7 +7,6 @@ import {
   CalendarClock, CalendarDays, Eye, Home, LayoutDashboard, Loader2, LogOut, Menu, ScrollText, ShieldCheck, Swords, Users, X, UserCog, MonitorPlay, IdCard,
 } from "lucide-react";
 import { api, loginUrl } from "../../../lib/api";
-import { ThemeToggle } from "../../../components/ThemeToggle";
 import type { Tournament } from "../../../lib/types";
 import { Notice } from "../../../components/ui";
 import { AdminContext, type ActFn, type AdminCtx } from "./AdminContext";
@@ -137,7 +136,6 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           <Link href="/" className={`${sideLink} text-slate-300 hover:bg-white/5 hover:text-white`}>
             <Home className="w-5 h-5 text-slate-400" aria-hidden /><span>Trang chủ</span>
           </Link>
-          <div className="px-3 py-2"><ThemeToggle tone="onDark" /></div>
           <button type="button" onClick={logout} className={`${sideLink} w-full text-red-400 hover:bg-red-500/10 hover:text-red-300 cursor-pointer`}>
             <LogOut className="w-5 h-5" aria-hidden /><span>Đăng xuất</span>
           </button>

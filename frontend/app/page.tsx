@@ -8,6 +8,7 @@ import { api } from "./lib/api";
 import type { TournamentSummary } from "./lib/types";
 import { sortTournaments } from "./lib/tournamentOrder";
 import { CardSkeleton, EmptyState } from "./components/ui";
+import { DeletedTournaments } from "./components/DeletedTournaments";
 
 const STATUS_LABEL: Record<TournamentSummary["status"], string> = {
   draft: "Nháp", published: "Sắp diễn ra", ongoing: "Đang diễn ra", completed: "Đã kết thúc",
@@ -24,9 +25,8 @@ export default function HomePage() {
   const [items, setItems] = useState<TournamentSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    api<TournamentSummary[]>("/tournaments").then((ts) => setItems(sortTournaments(ts))).catch((e: Error) => setError(e.message));
-  }, []);
+  const loadList = () => api<TournamentSummary[]>("/tournaments").then((ts) => setItems(sortTournaments(ts))).catch((e: Error) => setError(e.message));
+  useEffect(() => { void loadList(); }, []);
 
   const featured = items?.find((t) => t.status === "ongoing") ?? items?.find((t) => t.status === "published") ?? items?.[0];
 
@@ -78,6 +78,8 @@ export default function HomePage() {
           ))}
         </ul>
       </section>
+
+      <DeletedTournaments onRestored={() => void loadList()} />
 
       <ul className="grid gap-4 sm:grid-cols-3">
         {FEATURES.map(({ icon: Icon, t, d }) => (
