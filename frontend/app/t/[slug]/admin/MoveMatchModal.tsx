@@ -20,10 +20,21 @@ function isoToVnLocal(iso: string | null): string {
  * Dời MỘT trận: đổi sân và/hoặc giờ dự kiến (server chặn trùng sân / trùng VĐV trong cùng khung giờ).
  * Trận đang ở sân (đang đánh / đã gọi) chỉ đổi được sân — "chuyển sân".
  */
-export function MoveMatchModal({ match, courts, onClose }: { match: Match | null; courts: number; onClose: () => void }) {
+export function MoveMatchModal({ match, courts, busyCourts = [], onClose }: {
+  match: Match | null; courts: number;
+  /** Sân đang có trận (đang đánh / đã gọi): không chọn được khi chuyển sân. */
+  busyCourts?: number[];
+  onClose: () => void;
+}) {
   const { busy, act } = useAdmin();
   const onCourt = Boolean(match && (match.status === "live" || match.calledAt));
-  const [court, setCourt] = useState<string>(match?.court ? String(match.court) : "");
+  // Chuyển sân: chọn sẵn sân trống đầu tiên (sân hiện tại và sân bận bị làm mờ).
+  const [court, setCourt] = useState<string>(() => {
+    if (!match) return "";
+    if (!(match.status === "live" || match.calledAt)) return match.court ? String(match.court) : "";
+    const free = Array.from({ length: courts }, (_, i) => i + 1).find((n) => n !== match.court && !busyCourts.includes(n));
+    return free ? String(free) : "";
+  });
   const [at, setAt] = useState<string>(isoToVnLocal(match?.scheduledAt ?? null));
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -58,7 +69,16 @@ export function MoveMatchModal({ match, courts, onClose }: { match: Match | null
           </div>
           <Select label="Sân" value={court} onChange={(e) => setCourt(e.target.value)} required={onCourt}>
             {!onCourt && <option value="">— Chưa chọn sân —</option>}
-            {Array.from({ length: courts }, (_, i) => <option key={i + 1} value={i + 1}>Sân {i + 1}</option>)}
+            {Array.from({ length: courts }, (_, i) => {
+              const n = i + 1;
+              const current = onCourt && n === match.court;
+              const busyHere = onCourt && !current && busyCourts.includes(n);
+              return (
+                <option key={n} value={n} disabled={current || busyHere}>
+                  Sân {n}{current ? " — sân hiện tại" : busyHere ? " — đang có trận" : ""}
+                </option>
+              );
+            })}
           </Select>
           {onCourt ? (
             <p className="text-xs text-slate-500">Trận đang ở sân: chỉ chuyển sân (sân mới phải đang trống), điểm số giữ nguyên.</p>

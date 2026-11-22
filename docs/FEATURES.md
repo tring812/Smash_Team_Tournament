@@ -181,7 +181,7 @@ Trường bị khoá hiện mờ kèm lý do; server kiểm tra lại (lỗi 409
 - **Dán danh sách đăng ký**: mỗi dòng `tên ; CLB ; MSSV ; SĐT` (đôi: `tên A / tên B ; CLB ; MSSV A / MSSV B ; SĐT A / SĐT B`); chỉ tên bắt buộc. Có MSSV/SĐT thì không mất định danh khi phải dán tay thay vì nhập file. Chỉ khi chưa bốc thăm.
 - **Xoá đội**: chỉ khi chưa bốc thăm.
 - **Sửa đội** (thay VĐV, đổi đồng đội, đổi CLB): khi đội chưa thi đấu trận nào.
-- **Bốc thăm** chia bảng (xem [7.1](#71-bốc-thăm-ngẫu-nhiên)) và **Bốc thăm lại** (xác nhận trong hộp thoại).
+- **Bốc thăm** chia bảng (xem [7.1](#71-bốc-thăm-ngẫu-nhiên)) — hỏi xác nhận trước khi bốc (số đội, số bảng; sau khi bốc không thêm / xoá đội được) — và **Bốc thăm lại** (xác nhận trong hộp thoại; cảnh báo số trận vòng bảng đã xếp giờ / sân sẽ mất lịch).
 - **Đổi bảng**: đổi chỗ 2 đội ở 2 bảng khác nhau; lịch vòng tròn của 2 bảng đó được tạo lại. Chỉ khi 2 bảng chưa có trận bắt đầu.
 - **Truất quyền** (bắt buộc ghi lý do) và **Huỷ truất quyền** — xem [7.4](#74-truất-quyền-thi-đấu).
 - **Tạo nhánh loại trực tiếp** khi mọi bảng đã đánh xong.
@@ -200,16 +200,17 @@ Màn hình BTC dùng suốt ngày thi đấu — **lịch giờ chỉ là dự k
 - **Hàng chờ**: mọi trận đủ 2 đội chưa vào sân, sắp theo giờ dự kiến; nhãn đỏ "X đang ở sân N" (không gọi được), nhãn vàng "Nghỉ thêm ~N′"; gọi nhanh vào sân trống bất kỳ, hoặc **Dời** (đồng hồ).
 - Lỗi (sân đang bận, VĐV đang ở sân khác…) hiện ngay trong hộp thoại, giữ nguyên lựa chọn.
 - Khán giả thấy trận đã gọi với nhãn vàng **"Mời ra sân"** trên lịch thi đấu.
+- Gọi trận **trước giờ khai mạc** → hỏi lại ("Giải chưa khai mạc — vẫn gọi?"). **Rút về** một trận đã có điểm → hỏi lại. Hộp **Chuyển sân** làm mờ sân hiện tại và sân đang có trận, chọn sẵn sân trống đầu tiên. Nhãn "Đã gọi / Đang đánh · x phút" tự cập nhật mỗi 30 giây.
 
 ### 6.4 Xếp lịch sân (lịch dự kiến)
 Hai biểu mẫu độc lập (xem [7.5](#75-xếp-lịch-sân)):
 - **Vòng bảng**: giờ bắt đầu (bỏ trống = giờ khai mạc), số sân, phút/trận.
 - **Loại trực tiếp**: **bắt buộc** ngày giờ (có thể khác ngày vòng bảng), số sân, phút/trận.
 
-Số sân / phút mỗi trận chỉ áp cho lần xếp đó, không đổi cấu hình giải. Báo số trận đã xếp và giờ dự kiến xong.
+Số sân / phút mỗi trận chỉ áp cho lần xếp đó, không đổi cấu hình giải. Báo số trận đã xếp, giờ dự kiến xong và **số lượt VĐV không được nghỉ** (đánh 2 khung giờ liền nhau) — `noRest` trong kết quả `POST /tournaments/:id/schedule` và nhật ký.
 
 ### 6.5 Trận đấu & trọng tài
-- Lọc theo trạng thái (Tất cả / Đang đánh / Sắp đánh / Kết thúc / Đã huỷ) và nội dung.
+- Lọc theo trạng thái (Tất cả / **Mời ra sân** — đã gọi vào sân, chưa có điểm / Đang đánh / Sắp đánh / Kết thúc / Đã huỷ) và nội dung.
 - **Phân công trọng tài** từng trận (hoặc "Ai cũng được" — khi đó trọng tài phụ trách sân sẽ chấm).
 - **Dời** một trận: đổi giờ dự kiến và/hoặc sân mà không phải xếp lại cả giai đoạn. Chặn trùng sân hoặc trùng VĐV trong cùng khung giờ (± số phút mỗi trận). Trận đang ở sân chỉ **chuyển sân**.
 - **Nhập điểm** (mở bàn trọng tài) hoặc **Mở lại** trận đã kết thúc để sửa tỉ số — xem [7.7](#77-mở-lại-trận).

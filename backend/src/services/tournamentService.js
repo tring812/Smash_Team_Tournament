@@ -14,7 +14,7 @@
 
 const crypto = require('node:crypto');
 const { randomDraw, partitionKey, roundRobin, shuffle } = require('../domain/draw');
-const { scheduleMatches } = require('../domain/schedule');
+const { scheduleMatches, countNoRest } = require('../domain/schedule');
 const { computeStandings } = require('../domain/standings');
 const { seedsFromGroups, buildBracket, roundLabel } = require('../domain/bracket');
 const { evaluateMatch } = require('../domain/scoring');
@@ -669,6 +669,8 @@ async function scheduleTournament(pool, viewer, tid, opts = {}) {
       slotMinutes,
       startsAt: startAt.toISOString(),
       endsAt: new Date(startAt.getTime() + (last + 1) * slotMinutes * 60_000).toISOString(),
+      // Lượt VĐV phải đánh 2 khung giờ liền nhau (không được nghỉ) trong lịch vừa xếp.
+      noRest: countNoRest(input, slots),
     };
     await logEvent(c, tid, null, viewer.id, 'schedule', result);
     return result;
