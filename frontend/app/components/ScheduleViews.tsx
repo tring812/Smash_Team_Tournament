@@ -151,7 +151,7 @@ export function AllMatchesTable({ matches }: { matches: Match[] }) {
       <div className="hidden overflow-x-auto rounded-2xl border border-slate-100 bg-white shadow-sm md:block">
         <table className="w-full text-sm">
           <caption className="sr-only">Toàn bộ trận đấu: giờ, sân, nội dung, đội, tỉ số, trạng thái</caption>
-          <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
+          <thead className="whitespace-nowrap bg-slate-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
             <tr>
               <th scope="col" className="px-4 py-3">Giờ</th>
               <th scope="col" className="py-3 pr-3">Sân</th>
@@ -166,7 +166,7 @@ export function AllMatchesTable({ matches }: { matches: Match[] }) {
             {rows.map((m) => (
               <tr key={m.id} className={`border-t border-slate-100 ${m.status === "live" ? "bg-red-50/60" : ""}`}>
                 <td className="tabular whitespace-nowrap px-4 py-3 font-semibold text-slate-900">{m.scheduledAt ? fmtTime(m.scheduledAt) : "—"}</td>
-                <td className="py-3 pr-3">{m.court ? <span className="rounded-full bg-slate-900 px-2.5 py-0.5 text-xs font-bold text-white">Sân {m.court}</span> : <span className="text-slate-400">—</span>}</td>
+                <td className="whitespace-nowrap py-3 pr-3">{m.court ? <span className="inline-flex items-center whitespace-nowrap rounded-full bg-slate-900 px-2.5 py-0.5 text-xs font-bold text-white">Sân {m.court}</span> : <span className="text-slate-400">—</span>}</td>
                 <td className="py-3 pr-3 text-xs text-slate-500">{matchTitle(m)}</td>
                 <td className="py-3 pr-3"><Team m={m} side="a" /></td>
                 <td className="tabular py-3 pr-3 text-center font-semibold">{scoreLine(m) || "—"}</td>
