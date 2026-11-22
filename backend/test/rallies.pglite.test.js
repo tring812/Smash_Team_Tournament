@@ -91,7 +91,8 @@ describe('Biên bản diễn biến điểm (PGlite)', { skip: hasPglite ? false
     await add(REF, { type: 'fix_server', server: 'a1', expectedSeq: 3 });
     const evs = await svc.listEvents(pool, ADMIN, t.id);
     const fix = evs.find((e) => e.action === 'rally_fix_server');
-    assert.equal(fix.details.name, 'Phạm Vũ Chí Cường');
+    // Ô a1 = VĐV 1 của đội a — đội nào là a tuỳ kết quả bốc thăm ngẫu nhiên.
+    assert.equal(fix.details.name, (await svc.getMatch(pool, match.id)).a.players[0].name);
     assert.ok(!evs.some((e) => e.action === 'rally_point'));
   });
 

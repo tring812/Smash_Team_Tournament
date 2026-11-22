@@ -9,6 +9,11 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 - **Bàn điểm khoá khi giải "Đã kết thúc"**: trước đây máy chủ từ chối nhưng giao diện vẫn cho chọn bên giao và bấm điểm, số điểm hiện lên rồi giữ nguyên. Nay hiện banner "Giải đã kết thúc — khoá nhập điểm" và làm mờ mọi nút; thao tác bị máy chủ từ chối thì **trả điểm về như trước**. Mọi API trả trận có thêm `tournamentStatus`.
 
 ### Changed
+- **Bỏ chế độ Tối**: xoá bộ chọn giao diện Hệ thống / Sáng / Tối ở sidebar BTC Hub và menu tài khoản; web cố định giao diện sáng (máy đặt chế độ Tối cũng hiện sáng), lựa chọn cũ lưu trên máy được xoá.
+- **Bốc thăm** hỏi xác nhận trước khi bốc; **Bốc thăm lại** cảnh báo số trận đã xếp lịch sẽ mất lịch.
+- **Xếp lịch** báo thêm số lượt VĐV không được nghỉ (đánh 2 khung giờ liền nhau); kết quả API có `noRest`.
+- **Điều phối sân**: hỏi lại khi gọi trận trước giờ khai mạc và khi rút về trận đã có điểm; hộp Chuyển sân làm mờ sân hiện tại / sân đang có trận.
+- **Trận đấu & trọng tài**: thêm bộ lọc **Mời ra sân**.
 - **Thanh điều hướng**: "Lịch thi đấu ▾" mở danh sách giải để chọn (đang diễn ra → sắp diễn ra → nháp → đã kết thúc), khỏi phải cuộn trang chủ. Mục **"Trọng tài" chỉ hiện với tài khoản có nhiệm vụ trọng tài** (vai trò trọng tài của giải, phụ trách sân, hoặc được gán trận); admin không còn thấy mục này.
 - **Menu tài khoản gom phần quản lý**: danh sách giải mình quản lý được (admin: mọi giải; BTC: giải mình là BTC) dẫn vào trang quản trị, "Tạo giải mới" (admin), "Quản lý tài khoản" (admin) hoặc "Đổi mật khẩu", chọn giao diện, đăng xuất. Bỏ mục "Tạo giải" khỏi thanh trên.
 - Điện thoại: thanh tab đáy Trang chủ · Lịch đấu (mở bảng chọn giải) · Trọng tài.
@@ -16,10 +21,19 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 - Bỏ bộ chọn giao diện ở chân trang và ở trang Tài khoản (đã có trong menu tài khoản).
 - `GET /tournaments` trả thêm `my_role` (`organizer` | `referee` | `null`) và `is_referee` theo người xem.
 
+### Fixed
+- **Nhập Excel bỏ qua nhầm người "trùng"**: trước đây người ở tab này bị so với mọi tab khác cùng vào một nội dung (vd "ĐƠN NAM A" và "ĐƠN NAM B" gộp vào "Đơn nam") rồi âm thầm "đã đăng ký — bỏ qua". Nay trùng trong file **chỉ xét trong cùng tab**; trùng ở tab khác → báo lỗi chỉ rõ tab + dòng. Người đã có trên hệ thống vẫn tự bỏ qua như cũ.
+
 ### Added
 - **Biên bản diễn biến điểm dưới Bàn điểm** theo mẫu biên bản giấy: mỗi pha cầu một cột, số ghi ở hàng người giao pha kế tiếp, G/N đầu game, vạch "Nghỉ" / "Đổi sân", ✎ khi sửa người giao hoặc BTC sửa tay, ⏳ cho pha chưa lưu (mất mạng). Trang chỉ xem `/bien-ban/<matchId>` (công khai, tự làm mới) có **In / Tải PDF** khổ A4 ngang; nút **Biên bản** ở trang Trận đấu & trọng tài và trên thẻ trận công khai.
 - **Chọn người giao và người nhận khi đánh đôi**: đầu mỗi game chọn đội giao → ai giao → ai nhận; máy tự tính vị trí trái/phải và người giao mọi pha sau theo luật BWF; nhãn giao/nhận kèm tên; **Sửa người giao** chọn đúng VĐV.
 - API biên bản: `POST /matches/:id/rallies`, `DELETE /matches/:id/rallies/last`, `GET /matches/:id` trả thêm `rallies`. **Migration 010** (`match_rallies`; nhật ký thêm sửa người giao / hoàn tác pha cầu / xác nhận kết quả).
+- **Xoá giải**: mục "Vùng nguy hiểm" cuối trang Tổng quan (quản trị viên hoặc người tạo giải), gõ lại đường dẫn để xác nhận, không xoá được giải đang diễn ra. Xoá mềm — **khôi phục trong 7 ngày** ở trang chủ (mục "Giải đã xoá"), quá hạn máy chủ xoá hẳn toàn bộ dữ liệu của giải. API `DELETE /tournaments/:id`, `POST /tournaments/:id/restore`, `GET /deleted-tournaments`; **migration 011** (`tournaments.deleted_at`, `deleted_by`).
+- **Sửa thông tin giải** ở trang Tổng quan: tên, đường dẫn (slug), địa điểm, giờ bắt đầu, số sân, phút/trận; đổi số sân / phút mỗi trận thì hỏi có xếp lại lịch các trận chưa đánh không. `PATCH /tournaments/:id` nhận thêm `slug`.
+- **Nhập Excel — Tạo nội dung còn thiếu**: file chia hạng (Bảng A / B…) mà giải chưa có nội dung theo hạng → hộp xem trước liệt kê các nội dung Nội dung × Hạng (vd "Đơn nam A", mã MSA) kèm số dòng; một nút tạo hết (chép luật điểm, số bảng của nội dung gốc) và file tự xếp lại theo nội dung mới.
+- **Nhập Excel — cột Ghi chú**: dòng có ghi chú chứa "sai", "chưa", "nợ", "chuyển" (không phân biệt dấu, nguyên từ) được gắn **Cần kiểm tra**; BTC tick dòng nào mới nhập dòng đó.
+- **Nhập Excel — tiến độ & nhanh hơn**: các nội dung không chung VĐV được nhập song song (tối đa 4 cùng lúc; VĐV đánh nhiều nội dung vẫn nhập lần lượt để không tạo trùng hồ sơ), hiện "Đã nhập k/n nội dung…". Bảng tổng hợp có thêm số **VĐV đánh nhiều nội dung**.
+- **Bảng tổng hợp khi nhập Excel / CSV**: đầu hộp xem trước có các ô **Hợp lệ** (đội sẽ nhập) · **Có lỗi** · **Cần xác nhận** (trùng tên) · **Trùng** (đã có trên hệ thống hoặc lặp lại trong cùng tab → bỏ qua), bảng **phân loại theo nội dung** (hợp lệ / lỗi / trùng từng nội dung; lỗi không xác định được nội dung gom vào dòng riêng), và danh sách dòng lỗi cần xử lý ngay bên dưới.
 - **Trùng tên khi nhập VĐV**: người không có MSSV/SĐT trùng tên người khác và **khác CLB** → hộp xem trước hỏi **Người khác** (mặc định) / **Cùng người**; chọn "người khác" thì server tạo hồ sơ riêng (`player1NewAthlete` / `player2NewAthlete`) thay vì báo "đã đăng ký". Nhiều hồ sơ cùng tên mà đúng 1 người cùng CLB → tự nhận đúng người đó.
 - **Nhập Excel không còn dừng giữa chừng**: mỗi nội dung ghi độc lập; nội dung lỗi được báo riêng (giữ hộp xem trước, đội đã vào tự bỏ qua khi nhập lại), các nội dung khác vẫn vào. Email sai định dạng bị bỏ qua kèm cảnh báo thay vì làm hỏng cả nội dung (cả ở client lẫn server).
 - **Dán danh sách** nhận thêm MSSV và SĐT: `tên ; CLB ; MSSV ; SĐT` (đôi: `A / B ; CLB ; MSSV A / MSSV B ; SĐT A / SĐT B`).

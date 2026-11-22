@@ -1,14 +1,33 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { AlertTriangle, Download, FileSpreadsheet, FileUp, Info, Users } from "lucide-react";
+import { AlertTriangle, Download, FileSpreadsheet, FileUp, Info, Layers, StickyNote, Users } from "lucide-react";
 import { api } from "../../../../lib/api";
-import { defaultSheets, downloadTemplate, exportEntries, planImport, readWorkbook, usableSheets, type NameDecision, type RawSheet } from "../../../../lib/excel";
+import { defaultSheets, downloadTemplate, exportEntries, planImport, readWorkbook, usableSheets, type ImportPlan, type NameDecision, type RawSheet } from "../../../../lib/excel";
 import type { Athlete, Category, Entry } from "../../../../lib/types";
 import { Button, Modal } from "../../../../components/ui";
 import { useAdmin } from "../AdminContext";
 
 const CHUNK = 256; // = giới hạn 1 lần gọi POST /categories/:id/entries
+const PARALLEL = 4; // số nội dung nhập cùng lúc
+
+/** Khoá VĐV (giống máy chủ): MSSV, không có thì SĐT, không có nữa thì tên. */
+const personKey = (p: { name: string; studentId: string | null; phone: string | null }) =>
+  p.studentId ? `s:${p.studentId}` : p.phone ? `t:${p.phone}` : `n:${p.name.normalize("NFC").trim().toLocaleLowerCase("vi")}`;
+
+/**
+ * Chia các nội dung thành "đợt": trong một đợt không có VĐV nào chung → nhập song song an toàn
+ * (2 giao dịch cùng lúc không tranh nhau tạo cùng một hồ sơ VĐV). VĐV đánh nhiều nội dung → các nội dung đó nhập lần lượt.
+ */
+function waves(groups: ImportPlan["byCategory"]) {
+  const out: { items: ImportPlan["byCategory"]; keys: Set<string> }[] = [];
+  for (const g of groups) {
+    const keys = new Set(g.rows.flatMap((r) => [r.p1, r.p2].filter((p): p is NonNullable<typeof p> => Boolean(p)).map(personKey)));
+    const wave = out.find((w) => w.items.length < PARALLEL && ![...keys].some((k) => w.keys.has(k)));
+    if (wave) { wave.items.push(g); keys.forEach((k) => wave.keys.add(k)); } else out.push({ items: [g], keys });
+  }
+  return out.map((w) => w.items);
+}
 
 /** Nhập / xuất danh sách VĐV bằng Excel. File chỉ đọc trên trình duyệt; kế hoạch nhập được xem trước rồi mới ghi. */
 export function ExcelPanel({ current }: { current: Category | undefined }) {
@@ -23,11 +42,15 @@ export function ExcelPanel({ current }: { current: Category | undefined }) {
     decisions: Record<string, NameDecision>;
     /** Nội dung nhập lỗi ở lần bấm "Nhập" trước (các nội dung khác vẫn đã nhập). */
     failed: { code: string; message: string }[];
+    /** Dòng có Ghi chú cần kiểm tra mà BTC đã tick "Nhập" (khoá = FlaggedRow.key). */
+    include: Record<string, boolean>;
   } | null>(null);
   const [committing, setCommitting] = useState(false);
+  /** Tiến độ nhập: số nội dung đã xong / tổng. */
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const plan = useMemo(() => loaded && {
     file: loaded.file,
-    plan: planImport(loaded.sheets.filter((x) => loaded.picked.includes(x.sheet)), t.categories, current, loaded.existing, loaded.athletes, loaded.decisions),
+    plan: planImport(loaded.sheets.filter((x) => loaded.picked.includes(x.sheet)), t.categories, current, loaded.existing, loaded.athletes, loaded.decisions, loaded.include),
   }, [loaded, t.categories, current]);
   const setPlan = (v: null) => setLoaded(v);
 
@@ -41,7 +64,7 @@ export function ExcelPanel({ current }: { current: Category | undefined }) {
     try {
       const sheets = await readWorkbook(file);
       const [existing, athletes] = await Promise.all([loadEntries(t.categories.filter((c) => c.stage === "setup")), loadAthletes()]);
-      setLoaded({ file: file.name, sheets, usable: usableSheets(sheets), picked: defaultSheets(sheets, t.categories), existing, athletes, decisions: {}, failed: [] });
+      setLoaded({ file: file.name, sheets, usable: usableSheets(sheets), picked: defaultSheets(sheets, t.categories), existing, athletes, decisions: {}, failed: [], include: {} });
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -66,13 +89,32 @@ export function ExcelPanel({ current }: { current: Category | undefined }) {
    * Ghi từng NỘI DUNG độc lập: một nội dung lỗi (vd dữ liệu sai) không chặn các nội dung còn lại.
    * Có lỗi → giữ hộp xem trước, tải lại đội đã có (dòng đã vào sẽ tự bỏ qua) và báo lỗi theo từng nội dung.
    */
+  /** Tạo các nội dung × hạng có trong file mà giải chưa có (chép luật điểm / số bảng của nội dung gốc). */
+  async function createMissing() {
+    if (!plan) return;
+    const list = plan.plan.missingCategories;
+    await act(async () => {
+      for (const m of list) {
+        await api(`/tournaments/${t.id}/categories`, {
+          method: "POST",
+          body: {
+            code: m.code, name: m.name, isDoubles: m.isDoubles, groupCount: m.base.group_count, advancePerGroup: m.base.advance_per_group,
+            pointsToWin: m.base.points_to_win, maxPoints: m.base.max_points, gamesToWin: m.base.games_to_win,
+          },
+        });
+      }
+      return list.length;
+    }, (n) => `Đã tạo ${n} nội dung: ${list.map((m) => m.name).join(", ")} — file đã được xếp lại theo nội dung mới`);
+  }
+
   async function commit() {
     if (!plan || !loaded) return;
     const groups = plan.plan.byCategory;
     setCommitting(true);
+    setProgress({ done: 0, total: groups.length });
     const done: { code: string; n: number; drawn: boolean }[] = [];
     const failed: { code: string; message: string }[] = [];
-    for (const g of groups) {
+    const importOne = async (g: ImportPlan["byCategory"][number]) => {
       try {
         const ids: string[] = [];
         for (let i = 0; i < g.rows.length; i += CHUNK) {
@@ -95,8 +137,12 @@ export function ExcelPanel({ current }: { current: Category | undefined }) {
         done.push({ code: g.category.code, n: g.rows.length, drawn: Boolean(g.groups) });
       } catch (err) {
         failed.push({ code: g.category.code, message: (err as Error).message });
+      } finally {
+        setProgress((x) => (x ? { ...x, done: x.done + 1 } : x));
       }
-    }
+    };
+    for (const wave of waves(groups)) await Promise.all(wave.map(importOne));
+    setProgress(null);
     const total = done.reduce((n, d) => n + d.n, 0);
     const drawn = done.filter((d) => d.drawn).map((d) => d.code);
     await act(async () => null, done.length
@@ -119,6 +165,31 @@ export function ExcelPanel({ current }: { current: Category | undefined }) {
 
   const p = plan?.plan;
   const total = p?.byCategory.reduce((n, g) => n + g.rows.length, 0) ?? 0;
+  const confirmCount = (p?.nameClashes.length ?? 0) + (p?.flagged.length ?? 0);
+  const needsCheck = Boolean(p && (p.errors.length || confirmCount || p.missingCategories.length));
+  /** Bảng tổng hợp theo nội dung: số đội hợp lệ, dòng lỗi, dòng trùng. Lỗi chưa rõ nội dung gom vào một dòng riêng. */
+  const summary = useMemo(() => {
+    if (!p) return [];
+    const rows = new Map<string, { label: string; ok: number; err: number; dup: number }>();
+    const get = (code: string) => {
+      let r = rows.get(code);
+      if (!r) {
+        const c = t.categories.find((x) => x.code === code);
+        r = { label: c ? c.name : code, ok: 0, err: 0, dup: 0 };
+        rows.set(code, r);
+      }
+      return r;
+    };
+    for (const g of p.byCategory) get(g.category.code).ok += g.rows.length;
+    for (const e of p.errors) {
+      if (e.codes?.length) e.codes.forEach((c) => get(c).err++);
+      else get("").err++;
+    }
+    for (const s of p.skipped) s.codes?.forEach((c) => get(c).dup++);
+    const order = (code: string) => { const i = t.categories.findIndex((c) => c.code === code); return i < 0 ? Infinity : i; };
+    return [...rows.entries()].sort(([a], [b]) => order(a) - order(b))
+      .map(([code, r]) => ({ code, ...r, label: code ? r.label : "Chưa xác định nội dung" }));
+  }, [p, t.categories]);
   const btn = "inline-flex min-h-11 items-center gap-2 rounded-full border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition-colors hover:border-slate-400 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed";
 
   return (
@@ -176,7 +247,7 @@ export function ExcelPanel({ current }: { current: Category | undefined }) {
                 </div>
                 <p className="mt-2 text-xs text-slate-500">
                   File có cả sheet câu trả lời Google Form lẫn sheet theo nội dung → mặc định chỉ chọn các sheet theo nội dung (danh sách đã chốt).
-                  Chọn cả hai cũng không nhân đôi: người trùng MSSV / SĐT tự bỏ qua.
+                  Trùng chỉ xét trong cùng một tab: người có ở hai tab cùng vào một nội dung sẽ báo lỗi (không tự bỏ qua) — vì vậy chỉ nên chọn một loại sheet.
                 </p>
               </fieldset>
             )}
@@ -186,6 +257,105 @@ export function ExcelPanel({ current }: { current: Category | undefined }) {
                 <ul className="mt-1 space-y-1">{loaded.failed.map((f) => <li key={f.code}><span className="font-semibold">{f.code}:</span> {f.message}</li>)}</ul>
                 <p className="mt-1 text-xs">Sửa file rồi chọn lại file, hoặc bấm Nhập để thử lại — đội đã vào tự bỏ qua.</p>
               </div>
+            )}
+            <section aria-labelledby="import-summary-h" className="rounded-2xl border border-slate-100 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 id="import-summary-h" className="font-bold text-slate-900">Tổng hợp dữ liệu đăng ký</h3>
+                <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${needsCheck ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
+                  {needsCheck ? "Cần kiểm tra" : "Sẵn sàng nhập"}
+                </span>
+              </div>
+              <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {([
+                  ["Hợp lệ", total, "text-emerald-700", "đội sẽ nhập"],
+                  ["Có lỗi", p.errors.length, p.errors.length ? "text-red-700" : "text-slate-400", "dòng không nhập"],
+                  ["Cần xác nhận", confirmCount, confirmCount ? "text-amber-700" : "text-slate-400", "trùng tên / ghi chú"],
+                  ["Trùng", p.skipped.length, "text-slate-500", "bỏ qua"],
+                ] as const).map(([label, n, tone, hint]) => (
+                  <div key={label} className="flex flex-col rounded-xl bg-slate-50 p-3">
+                    <dt className="text-sm font-semibold text-slate-700">
+                      {label}<span className="block text-xs font-normal text-slate-500">{hint}</span>
+                    </dt>
+                    <dd className={`order-first text-2xl font-bold tabular-nums ${tone}`}>{n}</dd>
+                  </div>
+                ))}
+              </dl>
+              {p.multiCategory.length > 0 && (
+                <details className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                  <summary className="flex cursor-pointer items-center gap-2 font-semibold">
+                    <Layers className="h-4 w-4" aria-hidden /><span className="tabular-nums">{p.multiCategory.length}</span> VĐV đánh nhiều nội dung
+                  </summary>
+                  <ul className="mt-1 max-h-32 space-y-0.5 overflow-y-auto text-xs">
+                    {p.multiCategory.slice(0, 100).map((x, i) => <li key={i}><span className="font-semibold">{x.name}</span>: {x.codes.join(", ")}</li>)}
+                  </ul>
+                </details>
+              )}
+              {summary.length > 0 && (
+                <div className="mt-3 overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <caption className="sr-only">Phân loại theo nội dung</caption>
+                    <thead>
+                      <tr className="whitespace-nowrap border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-500">
+                        <th scope="col" className="py-2 pr-2 font-semibold">Nội dung</th>
+                        <th scope="col" className="px-2 py-2 text-right font-semibold">Hợp lệ</th>
+                        <th scope="col" className="px-2 py-2 text-right font-semibold">Lỗi</th>
+                        <th scope="col" className="py-2 pl-2 text-right font-semibold">Trùng</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {summary.map((r) => (
+                        <tr key={r.code || "?"}>
+                          <th scope="row" className="py-2 pr-2 text-left font-medium text-slate-900">
+                            {r.code && <span className="mr-1.5 text-xs font-bold text-slate-500">{r.code}</span>}{r.label}
+                          </th>
+                          <td className="px-2 py-2 text-right tabular-nums text-slate-900">{r.ok}</td>
+                          <td className={`px-2 py-2 text-right tabular-nums ${r.err ? "font-bold text-red-700" : "text-slate-400"}`}>{r.err}</td>
+                          <td className="py-2 pl-2 text-right tabular-nums text-slate-500">{r.dup}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+            {p.errors.length > 0 && (
+              <details open className="rounded-2xl border border-red-200 bg-red-50 p-3 text-red-800">
+                <summary className="flex cursor-pointer items-center gap-2 font-bold"><AlertTriangle className="h-4 w-4" aria-hidden />{p.errors.length} dòng lỗi cần xử lý — sẽ KHÔNG được nhập</summary>
+                <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto">
+                  {p.errors.slice(0, 100).map((e, i) => <li key={i}><span className="font-semibold">{e.sheet} · dòng {e.row}:</span> {e.message}</li>)}
+                </ul>
+              </details>
+            )}
+            {p.missingCategories.length > 0 && (
+              <section aria-labelledby="missing-h" className="rounded-2xl border border-sky-200 bg-sky-50 p-3 text-sm text-slate-800">
+                <h4 id="missing-h" className="flex items-center gap-2 font-bold text-slate-900"><Layers className="h-4 w-4" aria-hidden />File có {p.missingCategories.length} nội dung theo hạng mà giải chưa có</h4>
+                <ul className="mt-1 space-y-0.5">
+                  {p.missingCategories.map((m) => (
+                    <li key={m.key}><span className="font-semibold">{m.code}</span> — {m.name} · {m.isDoubles ? "đôi" : "đơn"} · {m.rows} dòng <span className="text-xs text-slate-500">(luật điểm như {m.base.code})</span></li>
+                  ))}
+                </ul>
+                <Button className="mt-2" disabled={busy || committing} onClick={() => void createMissing()}>Tạo nội dung còn thiếu</Button>
+              </section>
+            )}
+            {p.flagged.length > 0 && (
+              <fieldset className="rounded-2xl border border-amber-300 bg-amber-50 p-3 text-amber-800">
+                <legend className="flex items-center gap-2 px-1 font-bold"><StickyNote className="h-4 w-4" aria-hidden />{p.flagged.length} dòng cần kiểm tra theo cột Ghi chú</legend>
+                <p className="text-xs">Ghi chú có chữ &quot;sai&quot;, &quot;chưa&quot;, &quot;nợ&quot;, &quot;chuyển&quot;… — <strong>chỉ nhập dòng được tick</strong>.</p>
+                <ul className="mt-2 max-h-60 space-y-1 overflow-y-auto">
+                  {p.flagged.map((f) => (
+                    <li key={f.key}>
+                      <label className="flex min-h-11 cursor-pointer items-start gap-2 rounded-xl bg-white/70 p-2 text-sm text-slate-700">
+                        <input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0 accent-red-600" checked={f.include}
+                          onChange={() => loaded && setLoaded({ ...loaded, include: { ...loaded.include, [f.key]: !f.include } })} />
+                        <span className="min-w-0">
+                          <span className="font-semibold text-slate-900">{f.names}</span> <span className="text-xs text-slate-500">({f.sheet} · dòng {f.row}{f.codes.length ? ` · ${f.codes.join(", ")}` : ""})</span>
+                          <span className="block text-xs text-amber-800">Ghi chú: {f.note}</span>
+                        </span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </fieldset>
             )}
             {p.nameClashes.length > 0 && (
               <fieldset className="rounded-2xl border border-amber-300 bg-amber-50 p-3 text-amber-800">
@@ -245,14 +415,6 @@ export function ExcelPanel({ current }: { current: Category | undefined }) {
               </ul>
             ) : <p className="rounded-2xl bg-slate-50 p-3 text-slate-600">Không có đội mới nào để nhập.</p>}
 
-            {p.errors.length > 0 && (
-              <details open className="rounded-2xl border border-red-200 bg-red-50 p-3 text-red-800">
-                <summary className="flex cursor-pointer items-center gap-2 font-bold"><AlertTriangle className="h-4 w-4" aria-hidden />{p.errors.length} dòng lỗi — sẽ KHÔNG được nhập</summary>
-                <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto">
-                  {p.errors.slice(0, 100).map((e, i) => <li key={i}><span className="font-semibold">{e.sheet} · dòng {e.row}:</span> {e.message}</li>)}
-                </ul>
-              </details>
-            )}
             {p.skipped.length > 0 && (
               <details className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-slate-700">
                 <summary className="flex cursor-pointer items-center gap-2 font-bold"><Info className="h-4 w-4" aria-hidden />{p.skipped.length} dòng trùng — bỏ qua</summary>
@@ -263,9 +425,19 @@ export function ExcelPanel({ current }: { current: Category | undefined }) {
             )}
             {p.errors.length > 0 && total > 0 && <p className="text-xs text-slate-500">Có thể nhập phần hợp lệ ngay, sửa các dòng lỗi rồi nhập lại file — dòng đã nhập sẽ tự bỏ qua vì trùng.</p>}
 
+            {progress && (
+              <div role="status" className="rounded-2xl bg-slate-50 p-3 text-sm text-slate-700">
+                <p className="font-semibold">Đã nhập {progress.done}/{progress.total} nội dung…</p>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200" aria-hidden>
+                  <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%` }} />
+                </div>
+              </div>
+            )}
             <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setPlan(null)}>Huỷ</Button>
-              <Button variant="primary" disabled={total === 0 || busy} loading={committing} onClick={() => void commit()}>Nhập {total} đội</Button>
+              <Button variant="ghost" disabled={committing} onClick={() => setPlan(null)}>Huỷ</Button>
+              <Button variant="primary" disabled={total === 0 || busy || committing} onClick={() => void commit()}>
+                {committing && progress ? `Đang nhập ${progress.done}/${progress.total} nội dung…` : `Nhập ${total} đội`}
+              </Button>
             </div>
           </div>
         )}

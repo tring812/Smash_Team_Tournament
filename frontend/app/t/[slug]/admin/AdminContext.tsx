@@ -46,7 +46,7 @@ export function describeEvent(ev: TournamentEvent): string {
     case "reinstate": return `${d.name} (khôi phục ${d.restoredMatches} trận)`;
     case "swap": return `${d.a?.name} (${d.a?.from}→${d.a?.to}) ⇄ ${d.b?.name} (${d.b?.from}→${d.b?.to})`;
     case "edit_entry": return `${d.before?.name} → ${d.after?.name}`;
-    case "schedule": return `${d.stage === "knockout" ? "Loại trực tiếp" : "Vòng bảng"}: ${d.scheduled} trận, ${d.courts} sân, ${d.slotMinutes} phút/trận, từ ${fmtTime(String(d.startsAt))}`;
+    case "schedule": return `${d.stage === "knockout" ? "Loại trực tiếp" : "Vòng bảng"}: ${d.scheduled} trận, ${d.courts} sân, ${d.slotMinutes} phút/trận, từ ${fmtTime(String(d.startsAt))}${typeof d.noRest === "number" ? ` · ${d.noRest} lượt VĐV không được nghỉ` : ""}`;
     case "category_create": return `${d.code} — ${d.name}`;
     case "category_update": return d.before?.code !== d.after?.code || d.before?.name !== d.after?.name
       ? `${d.before?.code} — ${d.before?.name} → ${d.after?.code} — ${d.after?.name}` : `${d.after?.code}: ${(d.fields as string[] | undefined)?.join(", ") ?? ""}`;
