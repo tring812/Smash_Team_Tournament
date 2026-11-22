@@ -97,6 +97,54 @@ describe('Điều phối sân (PGlite)', { skip: hasPglite ? false : 'chưa cài
     await courts.uncallMatch(pool, ADMIN, wsAn.id);
   });
 
+  /** Một trận chờ có giờ + sân dự kiến (dời bằng moveMatch). */
+  async function plannedMatch(days, court) {
+    const m = (await board()).queue.find((q) => !q.busyWith.length).match;
+    await courts.moveMatch(pool, ADMIN, m.id, { scheduledAt: future(days), court });
+    return svc.getMatch(pool, m.id);
+  }
+
+  test('gọi trận không ghi đè giờ / sân dự kiến; rút về trả lại sân dự kiến', async () => {
+    const planned = await plannedMatch(5, 2);
+    const m = planned;
+    const other = planned.court === 1 ? 2 : 1; // mọi sân đang trống ở bước này
+    await courts.callMatch(pool, ADMIN, m.id, { court: other });
+    const called = await svc.getMatch(pool, m.id);
+    assert.equal(called.court, other);
+    assert.equal(new Date(called.scheduledAt).toISOString(), new Date(planned.scheduledAt).toISOString(), 'giờ dự kiến giữ nguyên');
+    assert.equal(called.status, planned.status);
+    assert.ok(called.calledAt);
+    await courts.uncallMatch(pool, ADMIN, m.id);
+    const back = await svc.getMatch(pool, m.id);
+    assert.equal(back.court, planned.court, 'về lại sân dự kiến');
+    assert.equal(new Date(back.scheduledAt).toISOString(), new Date(planned.scheduledAt).toISOString());
+    assert.equal(back.calledAt, null);
+    await courts.moveMatch(pool, ADMIN, m.id, { scheduledAt: null, court: null }); // trả lại như cũ cho các test sau
+  });
+
+  test('migration 009 sửa trận đã bị gọi ghi đè giờ / sân (dữ liệu cũ)', async () => {
+    const planned = await plannedMatch(6, 3);
+    const m = planned;
+    // Giả lập bản cũ: gọi vào sân khác → scheduled_at = giờ gọi, rồi rút về (called_at = NULL, sân vẫn là sân gọi).
+    const callAt = new Date();
+    const wrongCourt = planned.court === 4 ? 3 : 4;
+    await pool.query(
+      `INSERT INTO tournament_events (tournament_id, category_id, actor_user_id, action, details, created_at)
+       VALUES ($1, $2, $3, 'call_match', $4::jsonb, $5)`,
+      [t.id, planned.category.id, ADMIN.id, JSON.stringify({ matchId: m.id, court: wrongCourt, fromCourt: planned.court, plannedAt: planned.scheduledAt }), callAt.toISOString()],
+    );
+    await pool.query("UPDATE matches SET scheduled_at = $2, court = $3, status = 'scheduled', called_at = NULL WHERE id = $1",
+      [m.id, callAt.toISOString(), wrongCourt]);
+    await pool.query(fs.readFileSync(path.join(__dirname, '..', 'migrations', '009_planned_court.sql'), 'utf8'));
+    const fixed = await svc.getMatch(pool, m.id);
+    assert.equal(new Date(fixed.scheduledAt).toISOString(), new Date(planned.scheduledAt).toISOString());
+    assert.equal(fixed.court, planned.court);
+    // Chạy lại không đổi gì (idempotent).
+    await pool.query(fs.readFileSync(path.join(__dirname, '..', 'migrations', '009_planned_court.sql'), 'utf8'));
+    assert.equal(new Date((await svc.getMatch(pool, m.id)).scheduledAt).toISOString(), new Date(planned.scheduledAt).toISOString());
+    await courts.moveMatch(pool, ADMIN, m.id, { scheduledAt: null, court: null });
+  });
+
   test('trọng tài phụ trách sân: chỉ người đó (hoặc trọng tài gán riêng) nhập điểm trận ở sân', async () => {
     await courts.setCourtReferee(pool, ADMIN, t.id, 2, REF.id);
     const m = (await board()).queue.find((q) => !q.busyWith.length).match;

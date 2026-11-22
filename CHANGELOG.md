@@ -7,6 +7,7 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 ### Fixed
 - **Bàn điểm sau khi xác nhận** hiện tỉ số cuối (vd 21–0) thay vì 0–0, và giữ biên bản để xem.
 - **Bàn điểm khoá khi giải "Đã kết thúc"**: trước đây máy chủ từ chối nhưng giao diện vẫn cho chọn bên giao và bấm điểm, số điểm hiện lên rồi giữ nguyên. Nay hiện banner "Giải đã kết thúc — khoá nhập điểm" và làm mờ mọi nút; thao tác bị máy chủ từ chối thì **trả điểm về như trước**. Mọi API trả trận có thêm `tournamentStatus`.
+- **Gọi vào sân không còn ghi đè giờ / sân dự kiến**: trước đây bấm "Gọi vào sân" đổi giờ dự kiến thành giờ gọi (vd 18:00 → 17:27), rút về thì trận mang giờ mới và sân cũ nên bị đẩy lên đầu hàng chờ. Nay giờ gọi lưu riêng (`called_at`), sân dự kiến cất ở cột mới `planned_court`; **Rút về** trả lại đúng giờ và sân dự kiến. **Migration 009** thêm cột và sửa lại các trận đã bị ghi đè (lấy giờ / sân dự kiến từ nhật ký gọi trận).
 
 ### Changed
 - **Bỏ chế độ Tối**: xoá bộ chọn giao diện Hệ thống / Sáng / Tối ở sidebar BTC Hub và menu tài khoản; web cố định giao diện sáng (máy đặt chế độ Tối cũng hiện sáng), lựa chọn cũ lưu trên máy được xoá.
