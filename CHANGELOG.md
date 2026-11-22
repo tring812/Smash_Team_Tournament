@@ -5,6 +5,7 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 ## [Unreleased]
 
 ### Changed
+- **Bỏ chế độ Tối**: xoá bộ chọn giao diện Hệ thống / Sáng / Tối ở sidebar BTC Hub và menu tài khoản; web cố định giao diện sáng (máy đặt chế độ Tối cũng hiện sáng), lựa chọn cũ lưu trên máy được xoá.
 - **Thanh điều hướng**: "Lịch thi đấu ▾" mở danh sách giải để chọn (đang diễn ra → sắp diễn ra → nháp → đã kết thúc), khỏi phải cuộn trang chủ. Mục **"Trọng tài" chỉ hiện với tài khoản có nhiệm vụ trọng tài** (vai trò trọng tài của giải, phụ trách sân, hoặc được gán trận); admin không còn thấy mục này.
 - **Menu tài khoản gom phần quản lý**: danh sách giải mình quản lý được (admin: mọi giải; BTC: giải mình là BTC) dẫn vào trang quản trị, "Tạo giải mới" (admin), "Quản lý tài khoản" (admin) hoặc "Đổi mật khẩu", chọn giao diện, đăng xuất. Bỏ mục "Tạo giải" khỏi thanh trên.
 - Điện thoại: thanh tab đáy Trang chủ · Lịch đấu (mở bảng chọn giải) · Trọng tài.

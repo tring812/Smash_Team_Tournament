@@ -50,7 +50,7 @@ Mỗi giải là một trang `/t/<slug>` với 3 tab: **Lịch thi đấu**, **B
 - **Bàn điểm trọng tài**: bên giao + ô giao, nhắc nghỉ 60 s / 2 phút và đổi sân, hoàn tác, chịu được mất mạng, chống 2 máy ghi đè nhau.
 - **Kết quả**: bảng xếp hạng (thắng → đối đầu → hiệu số game → hiệu số điểm → bốc thăm phụ), nhánh loại trực tiếp tự đưa đội thắng lên vòng sau, truất quyền / huỷ truất quyền.
 - **Công khai, trực tiếp**: trang giải và **màn hình TV** cập nhật ~0,5 giây sau mỗi điểm (Server-Sent Events).
-- **Giao diện** Hệ thống / Sáng / Tối, dùng tốt trên điện thoại, đạt tương phản WCAG AA.
+- **Giao diện sáng**, dùng tốt trên điện thoại, đạt tương phản WCAG AA.
 
 Danh sách đầy đủ, phân quyền và mọi quy tắc nghiệp vụ: **[docs/FEATURES.md](docs/FEATURES.md)**.
 

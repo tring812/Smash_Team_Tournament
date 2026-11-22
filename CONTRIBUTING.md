@@ -84,5 +84,5 @@ Never commit secrets, `.env`, `.pgdata/` or real registration data.
 - [ ] No MSSV / SĐT / email in public responses or in `tournament_events`.
 - [ ] New migration is numbered, idempotent, wrapped in a transaction; old migrations untouched.
 - [ ] Tests cover the new behaviour and the permission edges.
-- [ ] UI works on a phone and in dark mode; text is in Vietnamese.
+- [ ] UI works on a phone (light theme only); text is in Vietnamese.
 - [ ] CHANGELOG / FEATURES.md / README updated where needed.

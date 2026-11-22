@@ -407,7 +407,7 @@ Mỗi giải có danh sách **hồ sơ VĐV** riêng. Khi thêm đội (dán, Ex
 - **MSSV, SĐT, email là dữ liệu cá nhân**: chỉ API dành cho BTC trả ra (`/tournaments/:id/athletes`); danh sách đội công khai chỉ có tên, CLB và id hồ sơ. Nhật ký sửa hồ sơ chỉ ghi **tên trường** đã sửa, không ghi giá trị. Hồ sơ không còn ở đội nào bị xoá. File Excel xuất ra có MSSV/SĐT — BTC tự bảo quản.
 - **Kênh trực tiếp (SSE)** `/tournaments/:id/stream` chỉ báo "giải vừa đổi", không mang dữ liệu → client gọi lại API thường, quyền xem không đổi; giải nháp chỉ BTC mở được. Tối đa 1.000 kết nối/instance (quá → 503, client dùng polling).
 - Mọi truy vấn SQL tham số hoá; mọi dữ liệu vào kiểm tra bằng zod; lỗi trả `application/problem+json` không lộ chi tiết nội bộ.
-- **Giao diện Hệ thống / Sáng / Tối**: chọn ở menu tài khoản và sidebar quản trị (khán giả chưa đăng nhập theo cài đặt của máy); mặc định theo hệ thống, lưu **riêng từng máy** (`localStorage`, không theo tài khoản). Script nhỏ trong `<head>` đặt giao diện trước khi vẽ (không loé trắng). Màu đều lấy từ biến CSS nên đổi một chỗ; vùng cố ý tối (sidebar, TV, banner, chân trang) giữ nguyên. Đã quét tương phản chữ WCAG AA trên các trang chính ở cả hai chế độ.
+- **Chỉ có giao diện sáng** (đã bỏ bộ chọn Hệ thống / Sáng / Tối): không phụ thuộc cài đặt Tối của máy; lựa chọn cũ còn lưu (`localStorage` khoá `st-theme`) được xoá khi mở trang. Vùng cố ý tối (sidebar quản trị, TV, banner, chân trang) giữ nguyên. Tương phản chữ đạt WCAG AA trên các trang chính.
 - **Chỉ khi dev**: `DATABASE_URL=pglite:...` (Postgres WASM, không cần cài Postgres) và `DEV_LOGIN=1` (nút "Dev: Admin / Dev: Trọng tài"). Cấu hình **từ chối** cả hai ở production.
 
 <sub>[↑ Back to contents](#contents)</sub>

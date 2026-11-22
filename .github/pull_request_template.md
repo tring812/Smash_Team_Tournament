@@ -12,7 +12,7 @@
 
 - [ ] `cd backend && npm test`
 - [ ] `cd frontend && npm run typecheck && npm run lint`
-- [ ] Tried in the browser (desktop + phone width, light + dark) — describe what you checked:
+- [ ] Tried in the browser (desktop + phone width) — describe what you checked:
 
 ## Screenshots
 
