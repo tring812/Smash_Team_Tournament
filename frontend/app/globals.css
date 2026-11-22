@@ -243,3 +243,12 @@ input[type="search"]::-webkit-search-decoration {
   display: none;
 }
 input[type="search"]::-ms-clear { display: none; width: 0; height: 0; }
+
+/* In biên bản (trang /bien-ban/…): A4 ngang, ẩn thanh điều hướng / chân trang / thanh tab, bảng không cuộn. */
+@media print {
+  @page { size: A4 landscape; margin: 10mm; }
+  body:has([data-print-sheet]) :is(header, nav, footer, [data-tabbar]) { display: none !important; }
+  body:has([data-print-sheet]) main { padding: 0 !important; max-width: none !important; }
+  [data-print-sheet] .overflow-x-auto { overflow: visible !important; }
+  [data-print-sheet] table { font-size: 10px; }
+}

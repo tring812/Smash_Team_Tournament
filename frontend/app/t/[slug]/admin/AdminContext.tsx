@@ -34,6 +34,7 @@ export const ACTION_LABEL: Record<TournamentEvent["action"], string> = {
   category_create: "Tạo nội dung", category_update: "Sửa nội dung", category_delete: "Xoá nội dung",
   call_match: "Gọi vào sân", uncall_match: "Rút trận", move_match: "Dời trận", court_referee: "Trọng tài sân", athlete_update: "Sửa hồ sơ VĐV", rules_update: "Luật điểm theo vòng",
   referee_create: "Tạo TK trọng tài", referee_update: "Sửa TK trọng tài", referee_remove: "Gỡ trọng tài",
+  rally_fix_server: "Sửa người giao", rally_undo: "Hoàn tác pha cầu", score_confirm: "Xác nhận kết quả",
 };
 
 /** Tóm tắt 1 dòng nhật ký để hiển thị. */
@@ -51,6 +52,9 @@ export function describeEvent(ev: TournamentEvent): string {
       ? `${d.before?.code} — ${d.before?.name} → ${d.after?.code} — ${d.after?.name}` : `${d.after?.code}: ${(d.fields as string[] | undefined)?.join(", ") ?? ""}`;
     case "category_delete": return `${d.code} — ${d.name} (${d.entries} đội)`;
     case "call_match": return `Sân ${d.court}${d.fromCourt && d.fromCourt !== d.court ? ` (lịch dự kiến sân ${d.fromCourt})` : ""}`;
+    case "rally_fix_server": return `Người giao: ${d.name ?? d.server}${Array.isArray(d.score) ? ` (lúc ${d.score[0]}-${d.score[1]})` : ""}`;
+    case "rally_undo": return `Bỏ ${d.type === "point" ? `pha cầu${Array.isArray(d.score) ? ` ${d.score[0]}-${d.score[1]}` : ""}` : d.type === "start" ? "chọn người giao" : "sửa người giao"}`;
+    case "score_confirm": return d.walkover ? `Bỏ cuộc — bên ${String(d.winner).toUpperCase()} thắng` : `Kết quả ${(d.games as number[][] | null)?.map((g) => g.join("-")).join(", ") ?? ""}`;
     case "uncall_match": return `Rút khỏi sân ${d.court}, về hàng chờ`;
     case "move_match": return `Sân ${d.from?.court ?? "—"} · ${d.from?.at ? fmtTime(String(d.from.at)) : "chưa xếp"} → Sân ${d.to?.court ?? "—"} · ${d.to?.at ? fmtTime(String(d.to.at)) : "chưa xếp"}`;
     case "court_referee": return `Sân ${d.court}: ${d.referee ?? "bỏ trọng tài"}`;
