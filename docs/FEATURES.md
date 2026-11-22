@@ -233,7 +233,7 @@ File `.xlsx` hoặc `.csv` được **đọc và tạo ngay trên trình duyệt
 | Nút | Kết quả |
 |---|---|
 | **File mẫu** | `mau-danh-sach-vdv-<giải>.xlsx`: sheet *Danh sách* (cột `Nội dung · VĐV 1 · MSSV 1 · SĐT 1 · VĐV 2 · MSSV 2 · SĐT 2 · CLB · Bảng`, có dòng ví dụ) + sheet *Hướng dẫn* |
-| **Nhập Excel / CSV** | Đọc file → hộp **Xem trước**: số đội sẽ thêm theo từng nội dung, bao nhiêu dòng có MSSV/SĐT, **chia bảng theo file** (nếu có), dòng lỗi (kèm sheet + số dòng), người đã đăng ký bị bỏ qua → bấm **Nhập N đội** |
+| **Nhập Excel / CSV** | Đọc file → hộp **Xem trước**: bảng tổng hợp (Hợp lệ · Có lỗi · Cần xác nhận · Trùng, và hợp lệ / lỗi / trùng theo từng nội dung), số đội sẽ thêm theo từng nội dung, bao nhiêu dòng có MSSV/SĐT, **chia bảng theo file** (nếu có), dòng lỗi (kèm sheet + số dòng), người đã đăng ký bị bỏ qua → bấm **Nhập N đội** · nút **Tạo nội dung còn thiếu** (file chia hạng mà giải chưa có "Đôi nam A"…: tạo theo cặp Nội dung × Hạng, chép luật điểm / số bảng của nội dung gốc rồi tự xếp lại) · cột **Ghi chú** có chữ "sai", "chưa", "nợ", "chuyển" → **Cần kiểm tra**, chỉ nhập dòng BTC tick · số **VĐV đánh nhiều nội dung** · nhập song song các nội dung không chung VĐV, hiện tiến độ "Đã nhập k/n nội dung…" |
 | **Xuất <mã>** / **Xuất toàn giải** | Mỗi nội dung 1 sheet + sheet *Tất cả*; cùng cột với file nhập (+ STT, Trạng thái), **có MSSV/SĐT** → file chứa dữ liệu cá nhân, không chia sẻ công khai |
 
 Nhận cột theo **nghĩa** (không phân biệt hoa thường/dấu/thứ tự; dòng tiêu đề trong 10 dòng đầu) — dùng thẳng được file **CSV tải từ Google Form**:
@@ -250,7 +250,8 @@ Nhận cột theo **nghĩa** (không phân biệt hoa thường/dấu/thứ tự
 Bỏ qua: `Dấu thời gian`, `STT`, `Ghi chú`, `Trạng thái`. Quy tắc:
 - Chỉ nhận nội dung **chưa bốc thăm** (đã bốc thăm → 1 lỗi gộp cho cả nhóm dòng); nội dung đôi bắt buộc đồng đội; nội dung đơn phải để trống cột đồng đội (trừ ô chọn nhiều nội dung — khi đó đồng đội chỉ dùng cho nội dung đôi).
 - MSSV/SĐT sai định dạng → lỗi dòng. SĐT `+84 901 234 567`, `0901-234-567`, `901234567` (Excel mất số 0) đều thành `0901234567`; MSSV bỏ khoảng trắng/gạch, viết hoa.
-- **Người đã đăng ký** nội dung đó (theo MSSV → SĐT → tên) → bỏ qua. Sửa dòng lỗi rồi nhập lại **cả file** vẫn an toàn.
+- **Người đã đăng ký** nội dung đó trên hệ thống (theo MSSV → SĐT → tên) → bỏ qua. Sửa dòng lỗi rồi nhập lại **cả file** vẫn an toàn.
+- **Trùng trong file chỉ xét trong cùng một tab**: dòng lặp lại người ở dòng trước của cùng tab → bỏ qua. Người có ở **tab khác** mà hai tab cùng vào một nội dung (vd tab "ĐƠN NAM A" và "ĐƠN NAM B" gộp vào "Đơn nam" vì giải chưa chia hạng) → **báo lỗi** chỉ rõ tab + dòng, không âm thầm bỏ qua; tạo nội dung theo hạng hoặc bỏ chọn một tab.
 - **Chia bảng theo file**: dùng khi đã chia bảng sẵn (lễ bốc thăm trực tiếp). Chỉ áp dụng khi **mọi** dòng của nội dung có cột Bảng, nội dung **chưa có đội nào** trước đó và mỗi bảng ≥ 2 đội — nếu không, vẫn nhập đội nhưng KHÔNG chia bảng (báo lỗi rõ lý do), BTC bốc thăm như thường. Số bảng của nội dung đổi theo file; bốc thăm phụ (phá hoà) vẫn ngẫu nhiên.
 - Tối đa 2.000 dòng, 5 MB. CSV phải là UTF-8 (Google Form mặc định; Excel: *Lưu thành → CSV UTF-8*). File `.xls` cũ: lưu lại thành `.xlsx`.
 

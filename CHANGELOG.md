@@ -12,7 +12,14 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 - Bỏ bộ chọn giao diện ở chân trang và ở trang Tài khoản (đã có trong menu tài khoản).
 - `GET /tournaments` trả thêm `my_role` (`organizer` | `referee` | `null`) và `is_referee` theo người xem.
 
+### Fixed
+- **Nhập Excel bỏ qua nhầm người "trùng"**: trước đây người ở tab này bị so với mọi tab khác cùng vào một nội dung (vd "ĐƠN NAM A" và "ĐƠN NAM B" gộp vào "Đơn nam") rồi âm thầm "đã đăng ký — bỏ qua". Nay trùng trong file **chỉ xét trong cùng tab**; trùng ở tab khác → báo lỗi chỉ rõ tab + dòng. Người đã có trên hệ thống vẫn tự bỏ qua như cũ.
+
 ### Added
+- **Nhập Excel — Tạo nội dung còn thiếu**: file chia hạng (Bảng A / B…) mà giải chưa có nội dung theo hạng → hộp xem trước liệt kê các nội dung Nội dung × Hạng (vd "Đơn nam A", mã MSA) kèm số dòng; một nút tạo hết (chép luật điểm, số bảng của nội dung gốc) và file tự xếp lại theo nội dung mới.
+- **Nhập Excel — cột Ghi chú**: dòng có ghi chú chứa "sai", "chưa", "nợ", "chuyển" (không phân biệt dấu, nguyên từ) được gắn **Cần kiểm tra**; BTC tick dòng nào mới nhập dòng đó.
+- **Nhập Excel — tiến độ & nhanh hơn**: các nội dung không chung VĐV được nhập song song (tối đa 4 cùng lúc; VĐV đánh nhiều nội dung vẫn nhập lần lượt để không tạo trùng hồ sơ), hiện "Đã nhập k/n nội dung…". Bảng tổng hợp có thêm số **VĐV đánh nhiều nội dung**.
+- **Bảng tổng hợp khi nhập Excel / CSV**: đầu hộp xem trước có các ô **Hợp lệ** (đội sẽ nhập) · **Có lỗi** · **Cần xác nhận** (trùng tên) · **Trùng** (đã có trên hệ thống hoặc lặp lại trong cùng tab → bỏ qua), bảng **phân loại theo nội dung** (hợp lệ / lỗi / trùng từng nội dung; lỗi không xác định được nội dung gom vào dòng riêng), và danh sách dòng lỗi cần xử lý ngay bên dưới.
 - **Trùng tên khi nhập VĐV**: người không có MSSV/SĐT trùng tên người khác và **khác CLB** → hộp xem trước hỏi **Người khác** (mặc định) / **Cùng người**; chọn "người khác" thì server tạo hồ sơ riêng (`player1NewAthlete` / `player2NewAthlete`) thay vì báo "đã đăng ký". Nhiều hồ sơ cùng tên mà đúng 1 người cùng CLB → tự nhận đúng người đó.
 - **Nhập Excel không còn dừng giữa chừng**: mỗi nội dung ghi độc lập; nội dung lỗi được báo riêng (giữ hộp xem trước, đội đã vào tự bỏ qua khi nhập lại), các nội dung khác vẫn vào. Email sai định dạng bị bỏ qua kèm cảnh báo thay vì làm hỏng cả nội dung (cả ở client lẫn server).
 - **Dán danh sách** nhận thêm MSSV và SĐT: `tên ; CLB ; MSSV ; SĐT` (đôi: `A / B ; CLB ; MSSV A / MSSV B ; SĐT A / SĐT B`).
