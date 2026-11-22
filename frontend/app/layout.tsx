@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next";
 import { Barlow_Condensed, Inter } from "next/font/google";
 import "./globals.css";
 import SiteShell from "./components/SiteShell";
-import { THEME_BOOT_SCRIPT } from "./components/ThemeToggle";
 
 // Cùng bộ font với web CLB: Inter cho nội dung, Barlow Condensed cho tiêu đề thể thao (đều có tiếng Việt).
 const inter = Inter({ variable: "--font-inter", subsets: ["latin", "vietnamese"], display: "swap" });
@@ -22,11 +21,10 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    // suppressHydrationWarning: script đầu trang có thể đặt data-theme trước khi React nhận trang.
-    <html lang="vi" className={`${inter.variable} ${barlow.variable} font-sans h-full antialiased`} suppressHydrationWarning>
+    <html lang="vi" className={`${inter.variable} ${barlow.variable} font-sans h-full antialiased`}>
       <head>
-        {/* Đặt giao diện đã chọn TRƯỚC khi vẽ → không loé trắng ở chế độ Tối. */}
-        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+        {/* Web chỉ còn giao diện sáng: xoá lựa chọn Sáng/Tối cũ còn lưu trên máy (khoá "st-theme"). */}
+        <script dangerouslySetInnerHTML={{ __html: 'try{localStorage.removeItem("st-theme")}catch(e){}' }} />
       </head>
       <body className="min-h-full flex flex-col">
         <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[60] focus:rounded-full focus:bg-white focus:px-4 focus:py-2 focus:shadow">

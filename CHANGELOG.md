@@ -5,6 +5,7 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 ## [Unreleased]
 
 ### Changed
+- **Bỏ chế độ Tối**: xoá bộ chọn giao diện Hệ thống / Sáng / Tối ở sidebar BTC Hub và menu tài khoản; web cố định giao diện sáng (máy đặt chế độ Tối cũng hiện sáng), lựa chọn cũ lưu trên máy được xoá.
 - **Bốc thăm** hỏi xác nhận trước khi bốc; **Bốc thăm lại** cảnh báo số trận đã xếp lịch sẽ mất lịch.
 - **Xếp lịch** báo thêm số lượt VĐV không được nghỉ (đánh 2 khung giờ liền nhau); kết quả API có `noRest`.
 - **Điều phối sân**: hỏi lại khi gọi trận trước giờ khai mạc và khi rút về trận đã có điểm; hộp Chuyển sân làm mờ sân hiện tại / sân đang có trận.
