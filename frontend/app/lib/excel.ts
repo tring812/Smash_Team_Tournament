@@ -26,8 +26,26 @@ export interface Person {
   /** BTC xác nhận: người KHÁC, chỉ trùng tên với hồ sơ đã có → server tạo hồ sơ mới. */
   newAthlete?: boolean;
 }
-export interface ImportRow { sheet: string; row: number; code: string; p1: Person; p2: Person | null; club: string; group: string | null }
-export interface ImportIssue { sheet: string; row: number; message: string }
+export interface ImportRow {
+  sheet: string; row: number; code: string; p1: Person; p2: Person | null; club: string; group: string | null;
+  /** Cột "Ghi chú" của dòng (nếu có). */
+  note?: string | null;
+}
+/** Nội dung có trong file (Nội dung × Hạng, vd "Đôi nam A") mà giải chưa có → nút "Tạo nội dung còn thiếu". */
+export interface MissingCategory {
+  key: string; name: string; code: string; isDoubles: boolean;
+  /** Nội dung gốc để chép luật điểm / số bảng. */
+  base: Category; div: string;
+  /** Số dòng trong file thuộc nội dung này. */
+  rows: number;
+}
+/** Dòng có Ghi chú đáng ngờ ("sai", "chưa", "nợ", "chuyển"…) — BTC tick mới nhập. */
+export interface FlaggedRow { key: string; sheet: string; row: number; codes: string[]; names: string; note: string; include: boolean }
+export interface ImportIssue {
+  sheet: string; row: number; message: string;
+  /** Mã nội dung của dòng lỗi (nếu xác định được) — để thống kê lỗi theo nội dung ở bảng xem trước. */
+  codes?: string[];
+}
 /**
  * VĐV không có MSSV/SĐT mà TRÙNG TÊN với người đã có (trong giải hoặc dòng khác của file) và khác CLB.
  * Chỉ có tên thì không biết chắc là một người hay hai → BTC chọn ở bước xem trước.
@@ -54,6 +72,18 @@ export interface ImportPlan {
   warnings: ImportIssue[];
   /** Trùng tên khác CLB, không có MSSV/SĐT — BTC chọn "cùng người" / "người khác". */
   nameClashes: NameClash[];
+  /** Nội dung × hạng có trong file mà giải chưa tạo. */
+  missingCategories: MissingCategory[];
+  /** Dòng cần kiểm tra theo cột Ghi chú (chỉ nhập dòng BTC đã tick). */
+  flagged: FlaggedRow[];
+  /** VĐV đăng ký từ 2 nội dung trở lên trong lần nhập này. */
+  multiCategory: { name: string; codes: string[] }[];
+}
+
+/** Ghi chú có chữ "sai", "chưa", "nợ", "chuyển" (không phân biệt dấu, nguyên từ) → cần kiểm tra. */
+export function noteNeedsCheck(note: string): boolean {
+  const t = note.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/gi, "d").toLowerCase();
+  return /(^|[^a-z0-9])(sai|chua|no|chuyen)([^a-z0-9]|$)/.test(t);
 }
 
 export const MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -112,14 +142,16 @@ function classify(header: unknown): { field: Field; partner: boolean } | null {
   return { field: base === "name" ? prefix : (`${prefix}${base === "sid" ? "Sid" : base === "phone" ? "Phone" : "Email"}` as Field), partner };
 }
 
-type Header = { headerRow: number; codes: number[]; stt?: number } & Partial<Record<Field, number>>;
+type Header = { headerRow: number; codes: number[]; stt?: number; note?: number } & Partial<Record<Field, number>>;
 function findHeader(data: CellValue[][]): Header | null {
   for (let r = 0; r < Math.min(10, data.length); r++) {
     const map: Partial<Record<Field, number>> = {};
     const codes: number[] = [];
     let stt: number | undefined;
+    let note: number | undefined;
     (data[r] ?? []).forEach((cell, i) => {
       if (["stt", "sothutu"].includes(norm(cell)) && stt === undefined) stt = i;
+      if ((norm(cell).startsWith("ghichu") || ["note", "notes"].includes(norm(cell))) && note === undefined) note = i;
       const c = classify(cell);
       if (!c) return;
       let f = c.field;
@@ -129,7 +161,7 @@ function findHeader(data: CellValue[][]): Header | null {
       if (/^p1(Sid|Phone|Email)$/.test(f) && map[f] !== undefined && map.p2 !== undefined && map.p2 < i) f = f.replace("p1", "p2") as Field;
       if (map[f] === undefined) map[f] = i;
     });
-    if (map.p1 !== undefined) return { headerRow: r, codes, stt, ...map };
+    if (map.p1 !== undefined) return { headerRow: r, codes, stt, note, ...map };
   }
   return null;
 }
@@ -149,7 +181,9 @@ export function divisionOf(cell: string): string | null {
 }
 
 const stripParen = (t: string) => t.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
-type Match = { cat: Category; merged?: boolean } | { error: string };
+/** Hạng có trong file mà giải chưa có nội dung riêng: gốc (để chép luật) + tên gốc + hạng. */
+type Missing = { base: Category; baseName: string; div: string };
+type Match = { cat: Category; merged?: boolean; missing?: Missing } | { error: string; missing?: Missing };
 /**
  * Một nội dung theo tên / mã, có xét hạng. "Đôi nam" KHÔNG khớp "Đôi nam nữ" (so nguyên tên, chỉ bỏ phần "(…)").
  * Hạng lấy từ cột hạng của dòng, hoặc từ chính tên ("ĐÔI NAM A"). Giải chia hạng → cần đúng hạng;
@@ -177,8 +211,9 @@ function matchOne(text: string, rowDiv: string | null, categories: Category[]): 
       const hit = same.find((x) => split(x).div === t.div);
       if (hit) return { cat: hit };
       const flat = same.find((x) => !split(x).div);
-      if (flat) return { cat: flat, merged: true };
-      return { error: `Không có nội dung "${t.base}" hạng ${t.div} (giải có: ${same.map((x) => x.name).join(", ")})` };
+      const missing = { base: flat ?? same[0]!, baseName: split(flat ?? same[0]!).base, div: t.div };
+      if (flat) return { cat: flat, merged: true, missing };
+      return { error: `Không có nội dung "${t.base}" hạng ${t.div} (giải có: ${same.map((x) => x.name).join(", ")})`, missing };
     }
     const flat = same.filter((x) => !split(x).div);
     if (flat.length === 1) return { cat: flat[0]! };
@@ -189,17 +224,19 @@ function matchOne(text: string, rowDiv: string | null, categories: Category[]): 
 }
 
 /** "Đơn nam, Đôi nam nữ" / "MS; XD" / "Đơn nam (MS)" → các nội dung. */
-function matchCategories(cell: string, rowDiv: string | null, categories: Category[]): { found: Category[]; unknown: string[]; merged: boolean } {
+function matchCategories(cell: string, rowDiv: string | null, categories: Category[]): { found: Category[]; unknown: string[]; merged: boolean; missing: Missing[] } {
   const parts = cell.split(/[,;\n]/).map((x) => x.trim()).filter(Boolean);
   const found: Category[] = [];
   const unknown: string[] = [];
+  const missing: Missing[] = [];
   let merged = false;
   for (const p of parts) {
     const m = matchOne(p, rowDiv, categories);
+    if (m?.missing) missing.push(m.missing);
     if (m && "cat" in m) { if (!found.includes(m.cat)) found.push(m.cat); merged ||= Boolean(m.merged); }
     else unknown.push(m ? m.error : `Không có nội dung "${p}" trong giải`);
   }
-  return { found, unknown, merged };
+  return { found, unknown, merged, missing };
 }
 
 /** Sheet đặt tên theo nội dung ("ĐÔI NAM A", "MS")? */
@@ -242,11 +279,20 @@ const isKnown = (k: Known, p: Person) => (p.studentId ? k.sids.has(p.studentId) 
   || (p.phone ? k.phones.has(p.phone) : false)
   || (!p.studentId && !p.phone && !p.newAthlete && k.names.has(nameKey(p.name)));
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const remember = (k: Known, p: Person) => {
-  if (p.studentId) k.sids.add(p.studentId);
-  if (p.phone) k.phones.add(p.phone);
-  k.names.add(nameKey(p.name));
-};
+
+/** Người đã gặp trong FILE của một nội dung: khoá định danh → tab + dòng đầu tiên có người đó. */
+type FileSeen = Map<string, { sheet: string; row: number }>;
+/** Khoá để tra (cùng quy tắc `isKnown`): MSSV, SĐT; chỉ dùng tên khi không có cả hai và chưa chọn "người khác". */
+const lookupKeys = (p: Person) => [
+  p.studentId ? `sid:${p.studentId}` : null,
+  p.phone ? `tel:${p.phone}` : null,
+  !p.studentId && !p.phone && !p.newAthlete ? `name:${nameKey(p.name)}` : null,
+].filter((x): x is string => Boolean(x));
+const storeKeys = (p: Person) => [
+  p.studentId ? `sid:${p.studentId}` : null,
+  p.phone ? `tel:${p.phone}` : null,
+  `name:${nameKey(p.name)}`,
+].filter((x): x is string => Boolean(x));
 
 /**
  * Đọc các sheet → kế hoạch nhập đã kiểm tra (thuần, không gọi mạng — test được).
@@ -254,7 +300,8 @@ const remember = (k: Known, p: Person) => {
  * @param decisions lựa chọn của BTC cho các dòng trùng tên (khoá = NameClash.key)
  */
 export function planImport(sheets: RawSheet[], categories: Category[], fallback: Category | undefined,
-  existing: Record<string, Entry[]>, athletes: Athlete[] = [], decisions: Record<string, NameDecision> = {}): ImportPlan {
+  existing: Record<string, Entry[]>, athletes: Athlete[] = [], decisions: Record<string, NameDecision> = {},
+  include: Record<string, boolean> = {}): ImportPlan {
   const errors: ImportIssue[] = [];
   const skipped: ImportIssue[] = [];
   const warnings: ImportIssue[] = [];
@@ -296,22 +343,48 @@ export function planImport(sheets: RawSheet[], categories: Category[], fallback:
   const athleteById = new Map(athletes.map((a) => [a.id, a]));
   const buckets = new Map<string, ImportRow[]>();
   const known = new Map<string, Known>();
+  /** Đội đã có trên hệ thống theo nội dung (nhập lại file → bỏ qua). */
   const knownOf = (c: Category) => {
     if (!known.has(c.id)) known.set(c.id, knownFor(existing[c.id] ?? [], athleteById));
     return known.get(c.id)!;
+  };
+  /** Người đã gặp trong file theo nội dung — trùng chỉ xét TRONG CÙNG TAB; khác tab báo lỗi rõ ràng. */
+  const inFile = new Map<string, FileSeen>();
+  const fileOf = (c: Category) => {
+    if (!inFile.has(c.id)) inFile.set(c.id, new Map());
+    return inFile.get(c.id)!;
   };
   let total = 0;
   let anyHeader = false;
   const locked = new Map<string, { sheet: string; row: number; code: string; n: number }>();
 
   const notes = new Set<string>();
-  const mergedNote = (c: Category) => notes.add(`File chia hạng (Bảng A / B…) nhưng giải chưa có nội dung theo hạng — các hạng được gộp vào "${c.name}". Muốn tách: tạo nội dung "${c.name} A", "${c.name} B"… rồi nhập lại.`);
+  const mergedNote = (c: Category) => notes.add(`File chia hạng (Bảng A / B…) nhưng giải chưa có nội dung theo hạng — các hạng được gộp vào "${c.name}". Muốn tách: bấm "Tạo nội dung còn thiếu" (tạo "${c.name} A", "${c.name} B"…), file tự xếp lại.`);
+  /** Nội dung × hạng còn thiếu, gộp theo tên. */
+  const missing = new Map<string, MissingCategory>();
+  const usedCodes = new Set(categories.map((c) => c.code.toUpperCase()));
+  const addMissing = (m: Missing) => {
+    const key = `${norm(m.baseName)}|${m.div}`;
+    const cur = missing.get(key);
+    if (cur) { cur.rows += 1; return; }
+    // Mã gợi ý: mã gốc (bỏ hạng nếu mã gốc đã có hạng) + hạng, không trùng mã đã có.
+    const baseDiv = splitDivision(m.base.name).div;
+    const baseCode = baseDiv && m.base.code.toUpperCase().endsWith(baseDiv) ? m.base.code.slice(0, -1) : m.base.code;
+    let code = `${baseCode}${m.div}`.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10);
+    for (let n = 2; usedCodes.has(code); n += 1) code = `${baseCode}${m.div}${n}`.toUpperCase().slice(0, 10);
+    usedCodes.add(code);
+    missing.set(key, { key, name: `${m.baseName} ${m.div}`, code, isDoubles: m.base.is_doubles, base: m.base, div: m.div, rows: 1 });
+  };
+  const flagged = new Map<string, FlaggedRow>();
 
+  const codesOf = (cs: (Category | undefined)[]) => cs.filter((c): c is Category => Boolean(c)).map((c) => c.code);
   for (const s of sheets) {
     const h = findHeader(s.data);
     if (!h) continue;
     anyHeader = true;
-    const sheetCat = sheetCategory(s.sheet, categories);
+    const sheetMatch = matchOne(s.sheet, null, categories);
+    const sheetCat = sheetMatch && "cat" in sheetMatch ? sheetMatch.cat : undefined;
+    const sheetMissing = sheetMatch?.missing ?? null;
     if (sheetCat && splitDivision(s.sheet).div && !splitDivision(sheetCat.name).div && norm(sheetCat.name) !== norm(s.sheet)) mergedNote(sheetCat);
     const col = (row: CellValue[], f: Field) => (h[f] === undefined ? "" : cellText(row[h[f]!]));
     /** Form rẽ nhánh có nhiều cột "nội dung": lấy ô đầu tiên có giá trị (bỏ link minh chứng). */
@@ -324,7 +397,7 @@ export function planImport(sheets: RawSheet[], categories: Category[], fallback:
     if (pairRows) {
       let pending: { row: CellValue[]; at: Rec["at"]; key: string | null } | null = null;
       const lonely = (x: NonNullable<typeof pending>) =>
-        errors.push({ ...x.at, message: `${x.key ? `${cellText(x.row[h.stt!])}: ` : ""}${col(x.row, "p1")} chưa có đồng đội — nội dung đôi cần 2 dòng liền nhau (cùng STT "ĐỘI n")` });
+        errors.push({ ...x.at, codes: codesOf([sheetCat ?? fallback]), message: `${x.key ? `${cellText(x.row[h.stt!])}: ` : ""}${col(x.row, "p1")} chưa có đồng đội — nội dung đôi cần 2 dòng liền nhau (cùng STT "ĐỘI n")` });
       for (let r = h.headerRow + 1; r < s.data.length; r++) {
         const row = s.data[r] ?? [];
         if (!col(row, "p1")) continue;
@@ -376,19 +449,30 @@ export function planImport(sheets: RawSheet[], categories: Category[], fallback:
       let cats: Category[];
       if (catCell) {
         const m = matchCategories(catCell, rowDiv, categories);
+        m.missing.forEach(addMissing);
         if (m.unknown.length) { errors.push({ ...at, message: m.unknown.join("; ") }); continue; }
         cats = m.found;
         if (m.merged) cats.forEach(mergedNote);
       } else {
+        if (sheetMissing) addMissing(sheetMissing);
         const c = sheetCat ?? fallback;
-        if (!c) { errors.push({ ...at, message: "Không xác định được nội dung (thêm cột \"Nội dung\")" }); continue; }
+        if (!c) { errors.push({ ...at, message: sheetMissing ? `Chưa có nội dung "${sheetMissing.baseName} ${sheetMissing.div}" — bấm "Tạo nội dung còn thiếu"` : "Không xác định được nội dung (thêm cột \"Nội dung\")" }); continue; }
         cats = [c];
       }
-      if (!p1Name) { errors.push({ ...at, message: "Thiếu họ tên VĐV" }); continue; }
+      const rowCodes = codesOf(cats);
+      if (!p1Name) { errors.push({ ...at, codes: rowCodes, message: "Thiếu họ tên VĐV" }); continue; }
       const club = col(row, "club") || (rec.p2 ? col(rec.p2, "club") : "");
-      if (club.length > CLUB_MAX) { errors.push({ ...at, message: `Tên CLB dài quá ${CLUB_MAX} ký tự` }); continue; }
+      if (club.length > CLUB_MAX) { errors.push({ ...at, codes: rowCodes, message: `Tên CLB dài quá ${CLUB_MAX} ký tự` }); continue; }
       const p1 = person(p1Name, "p1");
-      if (typeof p1 === "string") { errors.push({ ...at, message: p1 }); continue; }
+      if (typeof p1 === "string") { errors.push({ ...at, codes: rowCodes, message: p1 }); continue; }
+      const noteText = [h.note === undefined ? "" : cellText(row[h.note]), h.note !== undefined && rec.p2 ? cellText(rec.p2[h.note]) : ""]
+        .filter(Boolean).join(" · ");
+      if (noteText && noteNeedsCheck(noteText)) {
+        const key = `${s.sheet}|${at.row}`;
+        const on = include[key] ?? false;
+        flagged.set(key, { key, ...at, codes: cats.map((c) => c.code), names: p2Name ? `${p1Name} / ${p2Name}` : p1Name, note: noteText, include: on });
+        if (!on) continue; // chưa tick → không nhập dòng này
+      }
       const slot1 = `${s.sheet}|${at.row}|p1`;
       const slot2 = `${s.sheet}|${at.row}|p2`;
       decide(p1, slot1, at, cats[0]?.code ?? "", club);
@@ -404,28 +488,38 @@ export function planImport(sheets: RawSheet[], categories: Category[], fallback:
         }
         let p2: Person | null = null;
         if (cat.is_doubles) {
-          if (!p2Name) { errors.push({ ...at, message: `${cat.code} là nội dung đôi — thiếu họ tên đồng đội` }); continue; }
+          if (!p2Name) { errors.push({ ...at, codes: [cat.code], message: `${cat.code} là nội dung đôi — thiếu họ tên đồng đội` }); continue; }
           const x = person(p2Name, "p2");
-          if (typeof x === "string") { errors.push({ ...at, message: x }); continue; }
+          if (typeof x === "string") { errors.push({ ...at, codes: [cat.code], message: x }); continue; }
           decide(x, slot2, at, cat.code, club);
           p2 = x;
         } else if (p2Name && !multi && !catCell) {
-          errors.push({ ...at, message: `${cat.code} là nội dung đơn — bỏ trống cột đồng đội` });
+          errors.push({ ...at, codes: [cat.code], message: `${cat.code} là nội dung đơn — bỏ trống cột đồng đội` });
           continue;
         }
-        const k = knownOf(cat);
-        const dup = [p1, p2].find((p) => p && isKnown(k, p));
-        if (dup) { skipped.push({ ...at, message: `${cat.code}: ${dup.name}${dup.studentId ? ` (${dup.studentId})` : ""} đã đăng ký — bỏ qua` }); continue; }
-        remember(k, p1);
-        if (p2) remember(k, p2);
+        const who = (p: Person) => `${p.name}${p.studentId ? ` (${p.studentId})` : ""}`;
+        const dup = [p1, p2].find((p) => p && isKnown(knownOf(cat), p));
+        if (dup) { skipped.push({ ...at, codes: [cat.code], message: `${cat.code}: ${who(dup)} đã đăng ký trên hệ thống — bỏ qua` }); continue; }
+        const seenIn = fileOf(cat);
+        const hit = [p1, p2].flatMap((p) => (p ? lookupKeys(p).map((key) => ({ p, prev: seenIn.get(key) })) : []))
+          .find((x) => x.prev);
+        if (hit?.prev) {
+          if (hit.prev.sheet === s.sheet) {
+            skipped.push({ ...at, codes: [cat.code], message: `${cat.code}: ${who(hit.p)} trùng dòng ${hit.prev.row} cùng tab — bỏ qua` });
+          } else {
+            errors.push({ ...at, codes: [cat.code], message: `${cat.code}: ${who(hit.p)} cũng có ở tab "${hit.prev.sheet}" dòng ${hit.prev.row} — hai tab cùng vào nội dung "${cat.name}" mà mỗi người chỉ đăng ký 1 lần mỗi nội dung. Hai hạng khác nhau → tạo nội dung riêng (vd "${cat.name} A", "${cat.name} B"); cùng một danh sách → bỏ chọn một tab` });
+          }
+          continue;
+        }
+        for (const p of [p1, p2]) if (p) for (const key of storeKeys(p)) if (!seenIn.has(key)) seenIn.set(key, at);
         note(p1, slot1, club);
         if (p2) note(p2, slot2, club);
-        buckets.set(cat.id, [...(buckets.get(cat.id) ?? []), { ...at, code: cat.code, p1, p2, club, group }]);
+        buckets.set(cat.id, [...(buckets.get(cat.id) ?? []), { ...at, code: cat.code, p1, p2, club, group, note: noteText || null }]);
       }
     }
   }
   for (const l of locked.values()) {
-    errors.push({ sheet: l.sheet, row: l.row, message: `${l.code} đã bốc thăm — không thêm đội được nữa (${l.n} dòng${l.n > 1 ? `, từ dòng ${l.row}` : ""})` });
+    errors.push({ sheet: l.sheet, row: l.row, codes: [l.code], message: `${l.code} đã bốc thăm — không thêm đội được nữa (${l.n} dòng${l.n > 1 ? `, từ dòng ${l.row}` : ""})` });
   }
   if (!anyHeader) errors.push({ sheet: sheets[0]?.sheet ?? "", row: 1, message: "Không tìm thấy dòng tiêu đề có cột họ tên VĐV — hãy dùng file mẫu" });
 
@@ -435,7 +529,7 @@ export function planImport(sheets: RawSheet[], categories: Category[], fallback:
     const withGroup = rows.filter((x) => x.group);
     if (!withGroup.length) return { category, rows, groups: null };
     const first = rows[0]!;
-    const fail = (message: string) => { errors.push({ sheet: first.sheet, row: first.row, message: `${category.code}: ${message} — chỉ nhập đội, KHÔNG chia bảng theo file` }); return { category, rows, groups: null }; };
+    const fail = (message: string) => { errors.push({ sheet: first.sheet, row: first.row, codes: [category.code], message: `${category.code}: ${message} — chỉ nhập đội, KHÔNG chia bảng theo file` }); return { category, rows, groups: null }; };
     if ((existing[category.id] ?? []).length) return fail(`đã có ${(existing[category.id] ?? []).length} đội từ trước; chia bảng theo file cần nhập toàn bộ đội trong một lần`);
     if (withGroup.length !== rows.length) return fail(`${rows.length - withGroup.length} dòng thiếu cột Bảng`);
     const map = new Map<string, number[]>();
@@ -446,7 +540,25 @@ export function planImport(sheets: RawSheet[], categories: Category[], fallback:
     return { category, rows, groups };
   });
   errors.sort((a, b) => (a.sheet === b.sheet ? a.row - b.row : 0));
-  return { byCategory, errors, skipped, notes: [...notes], warnings, nameClashes: [...clashes.values()] };
+  // VĐV đánh nhiều nội dung (trong lần nhập này): MSSV, không có thì SĐT, không có nữa thì tên.
+  const people = new Map<string, { name: string; codes: Set<string> }>();
+  for (const g of byCategory) {
+    for (const r of g.rows) {
+      for (const p of [r.p1, r.p2]) {
+        if (!p) continue;
+        const k = p.studentId ? `s:${p.studentId}` : p.phone ? `t:${p.phone}` : `n:${nameKey(p.name)}${p.newAthlete ? `|${r.sheet}|${r.row}` : ""}`;
+        const cur = people.get(k) ?? { name: p.name, codes: new Set<string>() };
+        cur.codes.add(g.category.code);
+        people.set(k, cur);
+      }
+    }
+  }
+  const multiCategory = [...people.values()].filter((x) => x.codes.size > 1).map((x) => ({ name: x.name, codes: [...x.codes] }))
+    .sort((a, b) => b.codes.length - a.codes.length || a.name.localeCompare(b.name, "vi"));
+  return {
+    byCategory, errors, skipped, notes: [...notes], warnings, nameClashes: [...clashes.values()],
+    missingCategories: [...missing.values()], flagged: [...flagged.values()], multiCategory,
+  };
 }
 
 // ───────── Đọc file ─────────

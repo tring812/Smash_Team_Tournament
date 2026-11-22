@@ -43,8 +43,21 @@ export default function CourtsPage() {
   const b = board.data;
   const byId = new Map((b?.queue ?? []).map((q) => [q.match.id, q]));
   const freeCourts = (b?.courts ?? []).filter((c) => !c.current).map((c) => c.court);
-  const call = (m: Match, court: number) =>
+  const doCall = (m: Match, court: number) =>
     act(() => api(`/matches/${m.id}/call`, { method: "POST", body: { court } }), `Đã gọi ${m.a?.name} – ${m.b?.name} vào sân ${court}`);
+  /** Gọi trận TRƯỚC giờ khai mạc → hỏi lại (dễ bấm nhầm khi đang chuẩn bị). */
+  const [early, setEarly] = useState<{ m: Match; court: number; run: () => Promise<unknown> } | null>(null);
+  const beforeOpening = now < new Date(t.starts_at).getTime();
+  const guard = (m: Match, court: number, run: () => Promise<unknown>) => {
+    if (beforeOpening) { setEarly({ m, court, run }); return Promise.resolve(false); }
+    return run().then(() => true);
+  };
+  const call = (m: Match, court: number) => guard(m, court, () => doCall(m, court));
+  /** Rút về trận ĐÃ CÓ ĐIỂM → hỏi lại. */
+  const [uncalling, setUncalling] = useState<{ m: Match; court: number } | null>(null);
+  const uncall = (m: Match, court: number) =>
+    act(() => api(`/matches/${m.id}/uncall`, { method: "POST" }), `Đã rút trận khỏi sân ${court}`);
+  const busyCourts = (b?.courts ?? []).filter((c) => c.current).map((c) => c.court);
 
   return (
     <div className="space-y-6">
@@ -98,7 +111,7 @@ export default function CourtsPage() {
                         </Button>
                         {state === "called" && (
                           <Button variant="ghost" className="px-3" disabled={busy}
-                            onClick={() => act(() => api(`/matches/${m.id}/uncall`, { method: "POST" }), `Đã rút trận khỏi sân ${c.court}`)}>
+                            onClick={() => (m.games.some((g) => g[0] + g[1] > 0) ? setUncalling({ m, court: c.court }) : void uncall(m, c.court))}>
                             <Undo2 className="h-4 w-4" aria-hidden />Rút về
                           </Button>
                         )}
@@ -161,16 +174,19 @@ export default function CourtsPage() {
                 <Reasons q={q} />
               </div>
               <Button variant="primary" className="px-3" disabled={busy || q.busyWith.length > 0}
-                onClick={async () => {
+                onClick={() => {
                   if (!pickFor) return;
+                  const court = pickFor;
                   setPickErr(null);
-                  try {
-                    await api(`/matches/${q.match.id}/call`, { method: "POST", body: { court: pickFor } });
-                    await act(async () => undefined, `Đã gọi ${q.match.a?.name} – ${q.match.b?.name} vào sân ${pickFor}`);
-                    setPickFor(null);
-                  } catch (e) {
-                    setPickErr((e as Error).message); // hiện trong hộp thoại, không bị che
-                  }
+                  void guard(q.match, court, async () => {
+                    try {
+                      await api(`/matches/${q.match.id}/call`, { method: "POST", body: { court } });
+                      await act(async () => undefined, `Đã gọi ${q.match.a?.name} – ${q.match.b?.name} vào sân ${court}`);
+                      setPickFor(null);
+                    } catch (e) {
+                      setPickErr((e as Error).message); // hiện trong hộp thoại, không bị che
+                    }
+                  });
                 }}>
                 Gọi
               </Button>
@@ -179,7 +195,39 @@ export default function CourtsPage() {
         </ul>
       </Modal>
 
-      <MoveMatchModal key={moving?.id ?? "none"} match={moving} courts={t.courts} onClose={() => setMoving(null)} />
+      <MoveMatchModal key={moving?.id ?? "none"} match={moving} courts={t.courts} busyCourts={busyCourts} onClose={() => setMoving(null)} />
+
+      <Modal open={Boolean(early)} onClose={() => setEarly(null)} title="Giải chưa khai mạc">
+        {early && (
+          <>
+            <p className="text-sm text-slate-600">
+              Giải khai mạc lúc <strong className="tabular">{fmtTime(t.starts_at)}</strong>. Vẫn gọi <strong>{early.m.a?.name} – {early.m.b?.name}</strong> vào sân {early.court} ngay bây giờ?
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setEarly(null)}>Huỷ</Button>
+              <Button variant="primary" disabled={busy} onClick={() => { const e = early; setEarly(null); void e.run(); }}>
+                <Megaphone className="h-4 w-4" aria-hidden />Vẫn gọi
+              </Button>
+            </div>
+          </>
+        )}
+      </Modal>
+
+      <Modal open={Boolean(uncalling)} onClose={() => setUncalling(null)} title="Rút trận đã có điểm?">
+        {uncalling && (
+          <>
+            <p className="text-sm text-slate-600">
+              Trận <strong>{uncalling.m.a?.name} – {uncalling.m.b?.name}</strong> đã có điểm ({scoreLine(uncalling.m)}). Rút về hàng chờ thì sân {uncalling.court} trống, điểm vẫn giữ.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setUncalling(null)}>Huỷ</Button>
+              <Button variant="danger" disabled={busy} onClick={() => { const u = uncalling; setUncalling(null); void uncall(u.m, u.court); }}>
+                <Undo2 className="h-4 w-4" aria-hidden />Vẫn rút về
+              </Button>
+            </div>
+          </>
+        )}
+      </Modal>
     </div>
   );
 }

@@ -362,21 +362,50 @@ function CategoryCrud({ cat, entryCount, anyStarted, onDeleted }: { cat: Categor
 }
 
 function CategoryActions({ cat, entryCount, groupsStarted }: { cat: Category; entryCount: number; groupsStarted: boolean }) {
-  const { busy, act } = useAdmin();
+  const { t, busy, act } = useAdmin();
+  const [confirmDraw, setConfirmDraw] = useState(false);
   const [confirmRedraw, setConfirmRedraw] = useState(false);
+  /** Số trận vòng bảng của nội dung đã xếp giờ — bốc lại sẽ mất lịch này. */
+  const [scheduled, setScheduled] = useState<number | null>(null);
+  const openRedraw = async () => {
+    setScheduled(null);
+    setConfirmRedraw(true);
+    try {
+      const ms = await api<Match[]>(`/tournaments/${t.id}/matches?categoryId=${cat.id}`);
+      setScheduled(ms.filter((m) => m.stage === "group" && m.scheduledAt && ["pending", "scheduled"].includes(m.status)).length);
+    } catch { setScheduled(null); }
+  };
   if (cat.stage === "setup") {
     return (
-      <Button variant="primary" disabled={busy || entryCount < cat.group_count * 2}
-        title={entryCount < cat.group_count * 2 ? `Cần ít nhất ${cat.group_count * 2} đội` : undefined}
-        onClick={() => act(() => api(`/categories/${cat.id}/draw`, { method: "POST" }), "Đã bốc thăm ngẫu nhiên & tạo lịch vòng tròn")}>
-        <Shuffle className="w-4 h-4" aria-hidden />Bốc thăm {cat.group_count} bảng
-      </Button>
+      <>
+        <Button variant="primary" disabled={busy || entryCount < cat.group_count * 2}
+          title={entryCount < cat.group_count * 2 ? `Cần ít nhất ${cat.group_count * 2} đội` : undefined}
+          onClick={() => setConfirmDraw(true)}>
+          <Shuffle className="w-4 h-4" aria-hidden />Bốc thăm {cat.group_count} bảng
+        </Button>
+        <Modal open={confirmDraw} onClose={() => setConfirmDraw(false)} title={`Bốc thăm ${cat.code}?`}>
+          <p className="text-sm text-slate-600">
+            Chia <strong>{entryCount} {cat.is_doubles ? "cặp" : "VĐV"}</strong> vào <strong>{cat.group_count} bảng</strong> ngẫu nhiên (tự tách cùng CLB) và tạo lịch vòng tròn.
+            Sau khi bốc, nội dung <strong>không nhận thêm / xoá đội</strong> nữa; vẫn bốc lại được khi chưa có trận nào có điểm.
+          </p>
+          <div className="mt-5 flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setConfirmDraw(false)}>Huỷ</Button>
+            <Button variant="primary" disabled={busy}
+              onClick={async () => {
+                setConfirmDraw(false);
+                await act(() => api(`/categories/${cat.id}/draw`, { method: "POST" }), "Đã bốc thăm ngẫu nhiên & tạo lịch vòng tròn");
+              }}>
+              <Shuffle className="w-4 h-4" aria-hidden />Bốc thăm
+            </Button>
+          </div>
+        </Modal>
+      </>
     );
   }
   if (cat.stage !== "groups") return null;
   return (
     <>
-      <Button variant="outline" disabled={busy || groupsStarted} onClick={() => setConfirmRedraw(true)}
+      <Button variant="outline" disabled={busy || groupsStarted} onClick={() => void openRedraw()}
         title={groupsStarted ? "Đã có trận được nhập điểm" : "Kết quả mới luôn khác lần trước"}>
         <Shuffle className="w-4 h-4" aria-hidden />Bốc thăm lại
       </Button>
@@ -385,6 +414,11 @@ function CategoryActions({ cat, entryCount, groupsStarted }: { cat: Category; en
       </Button>
       <Modal open={confirmRedraw} onClose={() => setConfirmRedraw(false)} title="Bốc thăm lại?">
         <p className="text-sm text-slate-600">Bảng đấu và lịch vòng bảng hiện tại của <strong>{cat.code}</strong> sẽ bị thay thế. Cách chia mới luôn khác lần trước.</p>
+        {scheduled !== null && scheduled > 0 && (
+          <p role="alert" className="mt-3 rounded-2xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+            <strong>{scheduled} trận đã xếp giờ / sân sẽ mất lịch.</strong> Sau khi bốc lại, vào <strong>Xếp lịch sân</strong> để xếp lại vòng bảng.
+          </p>
+        )}
         <div className="mt-5 flex justify-end gap-2">
           <Button variant="ghost" onClick={() => setConfirmRedraw(false)}>Huỷ</Button>
           <Button variant="primary" disabled={busy}

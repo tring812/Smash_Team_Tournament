@@ -11,8 +11,8 @@ import { StatusBadge, matchTitle } from "../../../../components/MatchViews";
 import { useAdmin } from "../AdminContext";
 import { MoveMatchModal } from "../MoveMatchModal";
 
-const FILTERS: { id: "all" | MatchStatus; label: string }[] = [
-  { id: "all", label: "Tất cả" }, { id: "live", label: "Đang đánh" }, { id: "scheduled", label: "Sắp đánh" },
+const FILTERS: { id: "all" | "called" | MatchStatus; label: string }[] = [
+  { id: "all", label: "Tất cả" }, { id: "called", label: "Mời ra sân" }, { id: "live", label: "Đang đánh" }, { id: "scheduled", label: "Sắp đánh" },
   { id: "finished", label: "Kết thúc" }, { id: "cancelled", label: "Đã huỷ" },
 ];
 
@@ -24,7 +24,11 @@ export default function MatchesPage() {
   const staff = usePoll((s) => api<Staff[]>(`/tournaments/${t.id}/staff`, { signal: s }), [t.id, version], 120_000);
   const [moving, setMoving] = useState<Match | null>(null);
 
-  const rows = useMemo(() => (matches.data ?? []).filter((m) => m.status !== "bye" && (status === "all" || m.status === status)), [matches.data, status]);
+  // "Mời ra sân" = đã gọi vào sân, chưa có điểm. "Sắp đánh" không gồm các trận đó (đã ở bộ lọc riêng).
+  const rows = useMemo(() => (matches.data ?? []).filter((m) => m.status !== "bye" && (
+    status === "all" || (status === "called" ? Boolean(m.calledAt) : m.status === status && !(status === "scheduled" && m.calledAt)))), [matches.data, status]);
+  /** Sân đang có trận (đang đánh / đã gọi) — làm mờ khi chuyển sân. */
+  const busyCourts = useMemo(() => (matches.data ?? []).filter((m) => m.court && (m.status === "live" || m.calledAt)).map((m) => m.court!), [matches.data]);
 
   return (
     <div className="space-y-6">
@@ -112,7 +116,7 @@ export default function MatchesPage() {
           </div>
         )}
       </Card>
-      <MoveMatchModal key={moving?.id ?? "none"} match={moving} courts={t.courts} onClose={() => setMoving(null)} />
+      <MoveMatchModal key={moving?.id ?? "none"} match={moving} courts={t.courts} busyCourts={busyCourts} onClose={() => setMoving(null)} />
     </div>
   );
 }
