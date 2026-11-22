@@ -192,7 +192,8 @@ async function assertPlayersFree(c, m) {
 }
 
 /**
- * GỌI trận vào sân: sân và VĐV phải rảnh; giờ thi đấu = bây giờ.
+ * GỌI trận vào sân: sân và VĐV phải rảnh. Giờ gọi lưu ở called_at — KHÔNG ghi đè giờ dự kiến (scheduled_at);
+ * sân dự kiến được giữ ở planned_court để "Rút về" trả lại.
  * @param {Pool} pool @param {Viewer} viewer @param {string} matchId @param {{ court: number, now?: Date }} input
  */
 async function callMatch(pool, viewer, matchId, input) {
@@ -210,8 +211,8 @@ async function callMatch(pool, viewer, matchId, input) {
     await assertPlayersFree(c, m);
     const now = input.now ?? new Date();
     const { rows } = await c.query(
-      `UPDATE matches SET court = $2, scheduled_at = $3, called_at = $3, status = 'scheduled',
-              version = version + 1, updated_at = now()
+      `UPDATE matches SET planned_court = CASE WHEN called_at IS NULL THEN court ELSE planned_court END,
+              court = $2, called_at = $3, version = version + 1, updated_at = now()
         WHERE id = $1 RETURNING id`,
       [m.id, input.court, now.toISOString()],
     );
@@ -232,8 +233,13 @@ async function uncallMatch(pool, viewer, matchId) {
     if (!m.called_at || !['pending', 'scheduled'].includes(m.status)) {
       throw conflict('NOT_CALLED', m.status === 'live' ? 'Trận đã có điểm — dùng "Chuyển sân" thay vì rút' : 'Trận chưa được gọi vào sân');
     }
-    await c.query('UPDATE matches SET called_at = NULL, version = version + 1, updated_at = now() WHERE id = $1', [m.id]);
-    await logEvent(c, m.tournament_id, m.category_id, viewer.id, 'uncall_match', { matchId: m.id, court: m.court });
+    // Trả về đúng giờ (không đổi) và SÂN DỰ KIẾN ban đầu → trận về lại vị trí cũ trong hàng chờ.
+    await c.query(
+      `UPDATE matches SET called_at = NULL, court = planned_court, planned_court = NULL, version = version + 1, updated_at = now()
+        WHERE id = $1`,
+      [m.id],
+    );
+    await logEvent(c, m.tournament_id, m.category_id, viewer.id, 'uncall_match', { matchId: m.id, court: m.court, toCourt: m.planned_court });
     return { id: m.id };
   });
 }

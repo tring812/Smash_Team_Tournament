@@ -333,7 +333,6 @@ stateDiagram-v2
   [*] --> pending: bốc thăm / tạo nhánh
   pending --> scheduled: xếp lịch / dời trận
   scheduled --> pending: dời trận (bỏ giờ)
-  pending --> scheduled: BTC gọi vào sân (called_at)
   scheduled --> live: nhập điểm đầu tiên
   pending --> live: nhập điểm khi chưa xếp lịch
   live --> finished: xác nhận kết quả
@@ -349,13 +348,13 @@ stateDiagram-v2
   [*] --> bye: nhánh thiếu đội
 ```
 
-"Đã gọi vào sân" không phải một trạng thái riêng: trận vẫn `scheduled`, có thêm `called_at` (công khai hiện **"Mời ra sân"**). Rút về hàng chờ = xoá `called_at`.
+"Đã gọi vào sân" không phải một trạng thái riêng: trận giữ nguyên trạng thái chờ (`pending` / `scheduled`), có thêm `called_at` (công khai hiện **"Mời ra sân"**). Gọi trận **không đổi giờ dự kiến** (`scheduled_at`); sân dự kiến được giữ ở `planned_court`. Rút về hàng chờ = xoá `called_at` và trả lại sân dự kiến.
 
 ### 7.9 Điều phối sân
 - **Sân bận** khi có trận đang đánh, hoặc trận đã gọi mà chưa có điểm. **VĐV bận** khi đang ở một trận như vậy (kể cả nội dung khác; so theo tên chuẩn hoá không phân biệt hoa thường).
-- **Gọi trận** (`POST /matches/:id/call`): trận phải đang chờ và đủ 2 đội; sân và mọi VĐV phải rảnh; giờ thi đấu ghi lại = lúc gọi. Hai BTC bấm cùng lúc: khoá theo giải, chỉ một người thành công.
+- **Gọi trận** (`POST /matches/:id/call`): trận phải đang chờ và đủ 2 đội; sân và mọi VĐV phải rảnh. Giờ gọi lưu ở `called_at`; **giờ dự kiến (`scheduled_at`) và sân dự kiến giữ nguyên** (sân dự kiến cất ở `planned_court`, `court` = sân đang dùng). Hai BTC bấm cùng lúc: khoá theo giải, chỉ một người thành công.
 - **Gợi ý trận kế tiếp** cho từng sân trống (tham lam, không 2 gợi ý nào chung VĐV): bỏ trận có VĐV bận → ưu tiên trận mà không VĐV nào vừa đánh xong dưới **10 phút** → ưu tiên trận lịch dự kiến ở chính sân đó → giờ dự kiến sớm nhất → vòng/lượt. BTC vẫn gọi được trận khác (trừ trận có VĐV bận).
-- **Rút trận** chỉ khi chưa có điểm; đã có điểm thì **chuyển sân** (sân mới phải trống).
+- **Rút trận** chỉ khi chưa có điểm; trận về lại **đúng giờ và sân dự kiến** ban đầu (vị trí cũ trong hàng chờ). Đã có điểm thì **chuyển sân** (sân mới phải trống).
 - **Dời trận chờ**: server từ chối nếu trong ± (phút mỗi trận) quanh giờ mới có trận khác cùng sân (`COURT_TAKEN`) hoặc cùng VĐV (`PLAYER_TAKEN`).
 - **Trọng tài hiệu lực** của một trận = trọng tài gán riêng cho trận, nếu không có thì trọng tài phụ trách sân của trận, nếu không có nữa thì bất kỳ trọng tài nào của giải.
 - Mọi thao tác gọi / rút / dời / giao trọng tài sân ghi vào **nhật ký BTC**.
@@ -535,6 +534,7 @@ erDiagram
     int court
     timestamptz scheduled_at
     timestamptz called_at "đã gọi vào sân"
+    int planned_court "sân dự kiến khi đang được gọi"
     uuid next_match_id FK
     int version "khoá lạc quan"
   }
