@@ -119,6 +119,15 @@ const schemas = {
     games: z.array(z.tuple([score, score])).max(5).optional(),
     walkoverWinner: z.enum(['a', 'b']).optional(),
   }),
+  // Biên bản: ô VĐV a1/a2/b1/b2; expectedSeq = seq của sự kiện sắp thêm (chống 2 máy cùng bấm).
+  rally: z.object({
+    type: z.enum(['start', 'point', 'fix_server']),
+    side: z.enum(['a', 'b']).optional(),
+    server: z.enum(['a1', 'a2', 'b1', 'b2']).optional(),
+    receiver: z.enum(['a1', 'a2', 'b1', 'b2']).optional(),
+    expectedSeq: z.number().int().min(1).max(10_000),
+  }),
+  rallyUndo: z.object({ expectedSeq: z.coerce.number().int().min(1).max(10_000) }),
   referee: z.object({ refereeUserId: z.uuid().nullable() }),
   callMatch: z.object({ court: z.number().int().min(1).max(50) }),
   roundRules: z.object({
