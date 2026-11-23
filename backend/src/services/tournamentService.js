@@ -20,6 +20,7 @@ const { seedsFromGroups, buildBracket, roundLabel } = require('../domain/bracket
 const { evaluateMatch } = require('../domain/scoring');
 const { effectiveRules, buildRoundRules, sameRules, scopeKey, fromEndLabel } = require('../domain/roundRules');
 const { notFound, forbidden, conflict, unprocessable } = require('../errors');
+const rallies = require('./rallyStore');
 
 /** @typedef {{ id: string, full_name: string, role: string }} Viewer */
 /** @typedef {{ query: (text: string, params?: unknown[]) => Promise<{ rows: any[], rowCount: number|null }> }} Queryable */
@@ -899,45 +900,55 @@ async function advanceWinner(c, m, winnerId, actorId) {
 }
 
 /**
+ * Khoá trận để NHẬP ĐIỂM (lưu tỉ số / biên bản) + kiểm tra quyền và trạng thái chung:
+ * trọng tài được phân công (trận hoặc sân) hoặc BTC; giải chưa kết thúc; trận đủ 2 đội, chưa huỷ, chưa xong.
+ * @param {Queryable} c @param {string} matchId @param {Viewer} viewer
+ */
+async function lockScorable(c, matchId, viewer) {
+  const { rows } = await c.query(
+    `SELECT m.*, cat.points_to_win, cat.max_points, cat.games_to_win, cat.round_rules, cat.is_doubles, t.status AS tournament_status,
+            (SELECT max(k.round) FROM matches k WHERE k.category_id = m.category_id AND k.stage = 'knockout') AS ko_rounds
+       FROM matches m JOIN categories cat ON cat.id = m.category_id JOIN tournaments t ON t.id = m.tournament_id
+      WHERE m.id = $1 FOR UPDATE OF m`,
+    [matchId],
+  );
+  const m = rows[0];
+  if (!m) throw notFound('Không tìm thấy trận');
+  const role = await roleIn(c, m.tournament_id, viewer);
+  if (!role) throw forbidden();
+  if (role === 'referee') {
+    // Trọng tài hiệu lực: gán riêng cho trận, nếu không thì trọng tài phụ trách sân của trận.
+    let assigned = m.referee_user_id;
+    if (!assigned && m.court) {
+      const cr = await c.query('SELECT user_id FROM court_referees WHERE tournament_id = $1 AND court = $2', [m.tournament_id, m.court]);
+      assigned = cr.rows[0]?.user_id ?? null;
+    }
+    if (assigned && assigned !== viewer.id) throw forbidden('Trận này đã phân công cho trọng tài khác');
+  }
+  if (m.tournament_status === 'completed') throw conflict('TOURNAMENT_CLOSED', 'Giải đã kết thúc');
+  if (m.tournament_status === 'draft' && role === 'referee') throw forbidden('Giải chưa công bố');
+  if (!m.entry_a_id || !m.entry_b_id) throw conflict('MISSING_ENTRY', 'Trận chưa đủ 2 đội');
+  if (m.status === 'cancelled') throw conflict('MATCH_CANCELLED', 'Trận đã bị huỷ do có đội bị truất quyền');
+  if (FINAL_STATUSES.has(m.status)) throw conflict('MATCH_CLOSED', 'Trận đã kết thúc');
+  return { m, role, rules: effectiveRules(m, m.stage, m.round, m.ko_rounds) };
+}
+
+/**
  * Trọng tài/BTC lưu tỉ số, kết thúc trận hoặc xử thắng do bỏ cuộc.
  * Dùng optimistic locking: client gửi `version` đã đọc; lệch → 409 kèm trạng thái mới nhất.
+ * Trận có biên bản (match_rallies) mà tỉ số gửi lên khác biên bản → ghi mốc "BTC sửa tay" (override) vào biên bản.
  *
  * @param {Pool} pool @param {Viewer} viewer @param {string} matchId
  * @param {{ action: 'save'|'finish'|'walkover', version: number, games?: [number, number][], walkoverWinner?: 'a'|'b' }} input
  */
 async function recordScore(pool, viewer, matchId, input) {
   return withTx(pool, async (c) => {
-    const { rows } = await c.query(
-      `SELECT m.*, cat.points_to_win, cat.max_points, cat.games_to_win, cat.round_rules, t.status AS tournament_status,
-              (SELECT max(k.round) FROM matches k WHERE k.category_id = m.category_id AND k.stage = 'knockout') AS ko_rounds
-         FROM matches m JOIN categories cat ON cat.id = m.category_id JOIN tournaments t ON t.id = m.tournament_id
-        WHERE m.id = $1 FOR UPDATE OF m`,
-      [matchId],
-    );
-    const m = rows[0];
-    if (!m) throw notFound('Không tìm thấy trận');
-    const role = await roleIn(c, m.tournament_id, viewer);
-    if (!role) throw forbidden();
-    if (role === 'referee') {
-      // Trọng tài hiệu lực: gán riêng cho trận, nếu không thì trọng tài phụ trách sân của trận.
-      let assigned = m.referee_user_id;
-      if (!assigned && m.court) {
-        const cr = await c.query('SELECT user_id FROM court_referees WHERE tournament_id = $1 AND court = $2', [m.tournament_id, m.court]);
-        assigned = cr.rows[0]?.user_id ?? null;
-      }
-      if (assigned && assigned !== viewer.id) throw forbidden('Trận này đã phân công cho trọng tài khác');
-    }
-    if (m.tournament_status === 'completed') throw conflict('TOURNAMENT_CLOSED', 'Giải đã kết thúc');
-    if (m.tournament_status === 'draft' && role === 'referee') throw forbidden('Giải chưa công bố');
-    if (!m.entry_a_id || !m.entry_b_id) throw conflict('MISSING_ENTRY', 'Trận chưa đủ 2 đội');
-    if (m.status === 'cancelled') throw conflict('MATCH_CANCELLED', 'Trận đã bị huỷ do có đội bị truất quyền');
-    if (FINAL_STATUSES.has(m.status)) throw conflict('MATCH_CLOSED', 'Trận đã kết thúc');
+    const { m, role, rules } = await lockScorable(c, matchId, viewer);
     if (input.version !== m.version) {
       throw conflict('VERSION_CONFLICT', 'Tỉ số vừa được cập nhật ở thiết bị khác — đã tải lại bản mới nhất',
         { current: { games: m.games, version: m.version, status: m.status } });
     }
 
-    const rules = effectiveRules(m, m.stage, m.round, m.ko_rounds); // luật theo vòng của trận
     const games = input.games ?? m.games;
     /** @type {string} */ let status;
     /** @type {string|null} */ let winnerId = null;
@@ -958,6 +969,9 @@ async function recordScore(pool, viewer, matchId, input) {
       }
     }
 
+    if (input.action !== 'walkover' && JSON.stringify(games) !== JSON.stringify(m.games)) {
+      await rallies.recordOverride(c, matchId, games, viewer.id);
+    }
     const { rows: upd } = await c.query(
       `UPDATE matches SET games = $2::jsonb, status = $3, winner_entry_id = $4,
               referee_user_id = COALESCE(referee_user_id, $5),
@@ -973,7 +987,11 @@ async function recordScore(pool, viewer, matchId, input) {
     if (m.tournament_status === 'published') {
       await c.query(`UPDATE tournaments SET status = 'ongoing' WHERE id = $1`, [m.tournament_id]);
     }
-    if (winnerId) await advanceWinner(c, m, winnerId, viewer.id);
+    if (winnerId) {
+      await logEvent(c, m.tournament_id, m.category_id, viewer.id, 'score_confirm',
+        { matchId, games: input.action === 'walkover' ? null : games, walkover: input.action === 'walkover', winner: winnerId === m.entry_a_id ? 'a' : 'b' });
+      await advanceWinner(c, m, winnerId, viewer.id);
+    }
     return upd[0];
   });
 }
@@ -1230,10 +1248,11 @@ const MATCH_SELECT = `
          eb.player1_name AS b_p1, eb.player2_name AS b_p2, eb.club AS b_club, eb.disqualified_at IS NOT NULL AS b_dq,
          ea.player1_athlete_id AS a_p1_aid, ea.player2_athlete_id AS a_p2_aid,
          eb.player1_athlete_id AS b_p1_aid, eb.player2_athlete_id AS b_p2_aid,
-         cat.points_to_win, cat.max_points, cat.games_to_win, cat.round_rules,
+         cat.points_to_win, cat.max_points, cat.games_to_win, cat.round_rules, mt.status AS tournament_status,
          (SELECT max(k.round) FROM matches k WHERE k.category_id = m.category_id AND k.stage = 'knockout') AS ko_rounds
     FROM matches m
     JOIN categories cat ON cat.id = m.category_id
+    JOIN tournaments mt ON mt.id = m.tournament_id
     LEFT JOIN groups g ON g.id = m.group_id
     LEFT JOIN entries ea ON ea.id = m.entry_a_id
     LEFT JOIN entries eb ON eb.id = m.entry_b_id
@@ -1256,6 +1275,8 @@ function presentMatch(r) {
   return {
     id: r.id,
     tournamentId: r.tournament_id,
+    // Giải đã kết thúc ('completed') → Bàn điểm khoá nhập điểm.
+    tournamentStatus: r.tournament_status,
     category: { id: r.category_id, code: r.category_code, name: r.category_name },
     stage: r.stage,
     groupName: r.group_name,
@@ -1454,7 +1475,7 @@ async function searchUsers(db, viewer, q) {
 module.exports = {
   assertVisible, tournamentOfCategory, listEntries, listStaff, searchUsers, listEvents,
   disqualifyEntry, reinstateEntry, swapEntries, updateEntry,
-  withTx, roleIn, requireOrganizer, logEvent, nameKey, participantKey, entryLabel, presentMatch, MATCH_SELECT, FINAL_STATUSES,
+  withTx, roleIn, requireOrganizer, lockScorable, logEvent, nameKey, participantKey, entryLabel, presentMatch, MATCH_SELECT, FINAL_STATUSES,
   createTournament, updateTournament, deleteTournament, restoreTournament, listDeletedTournaments, purgeDeletedTournaments, upsertStaff, removeStaff, createCategory, updateCategory, deleteCategory,
   addEntries, removeEntry,
   drawGroups, scheduleTournament, groupStandings, generateKnockout,

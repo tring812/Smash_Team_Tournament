@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Clock, PenLine, RotateCcw, Swords } from "lucide-react";
+import { Clock, FileText, PenLine, RotateCcw, Swords } from "lucide-react";
 import { api, fmtTime } from "../../../../lib/api";
 import { usePoll } from "../../../../lib/usePoll";
 import type { Match, MatchStatus, Staff } from "../../../../lib/types";
@@ -93,6 +93,12 @@ export default function MatchesPage() {
                       </select>
                     </td>
                     <td className="whitespace-nowrap py-3 pr-5 text-right">
+                      {["live", "finished", "walkover"].includes(m.status) && (
+                        <Link href={`/bien-ban/${m.id}`} className="mr-2 inline-flex min-h-11 items-center gap-1.5 rounded-full border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:border-slate-400"
+                          aria-label={`Biên bản trận ${m.a?.name} gặp ${m.b?.name}`}>
+                          <FileText className="w-4 h-4" aria-hidden />Biên bản
+                        </Link>
+                      )}
                       {["finished", "walkover"].includes(m.status) ? (
                         <Button variant="outline" className="px-3" disabled={busy}
                           onClick={() => act(() => api(`/matches/${m.id}/reopen`, { method: "POST" }), "Đã mở lại trận để sửa")}>

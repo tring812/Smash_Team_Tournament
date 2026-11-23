@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { GroupStanding, Match, MatchStatus, StandingRow } from "../lib/types";
 import { fmtTime } from "../lib/api";
 import { DqBadge, EmptyState } from "./ui";
@@ -55,6 +56,10 @@ export function MatchCard({ m, compact = false }: { m: Match; compact?: boolean 
             {m.court && <span className="whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-700">Sân {m.court}</span>}
             <span className="tabular">{fmtTime(m.scheduledAt)}</span>
             <StatusBadge status={m.status} called={Boolean(m.calledAt)} />
+            {["live", "finished"].includes(m.status) && (
+              <Link href={`/bien-ban/${m.id}`} className="inline-flex min-h-6 items-center font-semibold text-slate-700 underline underline-offset-2 hover:text-black"
+                aria-label={`Xem biên bản trận ${m.a?.name ?? "?"} gặp ${m.b?.name ?? "?"}`}>Biên bản</Link>
+            )}
           </span>
         </div>
       )}
