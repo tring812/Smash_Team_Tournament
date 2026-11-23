@@ -81,6 +81,24 @@ export interface Side {
   players?: PlayerRef[];
 }
 
+/** Ô VĐV trên biên bản: đội a/b, VĐV 1/2 (đánh đơn chỉ có a1, b1). */
+export type Slot = "a1" | "a2" | "b1" | "b2";
+
+/** Một sự kiện biên bản diễn biến điểm (GET /matches/:id → rallies). */
+export interface Rally {
+  seq: number;
+  game: number;
+  /** start = chọn người giao/nhận · point = pha cầu · fix_server = sửa người giao · override = BTC sửa tay tỉ số */
+  type: "start" | "point" | "fix_server" | "override";
+  side: "a" | "b" | null;
+  /** start / fix_server: người giao được chọn · point: người giao pha kế tiếp (máy chủ tính) */
+  server: Slot | null;
+  receiver: Slot | null;
+  score: Game | null;
+  games: Game[] | null;
+  at: string;
+}
+
 export interface ScoringRules {
   pointsToWin: number;
   maxPoints: number;
@@ -90,6 +108,8 @@ export interface ScoringRules {
 export interface Match {
   id: string;
   tournamentId: string;
+  /** Trạng thái giải của trận — "completed" thì Bàn điểm khoá nhập điểm. */
+  tournamentStatus: "draft" | "published" | "ongoing" | "completed";
   category: { id: string; code: string; name: string };
   stage: "group" | "knockout";
   groupName: string | null;
@@ -112,6 +132,8 @@ export interface Match {
   b: Side | null;
   winner: "a" | "b" | null;
   rules: ScoringRules;
+  /** Chỉ có ở GET /matches/:id và các thao tác biên bản. */
+  rallies?: Rally[];
 }
 
 export interface StandingRow {
@@ -176,7 +198,8 @@ export interface TournamentEvent {
   action: "draw" | "redraw" | "disqualify" | "reinstate" | "swap" | "edit_entry" | "schedule"
     | "category_create" | "category_update" | "category_delete"
     | "call_match" | "uncall_match" | "move_match" | "court_referee" | "athlete_update" | "rules_update"
-    | "referee_create" | "referee_update" | "referee_remove";
+    | "referee_create" | "referee_update" | "referee_remove"
+    | "rally_fix_server" | "rally_undo" | "score_confirm";
   details: Record<string, unknown>;
   created_at: string;
   actor: string;

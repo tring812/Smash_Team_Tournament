@@ -5,6 +5,8 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Bàn điểm sau khi xác nhận** hiện tỉ số cuối (vd 21–0) thay vì 0–0, và giữ biên bản để xem.
+- **Bàn điểm khoá khi giải "Đã kết thúc"**: trước đây máy chủ từ chối nhưng giao diện vẫn cho chọn bên giao và bấm điểm, số điểm hiện lên rồi giữ nguyên. Nay hiện banner "Giải đã kết thúc — khoá nhập điểm" và làm mờ mọi nút; thao tác bị máy chủ từ chối thì **trả điểm về như trước**. Mọi API trả trận có thêm `tournamentStatus`.
 - **Gọi vào sân không còn ghi đè giờ / sân dự kiến**: trước đây bấm "Gọi vào sân" đổi giờ dự kiến thành giờ gọi (vd 18:00 → 17:27), rút về thì trận mang giờ mới và sân cũ nên bị đẩy lên đầu hàng chờ. Nay giờ gọi lưu riêng (`called_at`), sân dự kiến cất ở cột mới `planned_court`; **Rút về** trả lại đúng giờ và sân dự kiến. **Migration 009** thêm cột và sửa lại các trận đã bị ghi đè (lấy giờ / sân dự kiến từ nhật ký gọi trận).
 
 ### Changed
@@ -24,6 +26,9 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 - **Nhập Excel bỏ qua nhầm người "trùng"**: trước đây người ở tab này bị so với mọi tab khác cùng vào một nội dung (vd "ĐƠN NAM A" và "ĐƠN NAM B" gộp vào "Đơn nam") rồi âm thầm "đã đăng ký — bỏ qua". Nay trùng trong file **chỉ xét trong cùng tab**; trùng ở tab khác → báo lỗi chỉ rõ tab + dòng. Người đã có trên hệ thống vẫn tự bỏ qua như cũ.
 
 ### Added
+- **Biên bản diễn biến điểm dưới Bàn điểm** theo mẫu biên bản giấy: mỗi pha cầu một cột, số ghi ở hàng người giao pha kế tiếp, G/N đầu game, vạch "Nghỉ" / "Đổi sân", ✎ khi sửa người giao hoặc BTC sửa tay, ⏳ cho pha chưa lưu (mất mạng). Trang chỉ xem `/bien-ban/<matchId>` (công khai, tự làm mới) có **In / Tải PDF** khổ A4 ngang; nút **Biên bản** ở trang Trận đấu & trọng tài và trên thẻ trận công khai.
+- **Chọn người giao và người nhận khi đánh đôi**: đầu mỗi game chọn đội giao → ai giao → ai nhận; máy tự tính vị trí trái/phải và người giao mọi pha sau theo luật BWF; nhãn giao/nhận kèm tên; **Sửa người giao** chọn đúng VĐV.
+- API biên bản: `POST /matches/:id/rallies`, `DELETE /matches/:id/rallies/last`, `GET /matches/:id` trả thêm `rallies`. **Migration 010** (`match_rallies`; nhật ký thêm sửa người giao / hoàn tác pha cầu / xác nhận kết quả).
 - **Xoá giải**: mục "Vùng nguy hiểm" cuối trang Tổng quan (quản trị viên hoặc người tạo giải), gõ lại đường dẫn để xác nhận, không xoá được giải đang diễn ra. Xoá mềm — **khôi phục trong 7 ngày** ở trang chủ (mục "Giải đã xoá"), quá hạn máy chủ xoá hẳn toàn bộ dữ liệu của giải. API `DELETE /tournaments/:id`, `POST /tournaments/:id/restore`, `GET /deleted-tournaments`; **migration 011** (`tournaments.deleted_at`, `deleted_by`).
 - **Sửa thông tin giải** ở trang Tổng quan: tên, đường dẫn (slug), địa điểm, giờ bắt đầu, số sân, phút/trận; đổi số sân / phút mỗi trận thì hỏi có xếp lại lịch các trận chưa đánh không. `PATCH /tournaments/:id` nhận thêm `slug`.
 - **Nhập Excel — Tạo nội dung còn thiếu**: file chia hạng (Bảng A / B…) mà giải chưa có nội dung theo hạng → hộp xem trước liệt kê các nội dung Nội dung × Hạng (vd "Đơn nam A", mã MSA) kèm số dòng; một nút tạo hết (chép luật điểm, số bảng của nội dung gốc) và file tự xếp lại theo nội dung mới.

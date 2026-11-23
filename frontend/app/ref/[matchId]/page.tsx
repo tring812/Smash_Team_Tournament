@@ -2,61 +2,49 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, FileText } from "lucide-react";
 import { api, ApiError } from "../../lib/api";
 import { gameState, matchProgress } from "../../lib/scoring";
-import { reminderAfterPoint, serviceCourt, type Reminder, type Side } from "../../lib/serve";
-import type { Game, Match } from "../../lib/types";
+import { reminderAfterPoint, serviceCourt, type Reminder } from "../../lib/serve";
+import { emptyState, otherSide, replay, sideOf, slotName, type RallyInput, type RallyState, type Side } from "../../lib/rally";
+import type { Game, Match, Rally, Slot } from "../../lib/types";
 import { matchTitle, StatusBadge } from "../../components/MatchViews";
+import { isDoublesMatch, RallySheet } from "../../components/RallySheet";
 
 type Sync = "idle" | "saving" | "saved" | "offline" | "error";
+type MatchWithRallies = Match & { rallies: Rally[] };
 
 /**
- * Bản nháp trên máy trọng tài (localStorage) — để mất mạng / tải lại trang / hết pin vẫn không mất điểm:
- *  - `baseVersion`: version máy chủ mà `games` được xây lên; chỉ khôi phục khi máy chủ vẫn ở đúng version đó
- *    (máy khác đã sửa → bỏ nháp, không ghi đè).
- *  - `synced`: false = còn điểm CHƯA gửi được → tự gửi lại khi có mạng.
- *  - `history`: để "Hoàn tác" vẫn dùng được sau khi tải lại trang.
+ * Hàng chờ gửi trên máy trọng tài (localStorage) — mất mạng / tải lại trang vẫn giữ các pha chưa gửi:
+ *  - `ops`: thêm sự kiện (đã đánh số seq) hoặc hoàn tác sự kiện cuối, gửi lần lượt khi có mạng.
+ *  - `serverSeq`: seq cuối của máy chủ lúc lưu; tải lại mà máy chủ đã khác (máy khác vừa bấm) → bỏ hàng chờ.
  */
-interface Draft { baseVersion: number; games: Game[]; history: Game[][]; synced: boolean; savedAt: number }
-const draftKey = (id: string) => `st-ref:${id}`;
-function readDraft(id: string): Draft | null {
+type Op = { kind: "add"; ev: RallyInput } | { kind: "undo"; seq: number };
+interface Saved { ops: Op[]; serverSeq: number }
+const queueKey = (id: string) => `st-ref-q:${id}`;
+function readQueue(id: string): Saved | null {
   try {
-    const raw = window.localStorage.getItem(draftKey(id));
-    const d = raw ? (JSON.parse(raw) as Draft) : null;
-    return d && Array.isArray(d.games) && Number.isInteger(d.baseVersion) ? d : null;
-  } catch {
-    return null;
-  }
+    const d = JSON.parse(window.localStorage.getItem(queueKey(id)) ?? "null") as Saved | null;
+    return d && Array.isArray(d.ops) && Number.isInteger(d.serverSeq) ? d : null;
+  } catch { return null; }
 }
-function writeDraft(id: string, d: Omit<Draft, "savedAt">) {
-  try { window.localStorage.setItem(draftKey(id), JSON.stringify({ ...d, savedAt: Date.now() })); } catch { /* bộ nhớ bị chặn: vẫn chạy, chỉ mất khả năng khôi phục */ }
-}
-function clearDraft(id: string) {
-  try { window.localStorage.removeItem(draftKey(id)); } catch { /* bỏ qua */ }
-}
-/**
- * Bên giao cầu (chỉ trên máy trọng tài — không cần đồng bộ): bên thắng pha cầu giao pha tiếp theo.
- * `stack` song song với lịch sử Hoàn tác để hoàn tác cũng trả lại đúng bên giao.
- */
-interface Serve { server: Side | null; stack: (Side | null)[] }
-const serveKey = (id: string) => `st-ref-serve:${id}`;
-function readServe(id: string): Serve {
+function writeQueue(id: string, ops: Op[], serverSeq: number) {
   try {
-    const d = JSON.parse(window.localStorage.getItem(serveKey(id)) ?? "null") as Serve | null;
-    if (d && (d.server === "a" || d.server === "b" || d.server === null) && Array.isArray(d.stack)) return d;
-  } catch { /* bỏ qua */ }
-  return { server: null, stack: [] };
+    if (ops.length) window.localStorage.setItem(queueKey(id), JSON.stringify({ ops, serverSeq }));
+    else window.localStorage.removeItem(queueKey(id));
+  } catch { /* bộ nhớ bị chặn: vẫn chạy, chỉ mất khả năng khôi phục */ }
 }
-function writeServe(id: string, s: Serve) {
-  try { window.localStorage.setItem(serveKey(id), JSON.stringify({ server: s.server, stack: s.stack.slice(-51) })); } catch { /* bỏ qua */ }
+/** Bản nháp kiểu cũ (gửi cả tỉ số) không còn dùng được với biên bản → xoá. */
+function clearLegacy(id: string) {
+  try { window.localStorage.removeItem(`st-ref:${id}`); window.localStorage.removeItem(`st-ref-serve:${id}`); } catch { /* bỏ qua */ }
 }
 
 const rulesLine = (r: Match["rules"]) => `${r.pointsToWin} điểm${r.maxPoints > r.pointsToWin ? `, trần ${r.maxPoints}` : ""} · ${r.gamesToWin === 1 ? "1 game" : `thắng ${r.gamesToWin}/${r.gamesToWin * 2 - 1}`}`;
 
 /** Thẻ nhắc nghỉ / đổi sân có đếm ngược (rung máy nếu hỗ trợ). */
 function ReminderBanner({ r, onClose }: { r: Reminder; onClose: () => void }) {
-  const [endsAt] = useState(() => Date.now() + r.seconds * 1000); // mốc kết thúc tính 1 lần khi thẻ hiện
+  const [endsAt] = useState(() => Date.now() + r.seconds * 1000);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     try { navigator.vibrate?.([200, 100, 200]); } catch { /* không hỗ trợ */ }
@@ -76,130 +64,131 @@ function ReminderBanner({ r, onClose }: { r: Reminder; onClose: () => void }) {
   );
 }
 
-/** Lỗi mạng / máy chủ tạm thời → giữ điểm và thử lại; lỗi nghiệp vụ (4xx) → dừng, báo người dùng. */
+/** Lỗi mạng / máy chủ tạm thời → giữ hàng chờ và thử lại; lỗi nghiệp vụ (4xx) → bỏ hàng chờ, trả về như máy chủ. */
 const retriable = (e: unknown) => !(e instanceof ApiError) || e.status >= 500 || e.status === 429;
 
+/** Áp hàng chờ lên sự kiện của máy chủ → sự kiện đang hiển thị. */
+function withQueue(server: RallyInput[], ops: Op[]): RallyInput[] {
+  const out = [...server];
+  for (const op of ops) {
+    if (op.kind === "add") out.push(op.ev);
+    else if (out[out.length - 1]?.seq === op.seq) out.pop();
+  }
+  return out;
+}
+
 /**
- * Bảng nhập điểm cho trọng tài, tối ưu điện thoại: chạm nửa màn hình của bên ghi điểm để +1.
- * Mỗi thay đổi được lưu ngay (gộp các lần chạm nhanh), có optimistic locking qua `version`:
- * nếu thiết bị khác vừa sửa, server trả 409 và màn hình tải lại tỉ số mới nhất.
+ * Bàn điểm trọng tài, tối ưu điện thoại: chạm nửa màn hình của đội thắng pha cầu.
+ * Mỗi pha là 1 sự kiện biên bản gửi lên máy chủ (POST /rallies, có expectedSeq chống 2 máy cùng bấm);
+ * máy chủ tính tỉ số + người giao. Màn hình phản hồi ngay bằng cùng luật (lib/rally) và giữ hàng chờ khi mất mạng.
  */
 export default function ScoringPage() {
   const { matchId } = useParams<{ matchId: string }>();
-  const [match, setMatch] = useState<Match | null>(null);
-  const [games, setGames] = useState<Game[]>([]);
-  const [history, setHistory] = useState<Game[][]>([]);
+  const [match, setMatch] = useState<MatchWithRallies | null>(null);
+  const [ops, setOps] = useState<Op[]>([]);
+  const opsRef = useRef<Op[]>([]);
+  const serverSeq = useRef(0);
   const [sync, setSync] = useState<Sync>("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [swapped, setSwapped] = useState(false);
   const [confirmWo, setConfirmWo] = useState<"a" | "b" | null>(null);
-  const [serve, setServeState] = useState<Serve>({ server: null, stack: [] });
   const [reminder, setReminder] = useState<(Reminder & { id: number }) | null>(null);
+  const [fixing, setFixing] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(true);
   const reminderSeq = useRef(0);
-  const setServe = useCallback((s: Serve) => { setServeState(s); writeServe(matchId, s); }, [matchId]);
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- đọc localStorage (hệ thống ngoài) 1 lần khi mở trận
-  useEffect(() => { setServeState(readServe(matchId)); }, [matchId]);
-
-  const version = useRef(0);
-  const pending = useRef<Game[] | null>(null);
-  const inflight = useRef<Promise<void> | null>(null);
+  const sending = useRef<Promise<void> | null>(null);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryDelay = useRef(2_000);
-  /** Hẹn giờ gửi lại gọi qua ref (flush không tự tham chiếu chính nó). */
   const flushRef = useRef<() => Promise<void>>(async () => {});
-  // Bản mới nhất của state cho các callback bất đồng bộ (tránh closure cũ).
-  const latest = useRef<{ games: Game[]; history: Game[][] }>({ games: [], history: [] });
-  useEffect(() => { latest.current = { games, history }; }, [games, history]);
 
-  const adopt = useCallback((m: Match) => {
+  const setQueue = useCallback((next: Op[]) => {
+    opsRef.current = next;
+    setOps(next);
+    writeQueue(matchId, next, serverSeq.current);
+  }, [matchId]);
+
+  const adopt = useCallback((m: MatchWithRallies) => {
     setMatch(m);
-    setGames(m.games);
-    version.current = m.version;
-    if (["finished", "walkover", "bye", "cancelled"].includes(m.status)) clearDraft(m.id);
+    serverSeq.current = m.rallies[m.rallies.length - 1]?.seq ?? 0;
   }, []);
 
-  /**
-   * Gửi snapshot mới nhất; các lần chạm trong lúc đang gửi được gộp thành 1 request tiếp theo.
-   * Mất mạng: điểm vẫn nằm trong bản nháp trên máy, tự gửi lại (lùi dần 2s → 15s, và ngay khi có mạng).
-   */
+  const reload = useCallback(async () => {
+    const fresh = await api<MatchWithRallies>(`/matches/${matchId}`);
+    adopt(fresh);
+    return fresh;
+  }, [matchId, adopt]);
+
+  /** Gửi lần lượt hàng chờ. Mất mạng → thử lại (2s → 15s, và ngay khi có mạng). Bị từ chối → bỏ hàng chờ, tải lại. */
   const flush = useCallback(async (): Promise<void> => {
-    if (inflight.current) return inflight.current;
+    if (sending.current) return sending.current;
     if (retryTimer.current) { clearTimeout(retryTimer.current); retryTimer.current = null; }
     const run = async () => {
-      while (pending.current) {
-        const snap = pending.current;
-        pending.current = null;
+      while (opsRef.current.length) {
+        const op = opsRef.current[0]!;
         setSync("saving");
         try {
-          const m = await api<Match>(`/matches/${matchId}/score`, {
-            method: "PUT", body: { action: "save", version: version.current, games: snap },
-          });
-          version.current = m.version;
-          setMatch(m);
+          const m = op.kind === "add"
+            ? await api<MatchWithRallies>(`/matches/${matchId}/rallies`, {
+              method: "POST",
+              body: {
+                type: op.ev.type, expectedSeq: op.ev.seq,
+                ...(op.ev.side ? { side: op.ev.side } : {}), ...(op.ev.server ? { server: op.ev.server } : {}), ...(op.ev.receiver ? { receiver: op.ev.receiver } : {}),
+              },
+            })
+            : await api<MatchWithRallies>(`/matches/${matchId}/rallies/last?expectedSeq=${op.seq}`, { method: "DELETE" });
+          adopt(m);
+          setQueue(opsRef.current.slice(1));
           retryDelay.current = 2_000;
-          if (!pending.current) {
-            writeDraft(matchId, { baseVersion: m.version, games: snap, history: latest.current.history, synced: true });
-            setSync("saved");
-            setMessage(null);
-          }
         } catch (e) {
-          if (e instanceof ApiError && e.code === "VERSION_CONFLICT") {
-            pending.current = null;
-            clearDraft(matchId);
-            const fresh = await api<Match>(`/matches/${matchId}`);
-            adopt(fresh);
-            setHistory([]);
-            setMessage("Tỉ số vừa được cập nhật từ thiết bị khác — đã tải lại.");
-            setSync("saved");
-          } else if (retriable(e)) {
-            pending.current ??= snap; // giữ bản mới nhất (nếu đã chạm thêm thì bản mới hơn đang nằm sẵn)
+          if (retriable(e)) {
             setSync("offline");
-            setMessage(null);
             const wait = retryDelay.current;
             retryDelay.current = Math.min(wait * 2, 15_000);
             retryTimer.current = setTimeout(() => { void flushRef.current(); }, wait);
             return;
-          } else {
-            pending.current = null;
-            setSync("error");
-            setMessage((e as Error).message);
           }
+          setQueue([]);
+          try { await reload(); } catch { /* giữ màn hình */ }
+          setSync("error");
+          setMessage(e instanceof ApiError && e.code === "RALLY_CONFLICT"
+            ? "Biên bản vừa được cập nhật từ thiết bị khác — đã tải lại."
+            : `${(e as Error).message} — đã trả điểm về như trước.`);
+          return;
         }
       }
+      setSync("saved");
     };
-    inflight.current = run().finally(() => { inflight.current = null; });
-    return inflight.current;
-  }, [matchId, adopt]);
-
+    sending.current = run().finally(() => { sending.current = null; });
+    return sending.current;
+  }, [matchId, adopt, reload, setQueue]);
   useEffect(() => { flushRef.current = flush; }, [flush]);
 
-  // Tải trận + khôi phục bản nháp trên máy (điểm chưa gửi, lịch sử hoàn tác).
+  // Tải trận + biên bản, khôi phục hàng chờ trên máy (nếu máy chủ chưa đổi).
   useEffect(() => {
     let alive = true;
-    api<Match>(`/matches/${matchId}`).then((m) => {
+    clearLegacy(matchId);
+    api<MatchWithRallies>(`/matches/${matchId}`).then((m) => {
       if (!alive) return;
       adopt(m);
-      const d = readDraft(matchId);
-      if (!d || ["finished", "walkover", "bye", "cancelled"].includes(m.status)) return;
-      if (d.baseVersion !== m.version) {
-        clearDraft(matchId);
-        if (!d.synced) setMessage("Tỉ số trên máy chủ đã thay đổi từ thiết bị khác — đã bỏ bản nháp trên máy này.");
+      const saved = readQueue(matchId);
+      if (!saved) return;
+      const last = m.rallies[m.rallies.length - 1]?.seq ?? 0;
+      const closed = ["finished", "walkover", "bye", "cancelled"].includes(m.status) || m.tournamentStatus === "completed";
+      if (closed || saved.serverSeq !== last) {
+        writeQueue(matchId, [], 0);
+        if (!closed) setMessage("Biên bản trên máy chủ đã thay đổi từ thiết bị khác — đã bỏ các pha chưa gửi trên máy này.");
         return;
       }
-      setHistory(d.history ?? []);
-      if (!d.synced) {
-        setGames(d.games);
-        pending.current = d.games;
-        setMessage("Đã khôi phục điểm chưa gửi trên máy này — đang gửi lại…");
-        void flush();
-      }
+      opsRef.current = saved.ops;
+      setOps(saved.ops);
+      setMessage("Đã khôi phục các pha chưa gửi trên máy này — đang gửi lại…");
+      void flushRef.current();
     }).catch((e: Error) => { if (alive) setMessage(e.message); });
     return () => { alive = false; };
-  }, [matchId, adopt, flush]);
+  }, [matchId, adopt]);
 
-  // Có mạng trở lại → gửi ngay, không chờ hết thời gian lùi.
   useEffect(() => {
-    const online = () => { if (pending.current) { retryDelay.current = 2_000; void flush(); } };
+    const online = () => { if (opsRef.current.length) { retryDelay.current = 2_000; void flush(); } };
     window.addEventListener("online", online);
     return () => {
       window.removeEventListener("online", online);
@@ -207,78 +196,100 @@ export default function ScoringPage() {
     };
   }, [flush]);
 
+  const doubles = match ? isDoublesMatch(match) : false;
+  const events = useMemo(() => (match ? withQueue(match.rallies, ops) : []), [match, ops]);
+  const state: RallyState = useMemo(() => {
+    if (!match) return emptyState();
+    try { return replay(events, match.rules, doubles); } catch { return replay(match.rallies, match.rules, doubles); }
+  }, [match, events, doubles]);
+  const pending = useMemo(() => new Set(ops.flatMap((o) => (o.kind === "add" ? [o.ev.seq] : []))), [ops]);
+
   if (!match) return <p className="text-muted" aria-live="polite">{message ?? "Đang tải trận…"}</p>;
 
   const rules = match.rules;
+  const games: Game[] = state.games.length ? state.games : match.games;
   const prog = matchProgress(games, rules);
-  const last = games[games.length - 1];
-  const lastState = last ? gameState(last, rules) : "in_progress";
   const closed = ["finished", "walkover", "bye"].includes(match.status);
-  const canScore = !closed && !prog.winner && match.a && match.b;
-  const current: Game = last && lastState === "in_progress" ? last : [0, 0];
+  const locked = match.tournamentStatus === "completed";
+  const ready = !closed && !locked && Boolean(match.a && match.b);
+  const canScore = ready && !prog.winner;
+  const last = games[games.length - 1];
+  // Đang đánh: game hiện tại; đã xong (kể cả sau khi xác nhận): tỉ số game cuối — không về 0–0.
+  const current: Game = last && (gameState(last, rules) === "in_progress" || closed || prog.winner) ? last : [0, 0];
+  const nextSeq = (events[events.length - 1]?.seq ?? 0) + 1;
+  const needStart = canScore && !state.active;
+  const prevWinner: Side | null = last && gameState(last, rules) !== "in_progress" ? (gameState(last, rules) as Side) : null;
+  const pickerShown = needStart && (doubles || !prevWinner);
 
-  function point(side: "a" | "b", delta: 1 | -1) {
-    if (!canScore && delta === 1) return;
-    const next = games.map((g) => [...g] as Game);
-    if (delta === 1 && (next.length === 0 || gameState(next[next.length - 1]!, rules) !== "in_progress")) next.push([0, 0]);
-    const g = next[next.length - 1];
-    if (!g) return;
-    g[side === "a" ? 0 : 1] += delta;
-    if (g[0] < 0 || g[1] < 0 || gameState(g, rules) === "invalid") return;
-    if (delta === -1 && g[0] === 0 && g[1] === 0) next.pop();
-    const nextHistory = [...history.slice(-50), games];
-    if (delta === 1) {
-      // Bên thắng pha cầu giao pha tiếp theo; nhắc nghỉ / đổi sân theo luật của vòng.
-      setServe({ server: side, stack: [...serve.stack.slice(-50), serve.server] });
-      const r = reminderAfterPoint(games, next, rules);
-      if (r) {
-        reminderSeq.current += 1;
-        setReminder({ ...r, id: reminderSeq.current });
-        if (r.changeEnds) setSwapped((v) => !v);
-      }
-    }
-    commit(next, nextHistory);
-  }
-
-  /** Ghi state mới: màn hình → bản nháp trên máy (TRƯỚC khi gửi) → hàng gửi. */
-  function commit(next: Game[], nextHistory: Game[][]) {
-    setHistory(nextHistory);
-    setGames(next);
+  function enqueue(evs: Omit<RallyInput, "seq">[]) {
+    let seq = nextSeq;
+    const added: Op[] = evs.map((e) => ({ kind: "add", ev: { ...e, seq: seq++ } as RallyInput }));
     setMessage(null);
-    writeDraft(matchId, { baseVersion: version.current, games: next, history: nextHistory, synced: false });
-    pending.current = next;
+    setQueue([...opsRef.current, ...added]);
     void flush();
   }
 
+  function point(side: Side) {
+    if (!canScore || pickerShown) return;
+    const evs: Omit<RallyInput, "seq">[] = [];
+    if (!state.active) {
+      // Đánh đơn từ game 2: bên thắng game trước giao trước — tự mở game.
+      if (!prevWinner) return;
+      evs.push({ type: "start", server: `${prevWinner}1` as Slot });
+    }
+    evs.push({ type: "point", side });
+    let after: Game[];
+    try { after = replay([...events, ...evs.map((e, i) => ({ ...e, seq: nextSeq + i }) as RallyInput)], rules, doubles).games; } catch { return; }
+    const r = reminderAfterPoint(games, after, rules);
+    if (r) {
+      reminderSeq.current += 1;
+      setReminder({ ...r, id: reminderSeq.current });
+      if (r.changeEnds) setSwapped((v) => !v);
+    }
+    enqueue(evs);
+  }
+
   function undo() {
-    const prev = history[history.length - 1];
-    if (!prev || closed) return;
-    if (serve.stack.length) setServe({ server: serve.stack[serve.stack.length - 1] ?? null, stack: serve.stack.slice(0, -1) });
+    if (closed || locked) return;
+    const lastEv = events[events.length - 1];
+    if (!lastEv) return;
     setReminder(null);
-    commit(prev, history.slice(0, -1));
+    const lastOp = opsRef.current[opsRef.current.length - 1];
+    if (lastOp?.kind === "add" && lastOp.ev.seq === lastEv.seq) {
+      setQueue(opsRef.current.slice(0, -1)); // chưa gửi → chỉ bỏ trên máy
+      return;
+    }
+    setQueue([...opsRef.current, { kind: "undo", seq: lastEv.seq }]);
+    void flush();
   }
 
   async function finish(action: "finish" | "walkover", walkoverWinner?: "a" | "b") {
+    if (locked || !match) return;
     await flush();
-    if (pending.current) {
-      setMessage("Còn điểm chưa gửi được (mất mạng). Chờ có mạng rồi xác nhận lại.");
+    if (opsRef.current.length) {
+      setMessage("Còn pha chưa gửi được (mất mạng). Chờ có mạng rồi xác nhận lại.");
       return;
     }
     try {
       const m = await api<Match>(`/matches/${matchId}/score`, {
-        method: "PUT", body: { action, version: version.current, games, ...(walkoverWinner ? { walkoverWinner } : {}) },
+        method: "PUT", body: { action, version: match.version, games, ...(walkoverWinner ? { walkoverWinner } : {}) },
       });
-      adopt(m);
-      clearDraft(matchId);
+      adopt({ ...m, rallies: match.rallies });
       setConfirmWo(null);
       setMessage(action === "finish" ? "Đã xác nhận kết quả trận." : "Đã ghi nhận bỏ cuộc.");
+      void reload().catch(() => {});
     } catch (e) {
-      setMessage((e as Error).message);
+      if (retriable(e)) { setMessage((e as Error).message); return; }
+      try { await reload(); } catch { /* giữ */ }
+      setSync("error");
+      setMessage(`${(e as Error).message} — đã trả điểm về như trước.`);
     }
   }
 
-  const sides: ("a" | "b")[] = swapped ? ["b", "a"] : ["a", "b"];
+  const sides: Side[] = swapped ? ["b", "a"] : ["a", "b"];
   const deuce = current[0] >= rules.pointsToWin - 1 && current[1] >= rules.pointsToWin - 1 && current[0] === current[1];
+  const name = (s: Slot) => (doubles ? slotName(match, s) : match[sideOf(s)]?.name ?? s);
+  const serverCourt = state.server ? serviceCourt(current[sideOf(state.server) === "a" ? 0 : 1]) : null;
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -292,16 +303,16 @@ export default function ScoringPage() {
         {`${match.a?.name}: ${current[0]}, ${match.b?.name}: ${current[1]}. Game ${prog.gamesA}-${prog.gamesB}.`}
       </p>
 
-      {canScore && !serve.server && (
-        <div className="mb-3 rounded-2xl border-2 border-sky-500 bg-sky-50 p-3 text-center">
-          <p className="font-bold text-slate-900">Bên nào giao cầu trước? (bốc thăm / tung cầu)</p>
-          <div className="mt-2 flex flex-wrap justify-center gap-2">
-            {(["a", "b"] as const).map((s) => (
-              <button key={s} type="button" onClick={() => setServe({ server: s, stack: serve.stack })}
-                className="min-h-11 rounded-full bg-black px-4 text-sm font-bold text-white">{match[s]?.name ?? s} giao</button>
-            ))}
-          </div>
+      {locked && (
+        <div role="status" className="mb-3 rounded-2xl border-2 border-slate-300 bg-slate-100 p-3 text-center font-bold text-slate-800">
+          Giải đã kết thúc — khoá nhập điểm
         </div>
+      )}
+
+      {pickerShown && (
+        <ServePicker key={games.length} match={match} doubles={doubles} defaultSide={prevWinner}
+          gameNo={prevWinner ? games.length + 1 : Math.max(games.length, 1)}
+          onPick={(server, receiver) => enqueue([{ type: "start", server, ...(receiver ? { receiver } : {}) }])} />
       )}
 
       <div className="grid grid-cols-2 gap-3">
@@ -309,15 +320,19 @@ export default function ScoringPage() {
           const team = match[s];
           const pts = current[s === "a" ? 0 : 1];
           const gw = s === "a" ? prog.gamesA : prog.gamesB;
+          const serving = canScore && state.active && state.server !== null && sideOf(state.server) === s;
+          const receiving = canScore && state.active && doubles && state.receiver !== null && sideOf(state.receiver) === s;
           return (
-            <button key={s} type="button" disabled={!canScore} onClick={() => point(s, 1)}
+            <button key={s} type="button" disabled={!canScore || pickerShown} onClick={() => point(s)}
               aria-label={`Cộng 1 điểm cho ${team?.name ?? s}`}
-              className="flex min-h-[46dvh] flex-col items-center justify-between rounded-3xl border-2 border-line bg-surface p-4 text-center active:bg-surface-2 disabled:opacity-60">
+              className="flex min-h-[42dvh] flex-col items-center justify-between rounded-3xl border-2 border-line bg-surface p-4 text-center active:bg-surface-2 disabled:opacity-60">
               <span className="w-full truncate text-base font-extrabold sm:text-lg">{team?.name ?? "—"}</span>
-              {canScore && serve.server === s ? (
-                <span className="rounded-full bg-sky-700 px-3 py-1 text-sm font-bold text-white">
-                  Giao cầu · ô {serviceCourt(pts) === "right" ? "PHẢI" : "TRÁI"}
+              {serving && state.server ? (
+                <span className="max-w-full truncate rounded-full bg-sky-700 px-3 py-1 text-sm font-bold text-white">
+                  Giao · ô {serverCourt === "right" ? "PHẢI" : "TRÁI"}{doubles ? ` · ${name(state.server)}` : ""}
                 </span>
+              ) : receiving && state.receiver ? (
+                <span className="max-w-full truncate rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">Nhận · {name(state.receiver)}</span>
               ) : <span className="h-7" aria-hidden />}
               <span className="tabular text-8xl font-extrabold leading-none sm:text-9xl">{pts}</span>
               <span className="text-sm text-muted">Game thắng: <strong className="text-fg">{gw}</strong></span>
@@ -331,17 +346,32 @@ export default function ScoringPage() {
           <span key={i} className="tabular rounded-full bg-surface-2 px-3 py-1">G{i + 1}: {g[0]}-{g[1]}</span>
         ))}
         {deuce && canScore && <span className="rounded-full border border-live px-3 py-1 font-semibold text-live">Deuce</span>}
-        {canScore && serve.server && (
-          <button type="button" onClick={() => setServe({ server: serve.server === "a" ? "b" : "a", stack: serve.stack })}
-            className="min-h-11 rounded-full border border-line px-3 text-xs font-semibold">Sửa bên giao</button>
+        {canScore && state.active && (
+          <button type="button" onClick={() => setFixing((v) => !v)} aria-expanded={fixing}
+            className="min-h-11 rounded-full border border-line px-3 text-xs font-semibold">Sửa người giao</button>
         )}
       </div>
 
+      {fixing && canScore && state.active && (
+        <fieldset className="mt-3 rounded-2xl border-2 border-sky-500 bg-sky-50 p-3">
+          <legend className="px-1 font-bold text-slate-900">Ai đang giao cầu?</legend>
+          <div className="flex flex-wrap justify-center gap-2">
+            {(doubles ? (["a1", "a2", "b1", "b2"] as Slot[]) : (["a1", "b1"] as Slot[])).map((s) => (
+              <button key={s} type="button" disabled={s === state.server}
+                onClick={() => { setFixing(false); enqueue([{ type: "fix_server", server: s }]); }}
+                className="min-h-11 rounded-full bg-black px-4 text-sm font-bold text-white disabled:bg-slate-300 disabled:text-slate-600">
+                {name(s)}{s === state.server ? " (đang giao)" : ""}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+      )}
+
       {reminder && <ReminderBanner key={reminder.id} r={reminder} onClose={() => setReminder(null)} />}
 
-      {!closed && (
+      {!closed && !locked && (
         <div className="mt-4 grid grid-cols-3 gap-2">
-          <button type="button" onClick={undo} disabled={!history.length} className="min-h-12 rounded-2xl border border-line font-semibold disabled:opacity-50">
+          <button type="button" onClick={undo} disabled={!events.length} className="min-h-12 rounded-2xl border border-line font-semibold disabled:opacity-50">
             Hoàn tác
           </button>
           <button type="button" onClick={() => setSwapped((v) => !v)} className="min-h-12 rounded-2xl border border-line font-semibold">
@@ -353,7 +383,18 @@ export default function ScoringPage() {
         </div>
       )}
 
-      {prog.winner && !closed && (
+      <section aria-labelledby="sheet-h" className="mt-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 id="sheet-h" className="flex items-center gap-1.5 text-sm font-bold text-slate-900"><FileText className="h-4 w-4" aria-hidden />Biên bản</h3>
+          <button type="button" onClick={() => setSheetOpen((v) => !v)} aria-expanded={sheetOpen} aria-controls="sheet-body"
+            className="inline-flex min-h-11 items-center gap-1 rounded-full px-3 text-xs font-semibold text-slate-600">
+            {sheetOpen ? "Thu gọn" : "Mở"}<ChevronDown className={`h-4 w-4 transition-transform ${sheetOpen ? "rotate-180" : ""}`} aria-hidden />
+          </button>
+        </div>
+        {sheetOpen && <div id="sheet-body" className="mt-1"><RallySheet match={match} state={state} pending={pending} /></div>}
+      </section>
+
+      {prog.winner && !closed && !locked && (
         <div className="mt-4 rounded-2xl border-2 border-success p-4 text-center">
           <p className="font-semibold">{match[prog.winner]?.name} thắng {prog.gamesA}-{prog.gamesB}. Xác nhận để cập nhật bảng/nhánh.</p>
           <button type="button" onClick={() => finish("finish")} className="mt-3 min-h-12 rounded-full bg-primary px-6 font-extrabold text-on-primary">
@@ -362,7 +403,7 @@ export default function ScoringPage() {
         </div>
       )}
 
-      {confirmWo && !closed && (
+      {confirmWo && !closed && !locked && (
         <fieldset className="mt-4 rounded-2xl border border-live p-4">
           <legend className="px-1 font-semibold text-live">Xử thắng do đối phương bỏ cuộc</legend>
           <div className="flex flex-wrap gap-4">
@@ -381,13 +422,71 @@ export default function ScoringPage() {
 
       <p className="mt-4 text-center text-sm" aria-live="polite">
         {message ? <span className={sync === "error" ? "text-live" : "text-muted"}>{message}</span> :
-          sync === "offline" ? <span className="font-semibold text-amber-700">Mất kết nối — điểm đã lưu trên máy này, sẽ tự gửi khi có mạng</span> :
+          sync === "offline" ? <span className="font-semibold text-amber-700">Mất kết nối — {ops.length} thao tác đã lưu trên máy này, sẽ tự gửi khi có mạng</span> :
           sync === "saving" ? <span className="text-muted">Đang lưu…</span> :
           sync === "saved" ? <span className="text-success">Đã lưu</span> : null}
-        {sync === "error" && (
-          <button type="button" onClick={() => { pending.current = games; void flush(); }} className="ml-2 underline">Thử lại</button>
-        )}
       </p>
+    </div>
+  );
+}
+
+/**
+ * Chọn người giao / người nhận đầu game. Đánh đôi: đội giao → ai giao → ai nhận (mỗi game hỏi lại;
+ * game sau mặc định đội thắng game trước giao). Đánh đơn: chỉ cần chọn bên giao.
+ */
+function ServePicker({ match, doubles, defaultSide, gameNo, onPick }: {
+  match: Match; doubles: boolean; defaultSide: Side | null; gameNo: number;
+  onPick: (server: Slot, receiver: Slot | null) => void;
+}) {
+  const [side, setSide] = useState<Side | null>(defaultSide);
+  const [server, setServer] = useState<Slot | null>(null);
+  const label = (s: Slot) => slotName(match, s);
+  const btn = "min-h-11 rounded-full px-4 text-sm font-bold";
+  if (!doubles) {
+    return (
+      <div className="mb-3 rounded-2xl border-2 border-sky-500 bg-sky-50 p-3 text-center">
+        <p className="font-bold text-slate-900">Bên nào giao cầu trước? (bốc thăm / tung cầu)</p>
+        <div className="mt-2 flex flex-wrap justify-center gap-2">
+          {(["a", "b"] as const).map((s) => (
+            <button key={s} type="button" onClick={() => onPick(`${s}1` as Slot, null)} className={`${btn} bg-black text-white`}>{match[s]?.name ?? s} giao</button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="mb-3 space-y-2 rounded-2xl border-2 border-sky-500 bg-sky-50 p-3 text-center">
+      <p className="font-bold text-slate-900">Game {gameNo}: chọn người giao và người nhận</p>
+      <div>
+        <p className="text-sm font-semibold text-slate-700">Đội giao{defaultSide ? " (đội thắng game trước giao trước)" : ""}</p>
+        <div className="mt-1 flex flex-wrap justify-center gap-2" role="radiogroup" aria-label="Đội giao">
+          {(["a", "b"] as const).map((s) => (
+            <button key={s} type="button" role="radio" aria-checked={side === s} onClick={() => { setSide(s); setServer(null); }}
+              className={`${btn} ${side === s ? "bg-black text-white" : "border border-slate-300 bg-white text-slate-800"}`}>{match[s]?.name ?? s}</button>
+          ))}
+        </div>
+      </div>
+      {side && (
+        <div>
+          <p className="text-sm font-semibold text-slate-700">Ai giao?</p>
+          <div className="mt-1 flex flex-wrap justify-center gap-2" role="radiogroup" aria-label="Người giao">
+            {([`${side}1`, `${side}2`] as Slot[]).map((s) => (
+              <button key={s} type="button" role="radio" aria-checked={server === s} onClick={() => setServer(s)}
+                className={`${btn} ${server === s ? "bg-sky-700 text-white" : "border border-slate-300 bg-white text-slate-800"}`}>{label(s)}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      {side && server && (
+        <div>
+          <p className="text-sm font-semibold text-slate-700">Ai nhận?</p>
+          <div className="mt-1 flex flex-wrap justify-center gap-2">
+            {([`${otherSide(side)}1`, `${otherSide(side)}2`] as Slot[]).map((s) => (
+              <button key={s} type="button" onClick={() => onPick(server, s)} className={`${btn} bg-black text-white`}>{label(s)} nhận</button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

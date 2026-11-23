@@ -11,6 +11,7 @@ const users = require('./services/userService');
 const courts = require('./services/courtService');
 const athletes = require('./services/athleteService');
 const referees = require('./services/refereeService');
+const rallies = require('./services/rallyService');
 const live = require('./liveBus');
 const auth = require('./auth');
 const { schemas } = require('./schemas');
@@ -276,7 +277,23 @@ function createApp({ pool, config }) {
   api.get('/matches/:id', async (req, res) => {
     const m = await svc.getMatch(pool, id(req.params.id));
     await svc.assertVisible(pool, m.tournamentId, me(req));
-    res.json(m);
+    res.json({ ...m, rallies: await rallies.listRallies(pool, m.id) });
+  });
+  // ── Biên bản diễn biến điểm ──
+  const withRallies = async (res, mid) => {
+    const m = await svc.getMatch(pool, mid);
+    touch(res, m.tournamentId);
+    res.json({ ...m, rallies: await rallies.listRallies(pool, mid) });
+  };
+  api.post('/matches/:id/rallies', auth.requireAuth, async (req, res) => {
+    const mid = id(req.params.id);
+    await rallies.addRally(pool, me(req), mid, schemas.rally.parse(req.body));
+    await withRallies(res, mid);
+  });
+  api.delete('/matches/:id/rallies/last', auth.requireAuth, async (req, res) => {
+    const mid = id(req.params.id);
+    await rallies.undoRally(pool, me(req), mid, schemas.rallyUndo.parse(req.query).expectedSeq);
+    await withRallies(res, mid);
   });
   api.put('/matches/:id/score', auth.requireAuth, async (req, res) => {
     const body = schemas.score.parse(req.body);
