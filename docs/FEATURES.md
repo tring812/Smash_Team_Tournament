@@ -187,7 +187,7 @@ Trường bị khoá hiện mờ kèm lý do; server kiểm tra lại (lỗi 409
 - **Nhập / xuất Excel / CSV Google Form** (khung *Excel* đầu trang), xem [6.8](#68-nhập--xuất-excel--csv). Mỗi VĐV gắn với một **hồ sơ** — xem [6.9](#69-vận-động-viên) và [7.10](#710-nhận-diện-vđv).
 - **Dán danh sách đăng ký**: mỗi dòng `tên ; CLB ; MSSV ; SĐT` (đôi: `tên A / tên B ; CLB ; MSSV A / MSSV B ; SĐT A / SĐT B`); chỉ tên bắt buộc. Có MSSV/SĐT thì không mất định danh khi phải dán tay thay vì nhập file. Chỉ khi chưa bốc thăm.
 - **Xoá đội**: chỉ khi chưa bốc thăm.
-- **Sửa đội** (thay VĐV, đổi đồng đội, đổi CLB): khi đội chưa thi đấu trận nào.
+- **Sửa đội** (thay VĐV, đổi đồng đội, đổi CLB): khi đội chưa thi đấu trận nào. Kiểm tra cả hai hồ sơ VĐV: nếu đã thuộc đội khác trong cùng nội dung thì từ chối (`409 ATHLETE_ALREADY_ENTERED`), cả trước và sau bốc thăm. Vẫn cho phép đảo thứ tự hai thành viên trong chính đội đang sửa và một VĐV tham gia nhiều nội dung; thao tác bị từ chối không lưu thay đổi hồ sơ hoặc nhật ký.
 - **Bốc thăm** chia bảng (xem [7.1](#71-bốc-thăm-ngẫu-nhiên)) — hỏi xác nhận trước khi bốc (số đội, số bảng; sau khi bốc không thêm / xoá đội được) — và **Bốc thăm lại** (xác nhận trong hộp thoại; cảnh báo số trận vòng bảng đã xếp giờ / sân sẽ mất lịch).
 - **Đổi bảng**: đổi chỗ 2 đội ở 2 bảng khác nhau; lịch vòng tròn của 2 bảng đó được tạo lại. Chỉ khi 2 bảng chưa có trận bắt đầu.
 - **Truất quyền** (bắt buộc ghi lý do) và **Huỷ truất quyền** — xem [7.4](#74-truất-quyền-thi-đấu).
@@ -455,7 +455,7 @@ Tiền tố `/api`. Request ghi phải có header `X-Requested-With: fetch`. L�
 | POST | `/categories/:id/draw` `{groups?: [{name, entryIds}]}` | BTC | Bốc thăm ngẫu nhiên / bốc lại; có `groups` = chia bảng có sẵn |
 | POST | `/categories/:id/swap` `{entryA, entryB}` | BTC | Đổi bảng 2 đội |
 | POST | `/categories/:id/knockout` | BTC | Tạo nhánh loại trực tiếp |
-| PATCH · DELETE | `/entries/:id` | BTC | Sửa · xoá đội |
+| PATCH · DELETE | `/entries/:id` | BTC | Sửa · xoá đội; sửa trùng hồ sơ VĐV với đội khác cùng nội dung → `409 ATHLETE_ALREADY_ENTERED` |
 | POST | `/entries/:id/disqualify` `{reason}` · `/entries/:id/reinstate` | BTC | Truất quyền · huỷ truất quyền |
 | GET | `/matches/:id` · `/referee/queue` | công khai · trọng tài | Chi tiết trận (kèm `rallies` — biên bản: ô VĐV a1/a2/b1/b2, không có người bấm) · hàng đợi trọng tài |
 | PUT | `/matches/:id/score` `{action, version, games, walkoverWinner?}` | Trọng tài / BTC | Lưu điểm, xác nhận, bỏ cuộc. Trận có biên bản mà tỉ số khác biên bản → ghi mốc `override` (BTC sửa tay) |
