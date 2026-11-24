@@ -1187,6 +1187,7 @@ async function swapEntries(pool, viewer, categoryId, entryA, entryB) {
 
 /**
  * Sửa đội: thay VĐV / đồng đội / CLB. Sau khi bốc thăm chỉ được sửa khi đội chưa đánh trận nào.
+ * Mỗi hồ sơ VĐV chỉ thuộc một đội trong cùng nội dung; vẫn được tham gia nhiều nội dung.
  * @param {Pool} pool @param {Viewer} viewer @param {string} entryId
  * @param {{ player1Name: string, player2Name?: string|null, club?: string }} input
  */
@@ -1211,6 +1212,15 @@ async function updateEntry(pool, viewer, entryId, input) {
     const a1 = await relink(input.player1Name, e.player1_name, e.player1_athlete_id);
     const a2 = await relink(input.player2Name ?? null, e.player2_name, e.player2_athlete_id);
     if (a1 && a1 === a2) throw unprocessable('Hai VĐV của đội là cùng một người');
+    // Nội dung đã được khoá ở loadEntryForUpdate; loại trừ chính đội đang sửa để cho phép đảo thành viên.
+    const { rows: duplicates } = await c.query(
+      `SELECT a.full_name FROM entries other
+         JOIN athletes a ON a.id IN (other.player1_athlete_id, other.player2_athlete_id)
+        WHERE other.category_id = $1 AND other.id <> $2 AND a.id = ANY($3::uuid[])
+        LIMIT 1`,
+      [e.cat_id, entryId, [a1, a2].filter(Boolean)],
+    );
+    if (duplicates[0]) throw conflict('ATHLETE_ALREADY_ENTERED', `${duplicates[0].full_name} đã đăng ký trong đội khác của nội dung này`);
     const { rows } = await c.query(
       `UPDATE entries SET player1_name = $2, player2_name = $3, club = $4, player1_athlete_id = $5, player2_athlete_id = $6
         WHERE id = $1 RETURNING *`,
