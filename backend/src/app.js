@@ -226,7 +226,7 @@ function createApp({ pool, config }) {
   // ── Nội dung ──
   const visibleCategory = async (req) => {
     const cid = id(req.params.id);
-    await svc.assertVisible(pool, await svc.tournamentOfCategory(pool, cid), me(req));
+    await svc.assertCategoryVisible(pool, cid, me(req));
     return cid;
   };
   api.patch('/categories/:id', auth.requireAuth, async (req, res) => {
@@ -287,11 +287,18 @@ function createApp({ pool, config }) {
     res.json({ ...m, rallies: await rallies.listRallies(pool, m.id) });
   });
   // ── Biên bản diễn biến điểm ──
-  const withRallies = async (res, mid) => {
+  /** @param {boolean} [onlyThisMatch] true = chỉ tỉ số / biên bản trận này đổi (mỗi điểm); false = thay đổi cấu trúc */
+  const withRallies = async (res, mid, onlyThisMatch = true) => {
     const m = await svc.getMatch(pool, mid);
-    touch(res, m.tournamentId, mid);
+    touch(res, m.tournamentId, onlyThisMatch ? mid : undefined);
     res.json({ ...m, rallies: await rallies.listRallies(pool, mid) });
   };
+  api.post('/matches/:id/start', auth.requireAuth, async (req, res) => {
+    const mid = id(req.params.id);
+    await svc.startMatch(pool, me(req), mid, schemas.startMatch.parse(req.body));
+    // Bắt đầu trận (mỗi trận một lần) có thể chuyển giải sang "đang diễn ra" → tải lại toàn bộ.
+    await withRallies(res, mid, false);
+  });
   api.post('/matches/:id/rallies', auth.requireAuth, async (req, res) => {
     const mid = id(req.params.id);
     await rallies.addRally(pool, me(req), mid, schemas.rally.parse(req.body));

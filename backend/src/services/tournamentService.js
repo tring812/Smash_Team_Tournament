@@ -903,8 +903,9 @@ async function advanceWinner(c, m, winnerId, actorId) {
  * Khoá trận để NHẬP ĐIỂM (lưu tỉ số / biên bản) + kiểm tra quyền và trạng thái chung:
  * trọng tài được phân công (trận hoặc sân) hoặc BTC; giải chưa kết thúc; trận đủ 2 đội, chưa huỷ, chưa xong.
  * @param {Queryable} c @param {string} matchId @param {Viewer} viewer
+ * @param {{ requireStarted?: boolean }} [opts]
  */
-async function lockScorable(c, matchId, viewer) {
+async function lockScorable(c, matchId, viewer, opts = {}) {
   const { rows } = await c.query(
     `SELECT m.*, cat.points_to_win, cat.max_points, cat.games_to_win, cat.round_rules, cat.is_doubles, t.status AS tournament_status,
             (SELECT max(k.round) FROM matches k WHERE k.category_id = m.category_id AND k.stage = 'knockout') AS ko_rounds
@@ -930,7 +931,45 @@ async function lockScorable(c, matchId, viewer) {
   if (!m.entry_a_id || !m.entry_b_id) throw conflict('MISSING_ENTRY', 'Trận chưa đủ 2 đội');
   if (m.status === 'cancelled') throw conflict('MATCH_CANCELLED', 'Trận đã bị huỷ do có đội bị truất quyền');
   if (FINAL_STATUSES.has(m.status)) throw conflict('MATCH_CLOSED', 'Trận đã kết thúc');
+  if (opts.requireStarted !== false && m.status !== 'live') {
+    throw conflict('MATCH_NOT_STARTED', 'Bấm Bắt đầu trận trước khi nhập điểm');
+  }
   return { m, role, rules: effectiveRules(m, m.stage, m.round, m.ko_rounds) };
+}
+
+/**
+ * Nhận sân và bắt đầu trận; cùng khoá theo giải với gọi / chuyển sân để không nhận trùng.
+ * @param {Pool} pool @param {Viewer} viewer @param {string} matchId @param {{ version: number }} input
+ */
+async function startMatch(pool, viewer, matchId, input) {
+  return withTx(pool, async (c) => {
+    const { m, role } = await lockScorable(c, matchId, viewer, { requireStarted: false });
+    if (input.version !== m.version) {
+      throw conflict('VERSION_CONFLICT', 'Trận vừa được cập nhật — tải lại trước khi bắt đầu');
+    }
+    if (m.status === 'live') throw conflict('MATCH_ALREADY_STARTED', 'Trận đã bắt đầu');
+    const t = (await c.query('SELECT status FROM tournaments WHERE id = $1 FOR UPDATE', [m.tournament_id])).rows[0];
+    if (t.status === 'completed') throw conflict('TOURNAMENT_CLOSED', 'Giải đã kết thúc');
+    if (t.status === 'draft' && role === 'referee') throw forbidden('Giải chưa công bố');
+    if (!m.court) throw conflict('COURT_REQUIRED', 'Trận chưa có sân — liên hệ BTC để gán sân');
+    // Nạp muộn vì courtService dùng các tiện ích giao dịch và quyền từ tệp này.
+    const courts = require('./courtService');
+    const occupancy = await courts.lockMatch(c, matchId);
+    courts.checkCourt(m.court, occupancy.t_courts);
+    await courts.assertCourtFree(c, m.tournament_id, m.court, m.id);
+    await courts.assertPlayersFree(c, occupancy);
+    const { rows } = await c.query(
+      `UPDATE matches SET status = 'live', called_at = COALESCE(called_at, now()),
+              referee_user_id = COALESCE(referee_user_id, $2), version = version + 1, updated_at = now()
+        WHERE id = $1 RETURNING *`,
+      [m.id, role === 'referee' ? viewer.id : null],
+    );
+    await c.query('INSERT INTO match_score_events (match_id, actor_user_id, action, games) VALUES ($1, $2, $3, $4::jsonb)',
+      [m.id, viewer.id, 'start', JSON.stringify(m.games)]);
+    await logEvent(c, m.tournament_id, m.category_id, viewer.id, 'start_match', { matchId, court: m.court });
+    if (t.status === 'published') await c.query("UPDATE tournaments SET status = 'ongoing' WHERE id = $1", [m.tournament_id]);
+    return rows[0];
+  });
 }
 
 /**
@@ -943,7 +982,7 @@ async function lockScorable(c, matchId, viewer) {
  */
 async function recordScore(pool, viewer, matchId, input) {
   return withTx(pool, async (c) => {
-    const { m, role, rules } = await lockScorable(c, matchId, viewer);
+    const { m, role, rules } = await lockScorable(c, matchId, viewer, { requireStarted: input.action !== 'walkover' });
     if (input.version !== m.version) {
       throw conflict('VERSION_CONFLICT', 'Tỉ số vừa được cập nhật ở thiết bị khác — đã tải lại bản mới nhất',
         { current: { games: m.games, version: m.version, status: m.status } });
@@ -1002,10 +1041,13 @@ async function recordScore(pool, viewer, matchId, input) {
  */
 async function reopenMatch(pool, viewer, matchId) {
   return withTx(pool, async (c) => {
+    const courts = require('./courtService');
     const m = (await c.query('SELECT * FROM matches WHERE id = $1 FOR UPDATE', [matchId])).rows[0];
     if (!m) throw notFound('Không tìm thấy trận');
     await requireOrganizer(c, m.tournament_id, viewer);
     if (m.status !== 'finished' && m.status !== 'walkover') throw conflict('NOT_FINISHED', 'Trận chưa kết thúc');
+    // Phục hồi cũng là nhận sân/VĐV: dùng cùng khoá với gọi sân và bắt đầu trận.
+    await c.query('SELECT id FROM tournaments WHERE id = $1 FOR UPDATE', [m.tournament_id]);
     if (m.stage === 'group') {
       const cat = await loadCategory(c, m.category_id, true);
       if (cat.stage !== 'groups') throw conflict('KNOCKOUT_STARTED', 'Đã tạo nhánh loại trực tiếp, không thể sửa vòng bảng');
@@ -1020,6 +1062,8 @@ async function reopenMatch(pool, viewer, matchId) {
     } else if (m.stage === 'knockout') {
       await c.query(`UPDATE categories SET stage = 'knockout' WHERE id = $1`, [m.category_id]);
     }
+    if (m.court !== null) await courts.assertCourtFree(c, m.tournament_id, m.court, m.id);
+    await courts.assertPlayersFree(c, await courts.lockMatch(c, m.id));
     const { rows } = await c.query(
       `UPDATE matches SET status = 'live', winner_entry_id = NULL, finished_at = NULL, version = version + 1, updated_at = now()
         WHERE id = $1 RETURNING *`, [matchId],
@@ -1115,12 +1159,14 @@ async function disqualifyEntry(pool, viewer, entryId, reason) {
  */
 async function reinstateEntry(pool, viewer, entryId) {
   return withTx(pool, async (c) => {
+    const courts = require('./courtService');
     const e = await loadEntryForUpdate(c, entryId);
     await requireOrganizer(c, e.tournament_id, viewer);
     if (!e.disqualified_at) throw conflict('NOT_DISQUALIFIED', 'Đội này không bị truất quyền');
     if (e.stage !== 'groups') throw conflict('KNOCKOUT_STARTED', 'Chỉ huỷ truất quyền được khi chưa tạo nhánh loại trực tiếp');
+    await c.query('SELECT id FROM tournaments WHERE id = $1 FOR UPDATE', [e.tournament_id]);
     await c.query('UPDATE entries SET disqualified_at = NULL, dq_reason = NULL WHERE id = $1', [entryId]);
-    const { rowCount } = await c.query(
+    const { rows, rowCount } = await c.query(
       `UPDATE matches m SET
           status = m.pre_cancel->>'status',
           winner_entry_id = (m.pre_cancel->>'winner')::uuid,
@@ -1130,9 +1176,18 @@ async function reinstateEntry(pool, viewer, entryId) {
           pre_cancel = NULL, version = version + 1, updated_at = now()
         WHERE m.category_id = $1 AND m.stage = 'group' AND m.status = 'cancelled' AND m.pre_cancel IS NOT NULL
           AND $2 IN (m.entry_a_id, m.entry_b_id)
-          AND NOT EXISTS (SELECT 1 FROM entries o WHERE o.id IN (m.entry_a_id, m.entry_b_id) AND o.disqualified_at IS NOT NULL)`,
+          AND NOT EXISTS (SELECT 1 FROM entries o WHERE o.id IN (m.entry_a_id, m.entry_b_id) AND o.disqualified_at IS NOT NULL)
+        RETURNING m.id, m.status, m.called_at`,
       [e.cat_id, entryId],
     );
+    // Kiểm tra sau phục hồi để thấy cả xung đột giữa các trận trong cùng đợt;
+    // lỗi sẽ hoàn tác toàn bộ giao dịch, gồm cả trạng thái truất quyền.
+    for (const restored of rows) {
+      if (restored.status !== 'live' && !(restored.called_at && ['pending', 'scheduled'].includes(restored.status))) continue;
+      const m = await courts.lockMatch(c, restored.id);
+      if (m.court !== null) await courts.assertCourtFree(c, m.tournament_id, m.court, m.id);
+      await courts.assertPlayersFree(c, m);
+    }
     await logEvent(c, e.tournament_id, e.cat_id, viewer.id, 'reinstate', { entryId, name: entryLabel(e), restoredMatches: rowCount ?? 0 });
     return { entryId, restoredMatches: rowCount ?? 0 };
   });
@@ -1322,15 +1377,21 @@ function presentMatch(r) {
  * @param {Queryable} db @param {string} slug @param {Viewer|null} viewer
  */
 async function getTournament(db, slug, viewer) {
-  const t = (await db.query('SELECT * FROM tournaments WHERE slug = $1 AND deleted_at IS NULL', [slug])).rows[0];
+  // Một truy vấn lấy luôn vai trò của người xem (thay cho roleIn riêng).
+  const t = (await db.query(
+    `SELECT t.*, s.role AS staff_role FROM tournaments t
+       LEFT JOIN tournament_staff s ON s.tournament_id = t.id AND s.user_id = $2::uuid
+      WHERE t.slug = $1 AND t.deleted_at IS NULL`,
+    [slug, viewer?.id ?? null],
+  )).rows[0];
   if (!t) throw notFound('Không tìm thấy giải');
-  const role = await roleIn(db, t.id, viewer);
+  const role = viewerRole(viewer, t.staff_role);
   if (t.status === 'draft' && role !== 'admin' && role !== 'organizer') throw notFound('Không tìm thấy giải');
   const { rows: categories } = await db.query(
     `SELECT c.*, (SELECT count(*)::int FROM entries e WHERE e.category_id = c.id) AS entry_count
        FROM categories c WHERE tournament_id = $1 ORDER BY code`, [t.id],
   );
-  const { deleted_at: _deletedAt, deleted_by: _deletedBy, ...info } = t;
+  const { deleted_at: _deletedAt, deleted_by: _deletedBy, staff_role: _staffRole, ...info } = t;
   return { ...info, viewerRole: role, canDelete: canDelete(t, viewer), categories };
 }
 
@@ -1423,15 +1484,55 @@ async function refereeQueue(db, viewer) {
 }
 
 /**
- * Ném 404 nếu giải là draft và viewer không phải BTC/admin (không lộ sự tồn tại).
+ * Vai trò của người xem trong giải, từ vai trò hệ thống + dòng tournament_staff (giống roleIn nhưng không truy vấn).
+ * @param {Viewer|null} viewer @param {string|null|undefined} staffRole
+ */
+function viewerRole(viewer, staffRole) {
+  if (!viewer) return null;
+  if (viewer.role === 'admin') return 'admin';
+  return staffRole ?? null;
+}
+
+/**
+ * Ném 404 nếu giải không có / đã xoá, hoặc là draft mà người xem không phải BTC/admin (không lộ sự tồn tại).
+ * @param {{ status: string, deleted_at: unknown, staff_role: string|null }|undefined} t @param {Viewer|null} viewer
+ */
+function checkVisible(t, viewer) {
+  if (!t || t.deleted_at) throw notFound('Không tìm thấy giải');
+  if (t.status !== 'draft') return;
+  const role = viewerRole(viewer, t.staff_role);
+  if (role !== 'admin' && role !== 'organizer') throw notFound('Không tìm thấy giải');
+}
+
+/**
+ * Ném 404 nếu giải là draft và viewer không phải BTC/admin (không lộ sự tồn tại). Một truy vấn.
  * @param {Queryable} db @param {string} tid @param {Viewer|null} viewer
  */
 async function assertVisible(db, tid, viewer) {
-  const t = (await db.query('SELECT status FROM tournaments WHERE id = $1 AND deleted_at IS NULL', [tid])).rows[0];
-  if (!t) throw notFound('Không tìm thấy giải');
-  if (t.status !== 'draft') return;
-  const role = await roleIn(db, tid, viewer);
-  if (role !== 'admin' && role !== 'organizer') throw notFound('Không tìm thấy giải');
+  const { rows } = await db.query(
+    `SELECT t.status, t.deleted_at, s.role AS staff_role FROM tournaments t
+       LEFT JOIN tournament_staff s ON s.tournament_id = t.id AND s.user_id = $2::uuid
+      WHERE t.id = $1`,
+    [tid, viewer?.id ?? null],
+  );
+  checkVisible(rows[0], viewer);
+}
+
+/**
+ * Như assertVisible nhưng đi từ nội dung thi đấu; trả id giải. Một truy vấn thay cho loadCategory + assertVisible.
+ * @param {Queryable} db @param {string} categoryId @param {Viewer|null} viewer @returns {Promise<string>}
+ */
+async function assertCategoryVisible(db, categoryId, viewer) {
+  const { rows } = await db.query(
+    `SELECT c.tournament_id, t.status, t.deleted_at, s.role AS staff_role FROM categories c
+       JOIN tournaments t ON t.id = c.tournament_id
+       LEFT JOIN tournament_staff s ON s.tournament_id = t.id AND s.user_id = $2::uuid
+      WHERE c.id = $1`,
+    [categoryId, viewer?.id ?? null],
+  );
+  if (!rows[0]) throw notFound('Không tìm thấy nội dung thi đấu');
+  checkVisible(rows[0], viewer);
+  return rows[0].tournament_id;
 }
 
 /** @param {Queryable} db @param {string} categoryId @returns {Promise<string>} tournament id */
@@ -1483,13 +1584,13 @@ async function searchUsers(db, viewer, q) {
 }
 
 module.exports = {
-  assertVisible, tournamentOfCategory, listEntries, listStaff, searchUsers, listEvents,
+  assertVisible, assertCategoryVisible, tournamentOfCategory, listEntries, listStaff, searchUsers, listEvents,
   disqualifyEntry, reinstateEntry, swapEntries, updateEntry,
   withTx, roleIn, requireOrganizer, lockScorable, logEvent, nameKey, participantKey, entryLabel, presentMatch, MATCH_SELECT, FINAL_STATUSES,
   createTournament, updateTournament, deleteTournament, restoreTournament, listDeletedTournaments, purgeDeletedTournaments, upsertStaff, removeStaff, createCategory, updateCategory, deleteCategory,
   addEntries, removeEntry,
   drawGroups, scheduleTournament, groupStandings, generateKnockout,
-  recordScore, reopenMatch, assignReferee, setRoundRules,
+  startMatch, recordScore, reopenMatch, assignReferee, setRoundRules,
   getTournament, listTournaments, listMatches, getMatch, getBracket, refereeQueue,
 };
 

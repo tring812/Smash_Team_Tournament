@@ -13,6 +13,7 @@ try { require.resolve('@electric-sql/pglite'); } catch { hasPglite = false; }
 
 const svc = require('../src/services/tournamentService');
 const rallies = require('../src/services/rallyService');
+const { beginMatch } = require('./support/match');
 
 const ADMIN = { id: '00000000-0000-4000-8000-0000000000d1', full_name: 'Admin', role: 'admin' };
 const REF = { id: '00000000-0000-4000-8000-0000000000d2', full_name: 'Trọng tài', role: 'user' };
@@ -50,6 +51,7 @@ describe('Biên bản diễn biến điểm (PGlite)', { skip: hasPglite ? false
     await svc.drawGroups(pool, ADMIN, md.id);
     await svc.updateTournament(pool, ADMIN, t.id, { status: 'published' });
     match = (await svc.listMatches(pool, t.id))[0];
+    match = await beginMatch(pool, ADMIN, REF, match);
   });
   after(async () => { await pool?.end(); });
 
