@@ -96,7 +96,7 @@ flowchart LR
 | Lớp | Trách nhiệm | Ghi chú |
 |---|---|---|
 | `frontend/app` | Giao diện; toàn bộ đọc/ghi Excel–CSV (server không nhận file); bản nháp điểm của trọng tài trong `localStorage` | Không có token nào trong JS — chỉ cookie `httpOnly` |
-| `backend/src/app.js` | Định tuyến HTTP, CSRF, phiên, rate limit, lỗi `application/problem+json` | Mọi body / query qua schema zod (`schemas.js`) |
+| `backend/src/app.js` + `routes/` | Định tuyến HTTP (route theo vùng trong `routes/`), CSRF, phiên, rate limit, lỗi `application/problem+json` | Mọi body / query qua schema zod (`schemas.js`) |
 | `backend/src/services/` | Nghiệp vụ: giải, nội dung, đội, trận (`tournamentService`), điều phối sân (`courtService`), hồ sơ VĐV (`athleteService`), tài khoản (`userService`) | Mỗi thao tác ghi = 1 transaction; khoá hàng `FOR UPDATE`; khoá lạc quan theo `version` cho tỉ số |
 | `backend/src/domain/` | Logic thuần, không I/O → test nhanh, tất định | Bốc thăm, vòng tròn, xếp lịch tham lam, BXH, nhánh, luật điểm, luật theo vòng |
 | `backend/src/liveBus.js` | Báo "giải X vừa đổi" tới các kết nối SSE, kèm phạm vi (`match` + id trận, hoặc `structure`) | Không mang dữ liệu trận — client gọi lại API, quyền xem không đổi |
@@ -186,7 +186,8 @@ smashteam-tournament/
 │   ├── migrations/        001_init … 007_round_rules (SQL, idempotent)
 │   ├── scripts/           migrate.js · seed-demo.js · create-user.js
 │   ├── src/
-│   │   ├── app.js         định tuyến HTTP
+│   │   ├── app.js         app Express: middleware, báo trực tiếp, xử lý lỗi
+│   │   ├── routes/        route theo vùng: auth · tournaments · categories · matches
 │   │   ├── auth.js        mật khẩu scrypt, phiên, CSRF
 │   │   ├── config.js      đọc & kiểm tra biến môi trường (fail closed)
 │   │   ├── db.js          pg Pool hoặc PGlite (dev)
