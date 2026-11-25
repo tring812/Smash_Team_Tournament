@@ -21,7 +21,7 @@ const clockFmt = new Intl.DateTimeFormat("vi-VN", { timeZone: "Asia/Ho_Chi_Minh"
 export default function TvPage() {
   const { slug } = useParams<{ slug: string }>();
   const t = usePoll((s) => api<Tournament>(`/tournaments/${encodeURIComponent(slug)}`, { signal: s }), [slug], 300_000);
-  // Mỗi điểm chỉ tải riêng trận đó (patch); gọi sân / dời trận / kết quả mới tải lại cả danh sách.
+  // Điểm, gọi sân, dời trận, kết quả → chỉ tải riêng các trận đó (patch); bốc thăm / xếp lịch mới tải lại cả danh sách.
   const { tick, matchEvent, live } = useLive(t.data?.id);
   const patch = useMatchPatches(matchEvent);
   const matches = usePoll(

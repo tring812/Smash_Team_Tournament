@@ -8,7 +8,7 @@ import {
   CalendarClock, Check, ChevronDown, ClipboardList, Home, KeyRound, LogIn, LogOut, Plus, Settings2, UsersRound,
 } from "lucide-react";
 import { api, loginUrl } from "../lib/api";
-import { sortTournaments } from "../lib/tournamentOrder";
+import { NAV_LIST_TTL_MS, navList, sortTournaments } from "../lib/tournamentOrder";
 import type { TournamentSummary, Viewer } from "../lib/types";
 
 const STATUS: Record<TournamentSummary["status"], { label: string; cls: string }> = {
@@ -55,25 +55,34 @@ function SiteNav() {
   const [devLogin, setDevLogin] = useState(false);
   const [tournaments, setTournaments] = useState<TournamentSummary[] | null>(null);
 
+  // Mỗi lần chuyển trang: hỏi lại /me (đăng nhập / đăng xuất / bị khoá). Danh sách giải kèm vai trò người xem tải SONG SONG
+  // với /me (cùng cookie nên đúng người xem) và chỉ khi đã cũ (> 30 s, hoặc vừa tạo giải) hoặc đổi tài khoản — trước đây
+  // tải lại mỗi lần chuyển trang và phải chờ /me xong mới bắt đầu.
+  const [hasList, setHasList] = useState(false);
   useEffect(() => {
     const ctl = new AbortController();
+    const load = () => api<TournamentSummary[]>("/tournaments", { signal: ctl.signal }).catch(() => null);
+    const stale = !hasList || Date.now() - navList.at > NAV_LIST_TTL_MS;
+    const early = stale ? load() : null;
+    const apply = (ts: TournamentSummary[] | null, who: string) => {
+      if (!ts || ctl.signal.aborted) return;
+      navList.at = Date.now();
+      navList.viewer = who;
+      setTournaments(sortTournaments(ts));
+      setHasList(true);
+    };
     api<{ user: Viewer | null; devLogin?: boolean }>("/me", { signal: ctl.signal })
-      .then((r) => { setViewer(r.user); setDevLogin(Boolean(r.devLogin)); })
+      .then((r) => {
+        setViewer(r.user);
+        setDevLogin(Boolean(r.devLogin));
+        const who = r.user?.id ?? "guest";
+        if (early) void early.then((ts) => apply(ts, who));
+        else if (navList.viewer !== who) void load().then((ts) => apply(ts, who));
+      })
       .catch(() => setViewer(null));
     return () => ctl.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chạy theo trang; hasList chỉ để biết lần đầu
   }, [pathname]);
-
-  // Danh sách giải kèm vai trò của người xem → tải lại khi đổi tài khoản và khi chuyển trang
-  // (vừa tạo giải / vừa được phân công thì menu có ngay, không cần tải lại cả trang).
-  const viewerKey = viewer === undefined ? null : (viewer?.id ?? "guest");
-  useEffect(() => {
-    if (viewerKey === null) return;
-    const ctl = new AbortController();
-    api<TournamentSummary[]>("/tournaments", { signal: ctl.signal })
-      .then((ts) => setTournaments(sortTournaments(ts)))
-      .catch(() => {});
-    return () => ctl.abort();
-  }, [viewerKey, pathname]);
 
   async function logout() {
     await api("/auth/logout", { method: "POST" }).catch(() => {});

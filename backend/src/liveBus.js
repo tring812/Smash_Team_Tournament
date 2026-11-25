@@ -22,25 +22,34 @@ const MAX_MATCH_IDS = 20;
 
 /**
  * Phạm vi thay đổi:
- *  - `{ kind: 'match', matchId }`: chỉ tỉ số / biên bản / trọng tài của MỘT trận đổi (mỗi điểm) → client chỉ tải lại trận đó.
- *  - `{ kind: 'structure' }` (mặc định): lịch, sân, kết quả, bốc thăm… → client tải lại toàn bộ như cũ.
- * @typedef {{ kind: 'match', matchId: string } | { kind: 'structure' }} Scope
- * @typedef {{ kind: 'match', matchIds: string[] } | { kind: 'structure' }} Signal
+ *  - `{ kind: 'match', matchId | matchIds }`: chỉ MỘT VÀI trận đổi — tỉ số / biên bản (mỗi điểm), trọng tài, gọi sân,
+ *    rút về, dời trận, bắt đầu → client chỉ tải lại các trận đó (`GET /matches/:id`).
+ *    Thêm `categoryId` khi kết quả của nội dung đó đổi (xác nhận / bỏ cuộc) → client tải lại bảng xếp hạng / nhánh
+ *    của nội dung, KHÔNG tải lại cả lịch.
+ *  - `{ kind: 'structure' }` (mặc định): bốc thăm, xếp lịch, sửa đội / nội dung / giải… → client tải lại toàn bộ như cũ.
+ * @typedef {{ kind: 'match', matchId?: string, matchIds?: string[], categoryId?: string } | { kind: 'structure' }} Scope
+ * @typedef {{ kind: 'match', matchIds: string[], categoryIds?: string[] } | { kind: 'structure' }} Signal
  */
+
+const isId = (v) => typeof v === 'string' && v.length > 0;
 
 /**
  * Gộp một thay đổi vào tín hiệu đang chờ gửi (trong cửa sổ debounce).
  * @param {Signal|null} acc @param {Scope|undefined} scope @returns {Signal}
  */
 function mergeScope(acc, scope) {
-  const isMatch = scope?.kind === 'match' && typeof scope.matchId === 'string';
-  if (!isMatch || acc?.kind === 'structure') return { kind: 'structure' };
+  if (scope?.kind !== 'match' || acc?.kind === 'structure') return { kind: 'structure' };
+  const incoming = [...(isId(scope.matchId) ? [scope.matchId] : []), ...(Array.isArray(scope.matchIds) ? scope.matchIds.filter(isId) : [])];
+  if (!incoming.length) return { kind: 'structure' };
   const ids = acc ? acc.matchIds : [];
-  if (!ids.includes(scope.matchId)) {
+  for (const id of incoming) {
+    if (ids.includes(id)) continue;
     if (ids.length >= MAX_MATCH_IDS) return { kind: 'structure' };
-    ids.push(scope.matchId);
+    ids.push(id);
   }
-  return { kind: 'match', matchIds: ids };
+  const cats = acc?.categoryIds ?? [];
+  if (isId(scope.categoryId) && !cats.includes(scope.categoryId)) cats.push(scope.categoryId);
+  return cats.length ? { kind: 'match', matchIds: ids, categoryIds: cats } : { kind: 'match', matchIds: ids };
 }
 
 /** Báo giải `tid` vừa thay đổi. @param {string|undefined} tid @param {Scope} [scope] */
@@ -66,7 +75,7 @@ function subscribe(req, res, tid) {
 
   /** @type {NodeJS.Timeout|null} */ let pending = null;
   /** @type {Signal|null} */ let acc = null;
-  // data: {"kind":"match","matchIds":[…]} | {"kind":"structure"} — chỉ là phạm vi, không mang dữ liệu trận.
+  // data: {"kind":"match","matchIds":[…],"categoryIds"?:[…]} | {"kind":"structure"} — chỉ là phạm vi, không mang dữ liệu trận.
   /** @param {Scope} [scope] */
   const onChange = (scope) => {
     acc = mergeScope(acc, scope);

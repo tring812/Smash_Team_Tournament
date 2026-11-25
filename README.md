@@ -1,6 +1,6 @@
 # SmashTeam Tournament
 
-Last updated: 2026-11-18 11:04 PM CST
+Last updated: 2026-11-25 03:40 AM CST
 
 Web quản lý giải cầu lông **phong trào / mở rộng**, chạy độc lập: từ nhận đăng ký, bốc thăm, xếp lịch, điều phối sân, trọng tài chấm điểm trên điện thoại cho tới bảng xếp hạng, nhánh loại trực tiếp và màn hình chiếu tại nhà thi đấu. Mục tiêu: **BTC điều hành nhanh, gọn, ít thao tác** trong ngày thi đấu.
 
@@ -99,7 +99,7 @@ flowchart LR
 | `backend/src/app.js` + `routes/` | Định tuyến HTTP (route theo vùng trong `routes/`), CSRF, phiên, rate limit, lỗi `application/problem+json` | Mọi body / query qua schema zod (`schemas.js`) |
 | `backend/src/services/` | Nghiệp vụ: giải, BTC, bốc thăm, lịch (`tournamentService`), nội dung (`categoryService`), đội (`entryService`), trận (`matchService`), điều phối sân (`courtService`), hồ sơ VĐV (`athleteService`), tài khoản (`userService`) | Mỗi thao tác ghi = 1 transaction; khoá hàng `FOR UPDATE`; khoá lạc quan theo `version` cho tỉ số |
 | `backend/src/domain/` | Logic thuần, không I/O → test nhanh, tất định | Bốc thăm, vòng tròn, xếp lịch tham lam, BXH, nhánh, luật điểm, luật theo vòng |
-| `backend/src/liveBus.js` | Báo "giải X vừa đổi" tới các kết nối SSE, kèm phạm vi (`match` + id trận, hoặc `structure`) | Không mang dữ liệu trận — client gọi lại API, quyền xem không đổi |
+| `backend/src/liveBus.js` | Báo "giải X vừa đổi" tới các kết nối SSE, kèm phạm vi (`match` + id các trận [+ nội dung đổi kết quả], hoặc `structure`) | Không mang dữ liệu trận — client gọi lại API, quyền xem không đổi |
 | PostgreSQL | Nguồn sự thật duy nhất | Nhật ký điểm và nhật ký BTC **append-only** (trigger chặn sửa/xoá) |
 
 <sub>[↑ Back to contents](#contents)</sub>
@@ -126,7 +126,8 @@ sequenceDiagram
     A-->>R: 200 (version mới) → đánh dấu nháp đã gửi
     A->>B: publish(giải, trận)
     B-->>V: event: changed {"kind":"match","matchIds":[…]} (≈0,3 s)
-    V->>A: GET /matches/:id (chỉ trận đó; gọi sân / kết quả → tải lại cả lịch)
+    V->>A: GET /matches/:id?rallies=0 (chỉ trận đó, không kèm biên bản)
+    Note over V,A: Gọi sân / dời / bắt đầu: cũng chỉ trận đó. Xác nhận kết quả: thêm categoryIds → tải bảng xếp hạng / nhánh của nội dung. Bốc thăm, xếp lịch: tải lại toàn bộ
   else máy khác vừa sửa
     A-->>R: 409 VERSION_CONFLICT → tải lại tỉ số mới nhất, bỏ nháp
   else mất mạng
@@ -301,7 +302,7 @@ Tiền tố `/api`. Request ghi phải có header `X-Requested-With: fetch`. L�
 | BTC & nhật ký | `GET PUT DELETE /tournaments/:id/staff[/:userId]` · `GET /tournaments/:id/events` · `GET /users?q=` | BTC |
 | Nội dung | `POST /tournaments/:id/categories` · `PATCH DELETE /categories/:id` · `PUT /categories/:id/round-rules` | BTC |
 | Đội & VĐV | `POST /categories/:id/entries` · `PATCH DELETE /entries/:id` · `POST /entries/:id/disqualify\|reinstate` · `GET /tournaments/:id/athletes` · `PATCH /athletes/:id` | BTC |
-| Bảng & nhánh | `POST /categories/:id/draw\|swap\|knockout` · `GET /categories/:id/entries\|standings\|bracket` | BTC / công khai |
+| Bảng & nhánh | `POST /categories/:id/draw\|swap\|knockout` · `GET /categories/:id/entries\|standings\|bracket` · `GET /tournaments/:id/standings` (mọi nội dung) | BTC / công khai |
 | Lịch & sân | `POST /tournaments/:id/schedule` · `GET /tournaments/:id/courts` · `PUT /tournaments/:id/courts/:court/referee` · `POST /matches/:id/call\|uncall` · `PATCH /matches/:id` | BTC |
 | Trận & điểm | `GET /tournaments/:id/matches` · `GET /matches/:id` · `GET /referee/queue` · `PUT /matches/:id/score` · `POST /matches/:id/reopen` · `PUT /matches/:id/referee` | công khai / trọng tài / BTC |
 | Trực tiếp | `GET /tournaments/:id/stream` (Server-Sent Events) | công khai (giải nháp: BTC) |
@@ -358,6 +359,7 @@ Chi tiết: [docs/FEATURES.md § Đăng nhập & bảo mật](docs/FEATURES.md#9
 | Nhập báo "đã bốc thăm" | Nội dung đó đã bốc thăm, không nhận thêm đội |
 | Gọi trận báo "Sân N đang có trận" / "X đang ở sân N" | Sân hoặc VĐV đang bận — kết thúc / **Rút về** trận kia, hoặc chọn sân khác |
 | Không **Rút về** được trận | Trận đã có điểm — dùng **Chuyển sân** |
+| Tài khoản trọng tài mới tạo không có trong ô phân công trận / sân | Tài khoản chưa thuộc giải: khi tạo ở **Tài khoản** chọn **Làm trọng tài giải**, hoặc thêm ở **Quản lý giải › Ban tổ chức** |
 | Bàn điểm báo "Mất kết nối — điểm đã lưu trên máy này" | Bình thường khi wifi chập chờn: cứ chấm tiếp, điểm tự gửi khi có mạng; đừng xoá dữ liệu trình duyệt trước khi thấy "Đã lưu" |
 | Bàn điểm báo "đã bỏ bản nháp trên máy này" | Máy khác đã sửa trận lúc máy này mất mạng — giữ tỉ số máy chủ, kiểm tra với trọng tài kia |
 | Trọng tài thấy "đã tải lại bản mới nhất" | Hai máy cùng nhập 1 trận (409) — thống nhất 1 máy/trận hoặc giao trọng tài theo sân |

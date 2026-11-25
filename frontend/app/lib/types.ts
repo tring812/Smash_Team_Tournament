@@ -22,6 +22,11 @@ export interface Account extends Viewer {
   has_password: boolean;
 }
 
+/** POST /admin/users: tài khoản vừa tạo + các giải đã thêm làm trọng tài. */
+export interface CreatedAccount extends Viewer {
+  refereeTournamentIds: string[];
+}
+
 export interface TournamentSummary {
   id: string;
   slug: string;
@@ -173,7 +178,11 @@ export interface Bracket {
  * `data` của sự kiện SSE `changed` (`GET /tournaments/:id/stream`): chỉ là phạm vi thay đổi, không mang dữ liệu trận.
  * `match`: chỉ tỉ số / biên bản / trọng tài của các trận này đổi; `structure`: tải lại toàn bộ.
  */
-export type LiveChange = { kind: "match"; matchIds: string[] } | { kind: "structure" };
+/**
+ * `data` của sự kiện SSE `changed`. `match`: chỉ các trận này đổi; có `categoryIds` = kết quả của các nội dung đó đổi
+ * (bảng xếp hạng / nhánh cần tải lại). `structure`: tải lại toàn bộ.
+ */
+export type LiveChange = { kind: "match"; matchIds: string[]; categoryIds?: string[] } | { kind: "structure" };
 
 export interface Entry {
   id: string;

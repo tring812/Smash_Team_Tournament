@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Printer } from "lucide-react";
 import { api, fmtTime } from "../../lib/api";
 import { usePoll } from "../../lib/usePoll";
+import { useLive } from "../../lib/useLive";
 import { replay } from "../../lib/rally";
 import type { Match, Rally, TournamentSummary } from "../../lib/types";
 import { matchTitle, StatusBadge } from "../../components/MatchViews";
@@ -14,14 +15,25 @@ import { isDoublesMatch, RallySheet } from "../../components/RallySheet";
 type MatchWithRallies = Match & { rallies: Rally[] };
 
 /**
- * Biên bản diễn biến điểm — CHỈ XEM (khán giả, BTC). Trận đang đánh tự làm mới.
+ * Biên bản diễn biến điểm — CHỈ XEM (khán giả, BTC). Trận đang đánh tự làm mới NGAY khi trọng tài ghi điểm (kênh trực tiếp
+ * của giải báo đúng trận này), polling chỉ dự phòng khi mất kết nối; trận đã xong thì không tải lại nữa.
  * "In / Tải PDF": khổ A4 ngang theo mẫu giấy (tên giải, nội dung, sân, trọng tài, giờ bắt đầu / kết thúc, chỗ ký).
  * Không có MSSV / SĐT — chỉ tên VĐV như các trang công khai khác.
  */
 export default function ScoreSheetPage() {
   const { matchId } = useParams<{ matchId: string }>();
-  const m = usePoll((s) => api<MatchWithRallies>(`/matches/${matchId}`, { signal: s }), [matchId], 5_000);
-  const ts = usePoll((s) => api<TournamentSummary[]>("/tournaments", { signal: s }), [], 300_000);
+  // Biết giải của trận sau lần tải đầu → mở kênh trực tiếp. Giữ id trong state để không mở lại kênh mỗi lần tải.
+  const [tid, setTid] = useState<string | undefined>(undefined);
+  const { tick, matchEvent, live } = useLive(tid);
+  const mine = matchEvent?.ids.includes(matchId) ? matchEvent : null;
+  const [over, setOver] = useState(false);
+  const m = usePoll(async (s) => {
+    const r = await api<MatchWithRallies>(`/matches/${matchId}`, { signal: s });
+    setTid(r.tournamentId);
+    setOver(["finished", "walkover", "cancelled", "bye"].includes(r.status));
+    return r;
+  }, [matchId, tick, mine], over ? 0 : live ? 60_000 : 5_000);
+  const ts = usePoll((s) => api<TournamentSummary[]>("/tournaments", { signal: s }), [], 0);
   const match = m.data;
   const tournament = ts.data?.find((t) => t.id === match?.tournamentId);
   const state = useMemo(() => {

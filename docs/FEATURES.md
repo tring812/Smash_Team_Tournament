@@ -117,10 +117,12 @@ Thanh điều hướng nổi: logo · **Lịch thi đấu ▾** (mở danh sách
 | **Bảng đấu** | `/t/<slug>/groups` | Ô **tìm VĐV** · bảng xếp hạng từng bảng — mọi nội dung đã bốc thăm (mặc định) hoặc nội dung đang chọn |
 | **Loại trực tiếp** | `/t/<slug>/bracket` | Nhánh của nội dung đang chọn: **dạng cây** (đường nối, đội thắng ✓ + đường đỏ, "Thắng trận X", ô **Vô địch**) hoặc **dạng bảng** |
 
-**Tìm VĐV** (`?q=`, chia sẻ được; giữ nguyên khi chuyển giữa Lịch thi đấu ↔ Bảng đấu): gõ tên không cần dấu, không phân biệt hoa thường ("nguyen minh khoa"), hoặc tên CLB / trường; nhiều từ thì phải có đủ các từ ("an uit").
-- **Lịch thi đấu**: chỉ còn trận của người đó (cả khối đang thi đấu); ô tóm tắt "3 trận · Nguyễn Minh Khoa · MS Bảng C · hạng 3" — bấm chip sang tab Bảng đấu.
-- **Bảng đấu**: chỉ còn bảng có tên người đó, dòng của họ được tô vàng; bấm chip nhảy tới đúng bảng.
-- Không thấy → gợi ý gõ ít chữ hơn / chọn "Tất cả nội dung" (VĐV chỉ có sau khi bốc thăm).
+**Tìm VĐV** (có ở Lịch thi đấu và Bảng đấu, giữ nguyên khi chuyển giữa hai tab; URL `?q=` chữ đã gõ, `?p=` VĐV đã chọn — chia sẻ được): gõ tên không cần dấu, không phân biệt hoa thường ("nguyen minh khoa"), hoặc tên CLB / trường; nhiều từ thì phải có đủ các từ ("an uit"). Hai bước:
+1. **Gõ tên → chỉ hiện danh sách tên khớp** (mỗi người một dòng: họ tên, CLB, các nội dung — phân biệt được người trùng tên); lịch / bảng chung của giải tạm ẩn. Không ai khớp → gợi ý gõ ít chữ hơn / không dấu (VĐV chỉ có sau khi bốc thăm).
+2. **Bấm đúng tên của mình → chỉ hiện của người đó**:
+   - **Lịch thi đấu**: các trận của VĐV theo từng nội dung — giờ, ngày, sân, đối thủ, vòng, tỉ số / thắng thua, trạng thái; ô **Trận tới** (giờ + sân); bảng + hạng hiện tại (bấm sang Bảng đấu).
+   - **Bảng đấu**: chỉ các bảng có VĐV đó (mọi nội dung), dòng của họ được tô vàng.
+   - **Đổi VĐV** / xoá ô tìm → về xem chung; sửa chữ trong ô tìm → quay lại bước 1.
 
 **Cập nhật trực tiếp**: có điểm mới, gọi trận vào sân, dời trận… → trang tải lại trong khoảng nửa giây (Server-Sent Events; dòng trạng thái hiện "Trực tiếp"). Mất kết nối → tự nối lại, trong lúc đó tự làm mới mỗi 10 giây. Nút **Chiếu màn hình** mở màn hình TV.
 
@@ -276,6 +278,7 @@ Trang **Quản trị › Vận động viên** (chỉ BTC): mỗi người một
 - **Mọi người dùng**: đổi mật khẩu (nhập mật khẩu hiện tại; mật khẩu mới ≥ 8 ký tự). Thiết bị khác đang đăng nhập bị đăng xuất, thiết bị hiện tại giữ phiên.
 - **Quản trị viên**: danh sách tài khoản (tìm theo tên / tên đăng nhập; nhãn *Đã khoá*, *Chưa có mật khẩu*; lần đăng nhập cuối).
   - **Tạo tài khoản**: họ tên, tên đăng nhập (3–40 ký tự `a-z 0-9 . _ -`, không phân biệt hoa thường, không đổi được về sau), vai trò, mật khẩu tạm (nút sinh ngẫu nhiên). Gửi mật khẩu cho người dùng qua kênh riêng.
+    Tài khoản **Người dùng** có thể chọn ngay **Làm trọng tài giải** (các giải chưa kết thúc): tạo tài khoản và thêm vào giải trong cùng một giao dịch, nên phân công trận / sân được ngay. Không chọn giải thì tài khoản chưa thuộc giải nào — ô phân công trọng tài chỉ liệt kê trọng tài / BTC **của giải** (trang Trận đấu và Điều phối sân nhắc điều này khi giải chưa có trọng tài).
   - **Sửa**: họ tên, vai trò, đặt mật khẩu mới (đăng xuất mọi phiên của người đó).
   - **Khoá / Mở khoá**: khoá = đăng xuất ngay, không đăng nhập được, không thêm vào giải được. Không xoá cứng (giữ lịch sử nhật ký, phân công).
   - Không thể tự khoá mình; không thể khoá / hạ quyền **quản trị viên cuối cùng** (lỗi `LAST_ADMIN`).
@@ -418,7 +421,7 @@ Mỗi giải có danh sách **hồ sơ VĐV** riêng. Khi thêm đội (dán, Ex
 - Chống CSRF: header `X-Requested-With: fetch` + kiểm tra `Origin`.
 - Excel/CSV xử lý trên trình duyệt (không có endpoint nhận file → không có rủi ro file độc/zip bomb phía server); dùng bản đọc không cần Web Worker nên hợp CSP `script-src 'self'`.
 - **MSSV, SĐT, email là dữ liệu cá nhân**: chỉ API dành cho BTC trả ra (`/tournaments/:id/athletes`); danh sách đội công khai chỉ có tên, CLB và id hồ sơ. Nhật ký sửa hồ sơ chỉ ghi **tên trường** đã sửa, không ghi giá trị. Hồ sơ không còn ở đội nào bị xoá. File Excel xuất ra có MSSV/SĐT — BTC tự bảo quản.
-- **Kênh trực tiếp (SSE)** `/tournaments/:id/stream` chỉ báo "giải vừa đổi" kèm phạm vi, không mang dữ liệu trận → client gọi lại API thường, quyền xem không đổi. `data` là `{"kind":"match","matchIds":[…]}` khi chỉ tỉ số / biên bản / trọng tài của vài trận đổi (nhập điểm, lưu tạm, phân công trọng tài) → trang công khai và TV chỉ tải `GET /matches/:id` của trận đó; mọi thay đổi khác (gọi sân, dời trận, xác nhận kết quả, bốc thăm…) là `{"kind":"structure"}` → tải lại toàn bộ. Các thay đổi trong 250 ms được gộp; quá 20 trận coi như `structure`; giải nháp chỉ BTC mở được. Tối đa 1.000 kết nối/instance (quá → 503, client dùng polling).
+- **Kênh trực tiếp (SSE)** `/tournaments/:id/stream` chỉ báo "giải vừa đổi" kèm phạm vi, không mang dữ liệu trận → client gọi lại API thường, quyền xem không đổi. `data` là `{"kind":"match","matchIds":[…]}` khi chỉ vài trận đổi — nhập điểm, lưu tạm, phân công trọng tài, **gọi vào sân, rút về, dời trận, bắt đầu trận** → trang công khai, TV và trang biên bản chỉ tải `GET /matches/:id?rallies=0` của các trận đó. **Xác nhận kết quả / bỏ cuộc** gửi `{"kind":"match","matchIds":[trận vừa xong, các trận nhận đội thắng…],"categoryIds":[nội dung]}` → tải thêm bảng xếp hạng / nhánh của nội dung đó, **không** tải lại cả lịch. Còn lại (bốc thăm, xếp lịch, sửa đội / nội dung / giải, mở lại trận, trọng tài sân, trận đầu tiên làm giải chuyển "Đang diễn ra") là `{"kind":"structure"}` → tải lại toàn bộ. Các thay đổi trong 250 ms được gộp; quá 20 trận coi như `structure`; giải nháp chỉ BTC mở được. Tối đa 1.000 kết nối/instance (quá → 503, client dùng polling).
 - Mọi truy vấn SQL tham số hoá; mọi dữ liệu vào kiểm tra bằng zod; lỗi trả `application/problem+json` không lộ chi tiết nội bộ.
 - **Chỉ có giao diện sáng** (đã bỏ bộ chọn Hệ thống / Sáng / Tối): không phụ thuộc cài đặt Tối của máy; lựa chọn cũ còn lưu (`localStorage` khoá `st-theme`) được xoá khi mở trang. Vùng cố ý tối (sidebar quản trị, TV, banner, chân trang) giữ nguyên. Tương phản chữ đạt WCAG AA trên các trang chính.
 - **Chỉ khi dev**: `DATABASE_URL=pglite:...` (Postgres WASM, không cần cài Postgres) và `DEV_LOGIN=1` (nút "Dev: Admin / Dev: Trọng tài"). Cấu hình **từ chối** cả hai ở production.
@@ -435,7 +438,7 @@ Tiền tố `/api`. Request ghi phải có header `X-Requested-With: fetch`. L�
 | POST | `/auth/dev-login` | — (chỉ khi `DEV_LOGIN=1`) | Đăng nhập dev |
 | GET | `/me` | — | Người đang đăng nhập |
 | POST | `/me/password` `{currentPassword, newPassword}` | đã đăng nhập | Tự đổi mật khẩu |
-| GET · POST | `/admin/users[?q=]` · `{username, fullName, password, role}` | quản trị viên | Danh sách · tạo tài khoản |
+| GET · POST | `/admin/users[?q=]` · `{username, fullName, password, role, refereeTournamentIds?}` | quản trị viên | Danh sách · tạo tài khoản; `refereeTournamentIds` (≤ 20) thêm làm trọng tài các giải đó cùng giao dịch — giải không tồn tại / đã xoá → `422 TOURNAMENT_NOT_FOUND`, không tạo gì |
 | PATCH | `/admin/users/:id` `{fullName?, role?, password?, disabled?}` | quản trị viên | Sửa, đặt lại mật khẩu, khoá / mở khoá |
 | GET | `/tournaments` · `/tournaments/:slug` | công khai (Nháp: BTC) | Danh sách giải · chi tiết giải + nội dung |
 | POST | `/tournaments` | Quản trị viên | Tạo giải |
@@ -452,16 +455,17 @@ Tiền tố `/api`. Request ghi phải có header `X-Requested-With: fetch`. L�
 | PATCH · DELETE | `/categories/:id` | BTC | **Sửa · xoá** nội dung |
 | PUT | `/categories/:id/round-rules` `{rules: [{stage: group\|knockout, fromEnd?: 1..6\|null, pointsToWin, maxPoints, gamesToWin}]}` | BTC | Luật điểm theo vòng (thay toàn bộ; `[]` = bỏ hết). `fromEnd`: 1 = chung kết, 2 = bán kết, 3 = tứ kết; `null` = mọi vòng loại |
 | GET | `/categories/:id/entries` · `standings` · `bracket` | công khai | Đội · bảng xếp hạng · nhánh |
+| GET | `/tournaments/:id/standings` | công khai (Nháp: BTC) | Bảng xếp hạng mọi nội dung đã bốc thăm trong một request: `[{categoryId, groups}]` (mỗi phần tử giống `/categories/:id/standings`) — trang giải dùng cho tab Bảng đấu / tìm VĐV |
 | POST | `/categories/:id/entries` `{entries: [{player1Name, player1StudentId?, player1Phone?, player1Email?, player2…, club}]}` | BTC | Thêm đội (≤ 256 / lần, cả lô một giao dịch); gắn hồ sơ VĐV theo [7.10](#710-nhận-diện-vđv) |
 | GET | `/tournaments/:id/athletes` | BTC | Hồ sơ VĐV (MSSV, SĐT, email, nội dung đăng ký) |
 | PATCH | `/athletes/:id` `{fullName?, studentId?, phone?, email?, club?}` | BTC | Sửa hồ sơ VĐV |
-| GET | `/tournaments/:id/stream` | công khai (Nháp: BTC) | Server-Sent Events: `event: changed` mỗi khi giải đổi; `data`: `{"kind":"match","matchIds":[…]}` hoặc `{"kind":"structure"}` |
+| GET | `/tournaments/:id/stream` | công khai (Nháp: BTC) | Server-Sent Events: `event: changed` mỗi khi giải đổi; `data`: `{"kind":"match","matchIds":[…],"categoryIds"?:[…]}` hoặc `{"kind":"structure"}` |
 | POST | `/categories/:id/draw` `{groups?: [{name, entryIds}]}` | BTC | Bốc thăm ngẫu nhiên / bốc lại; có `groups` = chia bảng có sẵn |
 | POST | `/categories/:id/swap` `{entryA, entryB}` | BTC | Đổi bảng 2 đội |
 | POST | `/categories/:id/knockout` | BTC | Tạo nhánh loại trực tiếp |
 | PATCH · DELETE | `/entries/:id` | BTC | Sửa · xoá đội; sửa trùng hồ sơ VĐV với đội khác cùng nội dung → `409 ATHLETE_ALREADY_ENTERED` |
 | POST | `/entries/:id/disqualify` `{reason}` · `/entries/:id/reinstate` | BTC | Truất quyền · huỷ truất quyền |
-| GET | `/matches/:id` · `/referee/queue` | công khai · trọng tài | Chi tiết trận (kèm `rallies` — biên bản: ô VĐV a1/a2/b1/b2, không có người bấm) · hàng đợi trọng tài |
+| GET | `/matches/:id[?rallies=0]` · `/referee/queue` | công khai · trọng tài | Chi tiết trận (kèm `rallies` — biên bản: ô VĐV a1/a2/b1/b2, không có người bấm; `?rallies=0` bỏ biên bản cho màn hình trực tiếp) · hàng đợi trọng tài |
 | POST | `/matches/:id/start` `{version}` | Trọng tài / BTC | Bắt đầu trên sân đã gán; kiểm tra quyền, phiên bản, sân và VĐV rảnh; ghi nhật ký `start_match` (migration 012) |
 | PUT | `/matches/:id/score` `{action, version, games, walkoverWinner?}` | Trọng tài / BTC | Lưu điểm, xác nhận, bỏ cuộc. Trận có biên bản mà tỉ số khác biên bản → ghi mốc `override` (BTC sửa tay) |
 | POST | `/matches/:id/rallies` `{type: start\|point\|fix_server, side?, server?, receiver?, expectedSeq}` | Trọng tài / BTC | Thêm 1 sự kiện biên bản; máy chủ tự tính tỉ số + người giao, cập nhật `games` cùng giao dịch; lệch `expectedSeq` → `409 RALLY_CONFLICT` |

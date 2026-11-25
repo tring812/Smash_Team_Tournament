@@ -120,4 +120,30 @@ describe('tài khoản trọng tài do BTC quản lý (PGlite)', { skip: hasPgli
     await svc.upsertStaff(pool, ADMIN, ta.id, { userId: ADMIN.id, role: 'referee' });
     await rejectsWith(refs.updateReferee(pool, ORG_A, ta.id, ADMIN.id, { password: 'chiem-12345678' }), 403);
   });
+
+  test('admin tạo tài khoản ở trang Tài khoản kèm giải → là trọng tài của giải, phân công trận được', async () => {
+    const u = await refs.createAccount(pool, ADMIN, {
+      username: 'acc.khoa', fullName: 'Trọng tài Minh', password: 'matkhau-123', role: 'user', refereeTournamentIds: [ta.id, ta.id],
+    });
+    assert.deepEqual(u.refereeTournamentIds, [ta.id]);
+    const staff = await svc.listStaff(pool, ADMIN, ta.id);
+    assert.equal(staff.find((s) => s.user_id === u.id)?.role, 'referee');
+    assert.ok((await refs.listReferees(pool, ORG_A, ta.id)).some((r) => r.username === 'acc.khoa'));
+    const ev = await pool.query(`SELECT details FROM tournament_events WHERE tournament_id = $1 AND action = 'referee_create'`, [ta.id]);
+    assert.ok(ev.rows.some((e) => e.details.userId === u.id));
+    // Không có giải nào → vẫn tạo được như trước (tài khoản thường, chưa thuộc giải nào).
+    const plain = await refs.createAccount(pool, ADMIN, { username: 'tt.plain', fullName: 'Plain', password: 'matkhau-123', role: 'user' });
+    assert.deepEqual(plain.refereeTournamentIds, []);
+  });
+
+  test('tạo tài khoản kèm giải không tồn tại → 422, không tạo tài khoản; người không phải admin → 403', async () => {
+    await rejectsWith(refs.createAccount(pool, ADMIN, {
+      username: 'tt.ghost', fullName: 'Ghost', password: 'matkhau-123', role: 'user', refereeTournamentIds: ['00000000-0000-4000-8000-0000000000aa'],
+    }), 422, 'TOURNAMENT_NOT_FOUND');
+    const { rows } = await pool.query(`SELECT count(*)::int AS n FROM users WHERE username = 'tt.ghost'`);
+    assert.equal(rows[0].n, 0);
+    await rejectsWith(refs.createAccount(pool, ORG_A, {
+      username: 'tt.org', fullName: 'Org', password: 'matkhau-123', role: 'user', refereeTournamentIds: [ta.id],
+    }), 403);
+  });
 });

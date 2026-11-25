@@ -17,6 +17,9 @@ const schemas = {
     fullName: name(255),
     password,
     role: z.enum(['admin', 'user']).default('user'),
+    // Thêm ngay làm trọng tài của các giải này (cùng giao dịch) — để tài khoản tạo ở trang Tài khoản
+    // xuất hiện trong ô phân công trọng tài mà không phải vào Ban tổ chức thêm lần nữa.
+    refereeTournamentIds: z.array(z.uuid()).max(20).optional(),
   }),
   updateUser: z.object({
     username: username.optional(), // chỉ đặt được cho tài khoản CHƯA có (user từ bản SSO cũ)
@@ -34,6 +37,8 @@ const schemas = {
   }).refine((o) => Object.values(o).some((v) => v !== undefined), { message: 'Không có gì để cập nhật' }),
   changePassword: z.object({ currentPassword: z.string().min(1).max(128), newPassword: password }),
   uuidParam: z.uuid(),
+  // GET /matches/:id?rallies=0 — màn hình trực tiếp (lịch, TV) không cần biên bản: bỏ truy vấn + giảm payload mỗi điểm.
+  matchView: z.object({ rallies: z.enum(['0', '1']).optional() }),
 
   createTournament: z.object({
     slug: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/).max(80),

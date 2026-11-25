@@ -91,15 +91,22 @@ function ModalBase({ open, onClose, title, children, maxWidth = "max-w-md" }: {
   open: boolean; onClose: () => void; title: string; children: ReactNode; maxWidth?: string;
 }) {
   const box = useRef<HTMLDivElement>(null);
+  // onClose thường là arrow function mới mỗi lần render (vd `() => setDraft(null)`). Nếu đặt nó vào deps của effect
+  // focus bên dưới thì MỖI PHÍM gõ (setState → render lại) sẽ chạy lại effect: trả focus về nút mở rồi focus ô ĐẦU TIÊN
+  // → chữ đang gõ ở ô thứ hai "nhảy" sang ô Họ tên, bộ gõ tiếng Việt (Telex/VNI) bị ngắt giữa chừng. Giữ qua ref.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; });
   useEffect(() => {
     if (!open) return;
     const prev = document.activeElement as HTMLElement | null;
-    // Đưa focus vào ô nhập đầu tiên; trả focus về nút mở khi đóng.
-    box.current?.querySelector<HTMLElement>("input, select, textarea, button:not([aria-label='Đóng'])")?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    // Chỉ khi VỪA MỞ: đưa focus vào ô nhập đầu tiên (trừ khi một ô autoFocus đã nhận); trả focus về nút mở khi đóng.
+    if (!box.current?.contains(document.activeElement)) {
+      box.current?.querySelector<HTMLElement>("input, select, textarea, button:not([aria-label='Đóng'])")?.focus();
+    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onCloseRef.current(); };
     window.addEventListener("keydown", onKey);
     return () => { window.removeEventListener("keydown", onKey); prev?.focus(); };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
   return (

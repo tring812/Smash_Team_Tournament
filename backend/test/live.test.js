@@ -38,6 +38,17 @@ describe('liveBus.mergeScope', () => {
     assert.deepEqual(live.mergeScope(null, { kind: 'match' }), { kind: 'structure' });
   });
 
+  test('nhiều trận một lần (xác nhận kết quả) + nội dung đổi kết quả → gộp danh sách trận và danh sách nội dung', () => {
+    let acc = live.mergeScope(null, { kind: 'match', matchId: M1 });
+    assert.deepEqual(acc, { kind: 'match', matchIds: [M1] }, 'không có nội dung thì không gửi categoryIds');
+    acc = live.mergeScope(acc, { kind: 'match', matchIds: [M1, M2], categoryId: 'c1' });
+    acc = live.mergeScope(acc, { kind: 'match', matchIds: [M2], categoryId: 'c1' });
+    acc = live.mergeScope(acc, { kind: 'match', matchIds: [M2], categoryId: 'c2' });
+    assert.deepEqual(acc, { kind: 'match', matchIds: [M1, M2], categoryIds: ['c1', 'c2'] });
+    assert.deepEqual(live.mergeScope(acc, { kind: 'structure' }), { kind: 'structure' });
+    assert.deepEqual(live.mergeScope(null, { kind: 'match', matchIds: [] }), { kind: 'structure' }, 'phạm vi trận rỗng = không biết gì đổi → toàn bộ');
+  });
+
   test('quá nhiều trận trong một lần gộp → structure', () => {
     let acc = null;
     for (let i = 0; i < 21; i += 1) acc = live.mergeScope(acc, { kind: 'match', matchId: `m${i}` });

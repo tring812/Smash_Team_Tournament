@@ -98,6 +98,12 @@ module.exports = function registerTournamentsRoutes(api, { pool, id, me, touch }
     touch(res, r.rows[0]?.tournament_id);
     res.json(out);
   });
+  // BXH mọi nội dung của giải trong MỘT request (trang giải: tab Bảng đấu / tìm VĐV) thay cho 1 request mỗi nội dung.
+  api.get('/tournaments/:id/standings', async (req, res) => {
+    const tid = id(req.params.id);
+    await svc.assertVisible(pool, tid, me(req));
+    res.json(await svc.tournamentStandings(pool, tid));
+  });
   api.get('/tournaments/:id/matches', async (req, res) => {
     const tid = id(req.params.id);
     await svc.assertVisible(pool, tid, me(req));

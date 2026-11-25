@@ -61,6 +61,17 @@ const WOMEN = [
 ];
 
 /**
+ * Ghi điểm cho dữ liệu demo. Từ migration 012 trận phải "Bắt đầu" trước khi nhập điểm; seed không đi qua
+ * luồng gọi sân (nhiều trận demo chưa có sân) nên đánh dấu `live` trực tiếp rồi ghi điểm như trọng tài.
+ * CHỈ dùng cho seed dev — mã ứng dụng luôn đi qua startMatch.
+ */
+async function play(pool, admin, matchId, action, games) {
+  await pool.query(`UPDATE matches SET status = 'live', version = version + 1, updated_at = now() WHERE id = $1 AND status <> 'live'`, [matchId]);
+  const m = await matchSvc.getMatch(pool, matchId);
+  await matchSvc.recordScore(pool, admin, matchId, { action, version: m.version, games });
+}
+
+/**
  * Nội dung WS: vòng bảng đã xong → nhánh 8 đội (tứ kết → chung kết), xếp lịch ngày hôm sau,
  * 3 trận tứ kết đã có kết quả, 1 trận đang đánh — để xem cây thi đấu có dữ liệu thật.
  * @returns {Promise<boolean>} true nếu vừa tạo
@@ -74,7 +85,7 @@ async function ensureKnockoutDemo(pool, admin, t) {
   const groupScores = [[[21, 15], [21, 18]], [[19, 21], [21, 17], [21, 16]], [[21, 11], [21, 13]], [[17, 21], [18, 21]]];
   const groupMatches = await matchSvc.listMatches(pool, t.id, { categoryId: ws.id });
   for (const [k, m] of groupMatches.entries()) {
-    await matchSvc.recordScore(pool, admin, m.id, { action: 'finish', version: m.version, games: groupScores[k % groupScores.length] });
+    await play(pool, admin, m.id, 'finish', groupScores[k % groupScores.length]);
   }
   await svc.generateKnockout(pool, admin, ws.id);
   const day2 = new Date(new Date(t.starts_at).getTime() + 86_400_000).toISOString().slice(0, 10);
@@ -82,11 +93,9 @@ async function ensureKnockoutDemo(pool, admin, t) {
   const qf = (await matchSvc.getBracket(pool, ws.id)).rounds[0].matches;
   const koScores = [[[21, 16], [21, 19]], [[21, 23], [21, 14], [21, 18]], [[15, 21], [12, 21]]];
   for (const [k, games] of koScores.entries()) {
-    const m = await matchSvc.getMatch(pool, qf[k].id);
-    await matchSvc.recordScore(pool, admin, m.id, { action: 'finish', version: m.version, games });
+    await play(pool, admin, qf[k].id, 'finish', games);
   }
-  const live = await matchSvc.getMatch(pool, qf[3].id);
-  await matchSvc.recordScore(pool, admin, live.id, { action: 'save', version: live.version, games: [[21, 19], [9, 12]] });
+  await play(pool, admin, qf[3].id, 'save', [[21, 19], [9, 12]]);
   return true;
 }
 
@@ -124,11 +133,9 @@ async function main() {
     const list = (await matchSvc.listMatches(pool, t.id, { categoryId: ms.id })).filter((m) => m.status === 'scheduled');
     const scores = [[[21, 17], [21, 19]], [[18, 21], [21, 15], [21, 12]], [[21, 9], [21, 14]]];
     for (const [i, games] of scores.entries()) {
-      const m = list[i];
-      await matchSvc.recordScore(pool, admin, m.id, { action: 'finish', version: m.version, games });
+      await play(pool, admin, list[i].id, 'finish', games);
     }
-    const live = list[3];
-    await matchSvc.recordScore(pool, admin, live.id, { action: 'save', version: live.version, games: [[21, 18], [11, 9]] });
+    await play(pool, admin, list[3].id, 'save', [[21, 18], [11, 9]]);
     await ensureKnockoutDemo(pool, admin, t);
     process.stdout.write(`Đã tạo giải demo: /t/${t.slug}\n`);
   } finally {
