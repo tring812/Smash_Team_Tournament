@@ -13,6 +13,7 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 - **Gọi vào sân không còn ghi đè giờ / sân dự kiến**: trước đây bấm "Gọi vào sân" đổi giờ dự kiến thành giờ gọi (vd 18:00 → 17:27), rút về thì trận mang giờ mới và sân cũ nên bị đẩy lên đầu hàng chờ. Nay giờ gọi lưu riêng (`called_at`), sân dự kiến cất ở cột mới `planned_court`; **Rút về** trả lại đúng giờ và sân dự kiến. **Migration 009** thêm cột và sửa lại các trận đã bị ghi đè (lấy giờ / sân dự kiến từ nhật ký gọi trận).
 
 ### Changed
+- **Kiểm tra quyền xem gọn hơn**: xem bảng xếp hạng / danh sách đội / nhánh đấu của một nội dung và mở trang giải khi đã đăng nhập chỉ cần 1 truy vấn kiểm quyền thay vì 2 (trang giải tải lại bảng xếp hạng của từng nội dung mỗi khi có điểm). Quy tắc quyền không đổi.
 - **Bỏ chế độ Tối**: xoá bộ chọn giao diện Hệ thống / Sáng / Tối ở sidebar BTC Hub và menu tài khoản; web cố định giao diện sáng (máy đặt chế độ Tối cũng hiện sáng), lựa chọn cũ lưu trên máy được xoá.
 - **Bốc thăm** hỏi xác nhận trước khi bốc; **Bốc thăm lại** cảnh báo số trận đã xếp lịch sẽ mất lịch.
 - **Xếp lịch** báo thêm số lượt VĐV không được nghỉ (đánh 2 khung giờ liền nhau); kết quả API có `noRest`.
