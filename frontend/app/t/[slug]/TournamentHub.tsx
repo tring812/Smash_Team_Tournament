@@ -9,7 +9,8 @@ import { api, fmtTime } from "../../lib/api";
 import { usePoll } from "../../lib/usePoll";
 import { useLive } from "../../lib/useLive";
 import { useMatchPatches } from "../../lib/useMatchPatches";
-import type { Bracket, GroupStanding, Match, StandingRow, Tournament } from "../../lib/types";
+import { createStandingsLoader } from "../../lib/standingsLoader";
+import type { Bracket, Match, StandingRow, Tournament } from "../../lib/types";
 import { MatchCard, StandingsTables } from "../../components/MatchViews";
 import { findPeople, findPerson, hasDiacritics, involves, makeMatcher, peopleOf, type Person } from "../../lib/playerSearch";
 import type { BracketView } from "../../components/BracketExplorer";
@@ -76,6 +77,9 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
   // (`matchEvent` → patch); có kết quả mới thì tải thêm bảng xếp hạng / nhánh (`resultTick`), không tải lại cả lịch.
   // Polling 10s (30s khi đang nhận trực tiếp) chỉ là dự phòng.
   const { tick, matchEvent, resultTick, live: streaming } = useLive(t.data?.id);
+  const refreshTournament = t.refresh;
+  // Bốc thăm đổi stage từ setup: fallback cần danh sách nội dung mới, không chờ chu kỳ 60 giây.
+  useEffect(() => { if (tick > 0) void refreshTournament(); }, [tick, refreshTournament]);
   const patch = useMatchPatches(matchEvent);
   // Cả lịch (request nặng nhất) chỉ cần ở tab Lịch, hoặc khi tìm VĐV (để gom trận của người đó). Tab Bảng đấu / Loại trực tiếp
   // khi xem chung không tải.
@@ -85,11 +89,13 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
     (s) => (matchesPath ? api<Match[]>(matchesPath, { signal: s }) : Promise.resolve([])),
     [matchesPath, tick], streaming ? 30_000 : 10_000, matchesPath ? `hub:${matchesPath}` : undefined,
   );
-  // BXH mọi nội dung trong MỘT request (trước: 1 request mỗi nội dung, chờ tải xong thông tin giải mới bắt đầu).
+  // Ưu tiên BXH gộp; máy chủ chưa có route này dùng API từng nội dung, không che lỗi quyền/dữ liệu.
+  const loadStandings = useMemo(() => createStandingsLoader(), []);
+  const standingsCategoriesKey = JSON.stringify(cats.map((category) => [category.id, category.stage]));
   const standingsPath = t.data && needStandings ? `/tournaments/${t.data.id}/standings` : null;
   const standingsRaw = usePoll(
-    (s) => (standingsPath ? api<{ categoryId: string; groups: GroupStanding[] }[]>(standingsPath, { signal: s }) : Promise.resolve(null)),
-    [standingsPath, tick, resultTick], streaming ? 30_000 : 10_000, standingsPath ? `hub:${standingsPath}` : undefined,
+    (s) => (t.data && standingsPath ? loadStandings(t.data.id, cats, s) : Promise.resolve(null)),
+    [standingsPath, standingsCategoriesKey, tick, resultTick], streaming ? 30_000 : 10_000, standingsPath ? `hub:${standingsPath}` : undefined,
   );
   const groups = useMemo(() => {
     if (!standingsRaw.data) return { data: needStandings ? null : [], error: standingsRaw.error };
