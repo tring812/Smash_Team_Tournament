@@ -93,7 +93,35 @@ body {
 .redline-score { border-top: 4px solid #171716; }
 .redline-score[data-serving="true"] { border-color: #dc2626; box-shadow: inset 0 0 0 1px #dc2626; }
 .redline-score:not(:disabled):hover { background: #fafaf9; }
-.redline-hero-title { font-size: clamp(2.75rem, 6.5vw, 5.5rem); line-height: 1; letter-spacing: -0.025em; }
+
+/* Bố cục Athlonix dùng chữ đứng, giữ font và bảng màu Red Line của ứng dụng. */
+.athlonix-title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  text-transform: uppercase;
+  line-height: 1.04;
+  letter-spacing: -0.018em;
+}
+.athlonix-hero-title { font-size: clamp(3rem, 8vw, 6.75rem); }
+.athlonix-section-title { font-size: clamp(2.25rem, 5vw, 4rem); }
+.athlonix-court { background: linear-gradient(135deg, #171716 0%, #451a18 60%, #a8221e 120%); }
+.athlonix-featured { background: linear-gradient(135deg, #1b1b1b 35%, #3d1a18 100%); }
+.athlonix-cta { background: radial-gradient(ellipse at 50% 0%, #541a18, #0a0a0a 72%); }
+.athlonix-wordmark { font-size: clamp(3rem, 16vw, 14rem); line-height: .9; }
+.athlonix-admin-banner { background: radial-gradient(ellipse at 100% 0%, #55201c, transparent 68%), #121211; }
+
+/* Nền chỉ trượt khi có phép đo; trước khi chạy JavaScript, mục đang chọn vẫn có nền riêng. */
+.site-nav-item { color: var(--color-slate-700); }
+.site-nav-item[data-current="true"] { color: var(--color-accent); }
+.site-nav-item[data-highlighted="true"] { background: var(--color-secondary); color: #fff; }
+.site-nav-desktop[data-indicator-ready] .site-nav-item[data-highlighted="true"] { background: transparent; }
+.site-nav-indicator { transition: transform 240ms cubic-bezier(.22, .8, .3, 1), width 240ms cubic-bezier(.22, .8, .3, 1), opacity 140ms ease; }
+@media (prefers-reduced-motion: reduce) {
+  .site-nav-indicator, .site-nav-item {
+    transition-property: none;
+    transition-duration: 0s !important;
+  }
+}
 
 /* Minh hoạ vạch xuất phát không cần ảnh từ máy chủ bên ngoài. */
 .redline-court-art { filter: drop-shadow(0 24px 36px #0008); }
