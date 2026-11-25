@@ -11,6 +11,7 @@ import { replay } from "../../lib/rally";
 import type { Match, Rally, TournamentSummary } from "../../lib/types";
 import { matchTitle, StatusBadge } from "../../components/MatchViews";
 import { isDoublesMatch, RallySheet } from "../../components/RallySheet";
+import { setTally } from "../../lib/scoring";
 
 type MatchWithRallies = Match & { rallies: Rally[] };
 
@@ -43,6 +44,8 @@ export default function ScoreSheetPage() {
 
   if (!match) return <p className="text-slate-500" aria-live="polite">{m.error ?? "Đang tải biên bản…"}</p>;
   const startedAt = match.rallies[0]?.at ?? null;
+  // Số set mỗi đội đã thắng (chỉ tính game đã xong) — đội thắng mỗi game được +1.
+  const sets = setTally(match.games, match.rules).reduce<[number, number]>((acc, x) => (x ? x.tally : acc), [0, 0]);
   const endedAt = ["finished", "walkover"].includes(match.status) ? match.rallies[match.rallies.length - 1]?.at ?? match.updatedAt : null;
 
   return (
@@ -57,7 +60,8 @@ export default function ScoreSheetPage() {
           </p>
           <p className="text-sm text-slate-600">
             Bắt đầu: <span className="tabular">{startedAt ? fmtTime(startedAt) : "—"}</span> · Kết thúc: <span className="tabular">{endedAt ? fmtTime(endedAt) : "—"}</span>
-            {match.games.length > 0 && <> · Tỉ số: <strong className="tabular">{match.games.map((g) => `${g[0]}–${g[1]}`).join(", ")}</strong></>}
+            {match.games.length > 0 && <> · Set: <strong className="tabular">{sets[0]}–{sets[1]}</strong>
+              {" "}(<span className="tabular">{match.games.map((g) => `${g[0]}–${g[1]}`).join(", ")}</span>)</>}
           </p>
         </div>
         <div className="flex items-center gap-2 print:hidden">
@@ -82,7 +86,7 @@ export default function ScoreSheetPage() {
       </div>
 
       <p className="text-xs text-slate-500 print:hidden">
-        Mỗi cột là một pha cầu; số ghi ở hàng người giao pha kế tiếp. G = giao đầu game, N = nhận đầu game, ✎ = sửa người giao / BTC sửa tỉ số.
+        Mỗi cột là một pha cầu; số ghi ở hàng người giao pha kế tiếp. Số 0 ở cột đầu = người giao / nhận đầu game; cột Set = số set đã thắng (đội thắng game +1); ✎ = sửa người giao / BTC sửa tỉ số.
         {tournament && <> · <Link href={`/t/${tournament.slug}`} className="underline">Về trang giải</Link></>}
       </p>
     </div>

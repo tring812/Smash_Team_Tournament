@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { isDecidingGame, slotName, type RallyState, type SheetBlock } from "../lib/rally";
+import { setTally, type SetResult } from "../lib/scoring";
 import type { Match, Slot } from "../lib/types";
 
 /** Đánh đôi khi có VĐV thứ 2 ở một trong hai đội. */
@@ -9,8 +10,9 @@ export const isDoublesMatch = (m: Pick<Match, "a" | "b">) => Boolean(m.a?.player
 
 /**
  * Biên bản diễn biến điểm theo mẫu giấy BTC — CHỈ ĐỂ XEM (chạm ô không đổi điểm).
- *  - Hàng = từng VĐV (đôi 4 hàng, kẻ đậm giữa 2 đội; đơn 2 hàng). Cột tên cố định bên trái, G = giao, N = nhận đầu game.
- *  - Cột 0: "0" ở hàng người giao và người nhận. Mỗi pha thêm 1 cột: số mới của đội thắng ghi ở hàng người giao pha kế tiếp.
+ *  - Hàng = từng VĐV (đôi 4 hàng, kẻ đậm giữa 2 đội; đơn 2 hàng). Cột tên cố định bên trái (chỉ tên, không ký hiệu).
+ *  - Cột 0: "0" ở hàng người giao và người nhận đầu game. Mỗi pha thêm 1 cột: số mới của đội thắng ghi ở hàng người giao pha kế tiếp.
+ *  - Game đã xong: thêm cột "Set" cuối khối — số set mỗi đội thắng tới hết game đó; đội thắng game được cộng 1 (tô xanh).
  *  - Mỗi game một khối "G1 · 19–21". Vạch nét đứt "Nghỉ" ở mốc nửa game ("Đổi sân" ở game quyết định).
  *  - ✎ = sửa người giao / BTC sửa tay; ⏳ = pha chưa lưu lên máy chủ (mất mạng). Ô mới nhất tô nhạt, tự cuộn tới.
  */
@@ -27,19 +29,24 @@ export function RallySheet({ match, state, pending = new Set<number>(), autoScro
     return <p className="rounded-2xl border border-dashed border-slate-200 p-3 text-center text-sm text-slate-500">Chưa có pha cầu nào — chọn người giao để bắt đầu biên bản.</p>;
   }
   const lastBlock = state.sheet.length - 1;
+  const sets = setTally(state.games, match.rules);
   return (
     <div className="space-y-3">
       {state.sheet.map((b, i) => (
         <Block key={`${b.game}-${i}`} match={match} block={b} index={i} latest={i === lastBlock}
-          score={state.games[b.game - 1] ?? null} pending={pending} autoScroll={autoScroll && i === lastBlock} print={print} />
+          score={state.games[b.game - 1] ?? null} pending={pending} autoScroll={autoScroll && i === lastBlock} print={print}
+          // Một game có thể có nhiều khối (chọn lại người giao sau khi BTC sửa tay) → cột Set chỉ ở khối CUỐI của game đó.
+          set={state.sheet.slice(i + 1).some((x) => x.game === b.game) ? null : sets[b.game - 1] ?? null} />
       ))}
     </div>
   );
 }
 
-function Block({ match, block, index, latest, score, pending, autoScroll, print }: {
+function Block({ match, block, index, latest, score, pending, autoScroll, print, set }: {
   match: Pick<Match, "a" | "b" | "rules">; block: SheetBlock; index: number; latest: boolean;
   score: [number, number] | null; pending: Set<number>; autoScroll: boolean; print: boolean;
+  /** Game đã xong → cột "Set" cuối khối; null khi game đang đánh. */
+  set: SetResult | null;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   const doubles = isDoublesMatch(match);
@@ -60,6 +67,7 @@ function Block({ match, block, index, latest, score, pending, autoScroll, print 
     <section aria-label={`Biên bản game ${block.game}`} className={`rounded-2xl border border-slate-200 bg-white ${print ? "break-inside-avoid" : ""}`}>
       <h4 className="flex items-center gap-2 border-b border-slate-100 px-3 py-1.5 text-sm font-bold text-slate-900">
         G{block.game}{score ? <span className="tabular">· {score[0]}–{score[1]}</span> : null}
+        {set && <span className="font-semibold text-emerald-700">· {match[set.winner]?.name ?? (set.winner === "a" ? "Đội 1" : "Đội 2")} thắng game</span>}
       </h4>
       <div ref={scroller} className={print ? "" : "overflow-x-auto"}>
         <table className="border-separate border-spacing-0 text-sm tabular">
@@ -75,6 +83,7 @@ function Block({ match, block, index, latest, score, pending, autoScroll, print 
                     : c.interval ? <span className="whitespace-nowrap text-[10px]">{deciding ? "Đổi sân" : "Nghỉ"}</span> : null}
                 </th>
               ))}
+              {set && <th scope="col" className="min-w-9 border-l-2 border-l-slate-800 px-1 text-[11px] font-bold text-slate-700" title="Số set đã thắng">Set</th>}
             </tr>
           </thead>
           <tbody>
@@ -82,18 +91,16 @@ function Block({ match, block, index, latest, score, pending, autoScroll, print 
               const teamEdge = doubles && ri === 1; // kẻ đậm ngăn 2 đội
               const isServer = block.server === slot;
               const isReceiver = block.receiver === slot;
+              const side = slot[0] as "a" | "b";
+              // Đánh đôi: số set ghi ở hàng đầu mỗi đội (a1, b1) để không lặp.
+              const setCell = Boolean(set) && slot[1] === "1";
+              const wonSet = set?.winner === side;
               return (
                 <tr key={slot} className={teamEdge ? "[&>*]:border-b-2 [&>*]:border-b-slate-800" : "[&>*]:border-b [&>*]:border-b-slate-100"}>
                   <th scope="row" className="sticky left-0 z-10 w-24 min-w-24 max-w-24 bg-white pl-2 pr-1 text-left font-medium text-slate-800">
-                    <span className="flex items-center gap-1">
-                      {/* Tên dài: cắt phía đầu, giữ phần tên cuối ("…Chí Cường"). */}
-                      <span className="min-w-0 flex-1 truncate text-xs" style={{ direction: "rtl", textAlign: "left" }} title={name(slot)}>
-                        <bdi>{name(slot)}</bdi>
-                      </span>
-                      {(isServer || isReceiver) && (
-                        <span className={`shrink-0 rounded px-1 text-[10px] font-bold ${isServer ? "bg-sky-100 text-sky-800" : "bg-slate-100 text-slate-700"}`}
-                          title={isServer ? "Giao đầu game" : "Nhận đầu game"}>{isServer ? "G" : "N"}</span>
-                      )}
+                    {/* Tên dài: cắt phía đầu, giữ phần tên cuối ("…Chí Cường"). */}
+                    <span className="block truncate text-xs" style={{ direction: "rtl", textAlign: "left" }} title={name(slot)}>
+                      <bdi>{name(slot)}</bdi>
                     </span>
                   </th>
                   <td className={`${cell} border-r border-r-slate-200 text-center font-semibold text-slate-900`}>{isServer || isReceiver ? 0 : ""}</td>
@@ -107,6 +114,12 @@ function Block({ match, block, index, latest, score, pending, autoScroll, print 
                       </td>
                     );
                   })}
+                  {set && (
+                    <td className={`min-w-9 border-l-2 border-l-slate-800 px-1 text-center ${wonSet && setCell ? "bg-emerald-100 font-extrabold text-emerald-800" : "font-semibold text-slate-700"}`}
+                      title={setCell && wonSet ? "Thắng game này: +1 set" : undefined}>
+                      {setCell ? set.tally[side === "a" ? 0 : 1] : null}
+                    </td>
+                  )}
                 </tr>
               );
             })}

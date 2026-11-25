@@ -5,6 +5,8 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Biên bản cộng set cho người thắng game**: game đã xong có thêm cột **Set** cuối khối (số set mỗi bên đã thắng tới hết game đó, bên thắng được +1, tô xanh) và tiêu đề khối ghi "… thắng game"; đầu trang Biên bản ghi **Set 1–0** kèm điểm từng game thay vì chỉ điểm. Bỏ nhãn **G** / **N** cạnh tên VĐV (người giao / nhận đầu game vẫn thấy qua số 0 ở cột đầu).
+- CI chạy các bài kiểm thử frontend, gồm tương thích API bảng đấu, để tránh tái phát lỗi “API không tồn tại”.
 - Bảng đấu và tìm VĐV tự dùng API bảng xếp hạng từng nội dung khi máy chủ chưa hỗ trợ API tổng hợp, thay vì hiện “API không tồn tại”. Vẫn ưu tiên một request trên máy chủ mới; không che lỗi quyền hoặc lỗi dữ liệu.
 - Tạm hoàn tác bản tối ưu font khi điều tra lỗi bảng đấu; phần font được áp dụng lại sau khi bổ sung tương thích API bảng xếp hạng, không thay đổi API hoặc dữ liệu.
 - Khi chọn người giao đầu tiên tự chuyển giải sang đang diễn ra, các màn hình khác cập nhật trạng thái giải ngay qua kênh trực tiếp; các điểm tiếp theo vẫn chỉ tải lại trận bị đổi.
@@ -19,7 +21,11 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 - **Gọi vào sân không còn ghi đè giờ / sân dự kiến**: trước đây bấm "Gọi vào sân" đổi giờ dự kiến thành giờ gọi (vd 18:00 → 17:27), rút về thì trận mang giờ mới và sân cũ nên bị đẩy lên đầu hàng chờ. Nay giờ gọi lưu riêng (`called_at`), sân dự kiến cất ở cột mới `planned_court`; **Rút về** trả lại đúng giờ và sân dự kiến. **Migration 009** thêm cột và sửa lại các trận đã bị ghi đè (lấy giờ / sân dự kiến từ nhật ký gọi trận).
 
 ### Changed
+- Thanh điều hướng desktop có nền trượt giữa các mục như Lịch thi đấu và Trọng tài; tắt chuyển động khi thiết bị bật chế độ giảm chuyển động.
+- Trang tổng quan quản trị dùng banner Athlonix cho tiến độ, thẻ số liệu nền sáng và lối tắt điều hành. Giữ nguyên quyền và thao tác quản lý giải.
+- Làm mới trang chủ Red Line theo bố cục Athlonix: banner chia đôi, dải sáng/tối xen kẽ, giải nổi bật, bộ lọc trạng thái và mục hỏi đáp. Giữ nền sáng cho dữ liệu thi đấu và biểu mẫu.
 - Áp dụng lại font Inter/Barlow tự phục vụ bằng WOFF2 gộp Latin/tiếng Việt, preload từ HTML và giữ độ đậm, chữ nghiêng, font dự phòng. Build không còn cần tải font từ Google; giữ nguyên bản sửa lỗi bảng đấu.
+- **Tìm VĐV nhanh hơn, bấm 1 lần ra hồ sơ VĐV**: chọn tên trong danh sách → hồ sơ gồm **mọi trận** của VĐV (không chỉ trận tới) và **bảng đấu** của họ ngay bên cạnh, giống nhau ở tab Lịch thi đấu và Bảng đấu (trước: tab Bảng đấu chỉ có trận tới). Chọn tên / gõ chữ không còn gọi lại máy chủ Next mỗi lần đổi `?q=` / `?p=` (`history.replaceState` thay `router.replace`), nên hồ sơ hiện ngay; chạm vào ô tìm là tải sẵn lịch + bảng xếp hạng. **Xoá hết chữ** trong ô tìm (không chỉ nút ✕) về ngay lịch / bảng chung.
 - **Tìm VĐV (khách) theo 2 bước** ở Lịch thi đấu và Bảng đấu: gõ tên → **chỉ hiện danh sách tên** (họ tên, CLB, nội dung) để VĐV chọn đúng mình, lịch / bảng chung tạm ẩn; bấm chọn → **chỉ còn lịch thi đấu** (giờ, sân, đối thủ, tỉ số, trận tới, bảng + hạng) **hoặc chỉ các bảng** của VĐV đó. Trước đây vừa gõ đã hiện lịch của người khớp ngay trong khung tìm, bên dưới vẫn là lịch chung của cả giải. VĐV đã chọn nằm trên URL (`?p=`) nên giữ nguyên khi chuyển tab và chia sẻ được.
 - Trang giải / TV / điều phối sân không còn tải cả lịch + bảng xếp hạng **hai lần** khi vừa mở (đổi chu kỳ làm mới lúc kênh trực tiếp nối xong từng kích hoạt tải lại); tab Bảng đấu / Loại trực tiếp không tải cả lịch khi không tìm VĐV.
 - **Trang giải tải nhanh hơn**: bảng xếp hạng mọi nội dung lấy trong **một** request `GET /tournaments/:id/standings` (trước: một request + một lần kiểm quyền cho mỗi nội dung). Chuyển qua lại Lịch thi đấu / Bảng đấu / Loại trực tiếp hiện ngay dữ liệu vừa xem rồi làm mới ngầm thay vì trang trắng chờ tải. Thanh điều hướng tải danh sách giải song song với thông tin đăng nhập và không tải lại mỗi lần chuyển trang (làm mới sau 30 giây, khi đổi tài khoản hoặc vừa tạo giải).

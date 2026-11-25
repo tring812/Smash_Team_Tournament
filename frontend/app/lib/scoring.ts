@@ -34,3 +34,17 @@ export function matchProgress(games: Game[], r: ScoringRules) {
   const winner = gamesA >= r.gamesToWin ? "a" : gamesB >= r.gamesToWin ? "b" : null;
   return { gamesA, gamesB, winner } as const;
 }
+
+/** Kết quả sau từng game: đội thắng game đó và số set mỗi đội đã thắng tính tới hết game (biên bản: đội thắng được +1). */
+export interface SetResult { winner: "a" | "b"; tally: [number, number] }
+
+/** Mỗi game một phần tử; null = game chưa xong / không hợp lệ (không cộng set cho ai). */
+export function setTally(games: Game[], r: ScoringRules): (SetResult | null)[] {
+  const tally: [number, number] = [0, 0];
+  return games.map((g) => {
+    const s = gameState(g, r);
+    if (s !== "a" && s !== "b") return null;
+    tally[s === "a" ? 0 : 1] += 1;
+    return { winner: s, tally: [tally[0], tally[1]] };
+  });
+}

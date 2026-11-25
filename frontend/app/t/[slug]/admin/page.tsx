@@ -7,7 +7,7 @@ import { api, fmtTime } from "../../../lib/api";
 import { adminOverview } from "../../../lib/adminOverview";
 import { usePoll } from "../../../lib/usePoll";
 import type { Match, TournamentEvent } from "../../../lib/types";
-import { Card, CardSkeleton, EmptyState, Notice, PageHeader, Select } from "../../../components/ui";
+import { Card, CardSkeleton, EmptyState, Notice, Select } from "../../../components/ui";
 import { StatusBadge, matchTitle } from "../../../components/MatchViews";
 import { ACTION_LABEL, STAGE_LABEL, describeEvent, useAdmin } from "./AdminContext";
 import { DangerZone, TournamentInfoCard } from "./TournamentSettings";
@@ -29,33 +29,54 @@ export default function AdminOverview() {
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Trung tâm điều hành" title="Tổng quan giải đấu"
-        desc={`${fmtTime(t.starts_at)} · ${t.venue || "Chưa có địa điểm"}`}
-        actions={<Link href={`${base}/courts`} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-bold text-white hover:bg-primary-hover"><MonitorPlay className="h-4 w-4" aria-hidden />Điều phối sân<ArrowUpRight className="h-4 w-4" aria-hidden /></Link>} />
-
       {matches.error && <Notice kind="error">Không tải được trạng thái trận: {matches.error}</Notice>}
 
-      <section aria-label="Thống kê điều hành" className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        {statItems.map(({ icon: Icon, label, value, note, tone }) => (
-          <div key={label} className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-            <div className="flex items-start justify-between gap-2"><p className="min-w-0 text-xs font-semibold text-slate-600 sm:text-sm">{label}</p><span className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg sm:h-8 sm:w-8 ${tone}`}><Icon className="h-4 w-4" aria-hidden /></span></div>
-            <p className="mt-3 font-display text-4xl font-bold tabular-nums leading-none text-slate-900 sm:text-5xl">{value}</p>
-            <p className="mt-2 text-xs leading-5 text-slate-500">{note}</p>
+      <section aria-labelledby="overview-h" className="athlonix-admin-banner theme-fixed grid items-center gap-5 rounded-[.875rem] p-4 text-white sm:p-7 md:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] lg:gap-7 xl:p-8">
+        <div className="min-w-0">
+          <p className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[.12em] text-red-200">
+            <span aria-hidden className="size-1.5 shrink-0 bg-primary" /> Trung tâm điều hành
+          </p>
+          <h1 id="overview-h" className="athlonix-title text-balance text-[clamp(2.375rem,5vw,4rem)]">
+            Tổng quan <span className="text-red-400">giải đấu.</span>
+          </h1>
+          <p className="mt-3 flex items-start gap-2 text-sm leading-6 text-neutral-200">
+            <CalendarClock className="mt-1 size-4 shrink-0 text-red-300" aria-hidden />
+            <span>{fmtTime(t.starts_at)} · {t.venue || "Chưa có địa điểm"}</span>
+          </p>
+          <Link href={`${base}/courts`} className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-md border border-white bg-white px-4 text-xs font-bold uppercase tracking-wide text-secondary transition-colors hover:bg-slate-200">
+            <MonitorPlay className="size-4 shrink-0" aria-hidden />Điều phối sân<ArrowUpRight className="size-4 shrink-0" aria-hidden />
+          </Link>
+        </div>
+        <div className="min-w-0 rounded-xl border border-white/15 bg-black/30 p-4 sm:p-5">
+          <h2 id="progress-h" className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-neutral-200"><Flag className="size-4 shrink-0 text-red-300" aria-hidden />Tiến độ giải đấu</h2>
+          <p className="athlonix-title mt-3 text-5xl tabular-nums sm:text-6xl">{matches.data ? `${summary.progress}%` : "—"}</p>
+          <div role="progressbar" aria-labelledby="progress-h" aria-valuemin={0} aria-valuemax={100} aria-valuenow={matches.data ? summary.progress : undefined} className="mt-3 h-2 overflow-hidden rounded-full bg-white/15">
+            <div className="h-full rounded-full bg-red-500 transition-[width] motion-reduce:transition-none" style={{ width: `${summary.progress}%` }} />
           </div>
-        ))}
+          <p className="mt-3 text-xs leading-5 text-neutral-300">{!matches.data ? "Đang tải tiến độ…" : summary.total ? `${summary.finished} / ${summary.total} trận đã kết thúc · Cập nhật mỗi 15 giây` : "Chưa có trận đấu. Bắt đầu bằng việc thêm đội và bốc thăm."}</p>
+        </div>
       </section>
 
-      <section aria-labelledby="progress-h" className="theme-fixed redline-panel grid gap-6 rounded-xl p-5 text-white sm:p-6 xl:grid-cols-[1fr_auto] xl:items-center">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center justify-between gap-3"><h2 id="progress-h" className="flex items-center gap-2 text-sm font-bold"><Flag className="h-4 w-4 text-red-400" aria-hidden />Tiến độ giải đấu</h2><span className="font-display text-3xl font-bold tabular-nums">{matches.data ? `${summary.progress}%` : "—"}</span></div>
-          <div role="progressbar" aria-label="Tiến độ hoàn thành trận đấu" aria-valuemin={0} aria-valuemax={100} aria-valuenow={matches.data ? summary.progress : undefined} className="mt-3 h-2 overflow-hidden rounded-full bg-white/15"><div className="h-full rounded-full bg-red-500 transition-[width] motion-reduce:transition-none" style={{ width: `${summary.progress}%` }} /></div>
-          <p className="mt-3 text-xs leading-5 text-neutral-300">{!matches.data ? "Đang tải tiến độ…" : summary.total ? `${summary.finished} / ${summary.total} trận đã kết thúc · Cập nhật trạng thái mỗi 15 giây` : "Chưa có trận đấu. Bắt đầu bằng việc thêm đội và bốc thăm."}</p>
+      <section aria-labelledby="stats-h">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 id="stats-h" className="athlonix-title text-2xl">Thống kê điều hành</h2>
+          <nav aria-label="Thao tác nhanh" className="flex flex-wrap gap-1.5">
+            <Link href={`${base}/categories`} className="inline-flex min-h-11 items-center gap-1.5 rounded-md border border-slate-300 px-2.5 text-xs font-semibold hover:border-slate-700 hover:bg-white"><Layers className="size-4 shrink-0" aria-hidden />Nội dung & VĐV</Link>
+            <Link href={`${base}/schedule`} className="inline-flex min-h-11 items-center gap-1.5 rounded-md border border-slate-300 px-2.5 text-xs font-semibold hover:border-slate-700 hover:bg-white"><CalendarClock className="size-4 shrink-0" aria-hidden />Xếp lịch</Link>
+            <Link href={`/t/${slug}/tv`} target="_blank" rel="noopener" className="inline-flex min-h-11 items-center gap-1.5 rounded-md border border-slate-300 px-2.5 text-xs font-semibold hover:border-slate-700 hover:bg-white"><MonitorPlay className="size-4 shrink-0" aria-hidden />Màn hình TV<ArrowUpRight className="size-3 shrink-0" aria-hidden /></Link>
+          </nav>
         </div>
-        <nav aria-label="Thao tác nhanh" className="flex flex-wrap gap-2 xl:border-l xl:border-white/15 xl:pl-6">
-          <Link href={`${base}/categories`} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-white/20 px-3 text-xs font-semibold hover:bg-white/10"><Layers className="h-4 w-4" aria-hidden />Nội dung & VĐV</Link>
-          <Link href={`${base}/schedule`} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-white/20 px-3 text-xs font-semibold hover:bg-white/10"><CalendarClock className="h-4 w-4" aria-hidden />Xếp lịch</Link>
-          <Link href={`/t/${slug}/tv`} target="_blank" rel="noopener" className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-white/20 px-3 text-xs font-semibold hover:bg-white/10"><MonitorPlay className="h-4 w-4" aria-hidden />Màn hình TV<ArrowUpRight className="h-3 w-3" aria-hidden /></Link>
-        </nav>
+        <dl className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+          {statItems.map(({ icon: Icon, label, value, note, tone }) => (
+            <div key={label} className="min-w-0 rounded-xl border border-slate-200 bg-white p-3.5 sm:p-5">
+              <dt className="flex items-center gap-2 text-xs font-semibold text-slate-700 sm:text-sm">
+                <span className={`grid size-7 shrink-0 place-items-center rounded-md sm:size-8 ${tone}`}><Icon className="size-4" aria-hidden /></span>{label}
+              </dt>
+              <dd className="athlonix-title mt-3 text-4xl tabular-nums sm:text-5xl">{value}</dd>
+              <dd className="mt-2 text-xs leading-5 text-slate-600">{note}</dd>
+            </div>
+          ))}
+        </dl>
       </section>
 
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
