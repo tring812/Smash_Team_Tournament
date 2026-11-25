@@ -323,9 +323,9 @@ Chạy domain, cấu hình, service và HTTP end-to-end trên **PGlite** — kh�
 cd backend && TEST_PG_HOST=localhost TEST_PG_PORT=5433 TEST_PG_DB=tournament_test npm test
 ```
 
-`TEST_PG_DB` phải chứa chữ `test` (DB bị xoá sạch). Frontend: `npm run typecheck`, `npm run lint`, `npm run build`. CI (`.github/workflows/ci.yml`) chạy các bước trên cho cả hai phía cùng `npm audit`.
+`TEST_PG_DB` phải chứa chữ `test` (DB bị xoá sạch). Frontend: `npm test`, `npm run typecheck`, `npm run lint`, `npm run build`. CI (`.github/workflows/ci.yml`) chạy các bước trên cho cả hai phía cùng `npm audit`.
 
-Test quy tắc ghi điểm / xác nhận kết quả, thành phần Red Line, thống kê admin, cơ chế tải dữ liệu và tương thích API bảng đấu (dùng TypeScript đã cài, không thêm thư viện): chạy `node --test test/matchControls.test.mjs test/redLineUi.test.mjs test/adminOverview.test.mjs test/performance.test.mjs test/usePoll.test.mjs test/standingsLoader.test.mjs test/standingsHub.test.mjs` từ thư mục `frontend`.
+Chạy `npm test` từ thư mục `frontend` để kiểm tra quy tắc ghi điểm / xác nhận kết quả, thành phần Red Line, thống kê admin, cơ chế tải dữ liệu và tương thích API bảng đấu. Lệnh tự tìm các bài kiểm thử bằng `node --test`, dùng TypeScript đã cài và không thêm thư viện.
 
 <sub>[↑ Back to contents](#contents)</sub>
 

@@ -5,6 +5,7 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- CI chạy các bài kiểm thử frontend, gồm tương thích API bảng đấu, để tránh tái phát lỗi “API không tồn tại”.
 - Bảng đấu và tìm VĐV tự dùng API bảng xếp hạng từng nội dung khi máy chủ chưa hỗ trợ API tổng hợp, thay vì hiện “API không tồn tại”. Vẫn ưu tiên một request trên máy chủ mới; không che lỗi quyền hoặc lỗi dữ liệu.
 - Hoàn tác bản tối ưu font: khôi phục cấu hình Inter/Barlow qua `next/font/google` như trước đợt thay đổi font. Giữ nguyên API, dữ liệu và các cải tiến Red Line khác; cần kiểm tra lại lỗi bảng đấu trên môi trường triển khai.
 - Khi chọn người giao đầu tiên tự chuyển giải sang đang diễn ra, các màn hình khác cập nhật trạng thái giải ngay qua kênh trực tiếp; các điểm tiếp theo vẫn chỉ tải lại trận bị đổi.
