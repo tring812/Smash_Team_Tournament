@@ -1,27 +1,42 @@
 @import "tailwindcss";
 
-/* Cấu trúc UI giống web CLB (smashteam-badminton): nền trắng/slate, thẻ bo tròn, nút đen dạng viên thuốc,
-   sidebar quản trị nền đen. Màu thương hiệu Smash Open Cup: ĐỎ (#DC2626, chữ trắng đạt AA 4.8:1) + ĐEN. */
+/* Red Line: đỏ tín hiệu, đen than, trắng; đường kẻ và ca-rô gợi vạch xuất phát.
+   Vùng thao tác giữ nền sáng; các vùng tối được đánh dấu .theme-fixed. */
 @theme {
   --color-primary: #dc2626;
   --color-primary-hover: #b91c1c;
   --color-secondary: #0a0a0a;
-  --color-background: #f8fafc;
+  --color-background: #f5f4f1;
   --color-foreground: #0a0a0a;
 
   /* Token ngữ nghĩa dùng chung (trang trọng tài, MatchViews…). */
-  --color-bg: #f8fafc;
+  --color-bg: #f5f4f1;
   --color-surface: #ffffff;
-  --color-surface-2: #f1f5f9;
+  --color-surface-2: #efeeeb;
   --color-fg: #0a0a0a;
-  --color-muted: #64748b;
-  --color-line: #cbd5e1;
-  --color-line-soft: #f1f5f9;
+  --color-muted: #626262;
+  --color-line: #d4d3cf;
+  --color-line-soft: #efeeeb;
   --color-on-primary: #ffffff;
   --color-accent: #b91c1c;
   --color-live: #dc2626;
   --color-success: #047857;
   --color-warn: #b45309;
+
+  /* Trung tính thay cho xanh slate trên toàn bộ bảng, biểu mẫu và menu. */
+  --color-slate-50: #fafaf9;
+  --color-slate-100: #efeeeb;
+  --color-slate-200: #deddd9;
+  --color-slate-300: #c9c8c3;
+  --color-slate-400: #a3a39e;
+  --color-slate-500: #686863;
+  --color-slate-600: #53534f;
+  --color-slate-700: #3b3b38;
+  --color-slate-800: #262624;
+  --color-slate-900: #171716;
+  --radius-xl: 0.5rem;
+  --radius-2xl: 0.75rem;
+  --radius-3xl: 1rem;
 
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-barlow), var(--font-inter), sans-serif;
@@ -34,7 +49,7 @@
 }
 
 :root {
-  --background: #f8fafc;
+  --background: #f5f4f1;
   --foreground: #0a0a0a;
   color-scheme: light;
 }
@@ -43,6 +58,54 @@ body {
   background-color: var(--background);
   color: var(--foreground);
 }
+
+::selection { background: #dc2626; color: #fff; }
+
+/* Chi tiết nhận diện chỉ trang trí, không dùng thay nhãn trạng thái. */
+.redline-checker {
+  background-image: conic-gradient(currentColor 25%, transparent 0 50%, currentColor 0 75%, transparent 0);
+  background-size: 16px 16px;
+}
+.redline-panel {
+  background: radial-gradient(ellipse at 90% 100%, #60201b 0, transparent 55%), #111110;
+}
+.redline-kicker {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  font-size: 0.6875rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.redline-kicker::before {
+  content: "";
+  width: 1.5rem;
+  height: 3px;
+  background: #dc2626;
+  flex-shrink: 0;
+}
+.redline-card { border-top: 3px solid #171716; }
+.redline-card:hover { border-top-color: #dc2626; }
+.redline-page-header { border-left: 4px solid #dc2626; padding-left: 1.25rem; }
+.redline-table thead { background: #efeeeb; }
+.redline-table tbody tr:hover { background-color: #fafaf9; }
+.redline-score { border-top: 4px solid #171716; }
+.redline-score[data-serving="true"] { border-color: #dc2626; box-shadow: inset 0 0 0 1px #dc2626; }
+.redline-score:not(:disabled):hover { background: #fafaf9; }
+.redline-hero-title { font-size: clamp(2.75rem, 6.5vw, 5.5rem); line-height: 1; letter-spacing: -0.025em; }
+
+/* Minh hoạ vạch xuất phát không cần ảnh từ máy chủ bên ngoài. */
+.redline-court-art { filter: drop-shadow(0 24px 36px #0008); }
+
+/* Khu điều hành ưu tiên mật độ thông tin thay vì tiêu đề lớn kiểu trang giới thiệu. */
+.admin-workspace .redline-page-header { padding-left: 1rem; }
+.admin-workspace .redline-page-header h1 { font-size: clamp(1.75rem, 3vw, 2.5rem); line-height: 1.1; }
+.admin-workspace .redline-page-header p { font-size: 0.8125rem; line-height: 1.6; }
+.admin-workspace .redline-page-header .redline-kicker { font-size: 0.625rem; }
+.admin-workspace .redline-card { border-top-width: 1px; }
+.admin-workspace .redline-card h2 { font-family: var(--font-sans); font-size: 0.9375rem; font-style: normal; text-transform: none; letter-spacing: -0.015em; }
+.admin-workspace summary::-webkit-details-marker { display: none; }
 
 :focus-visible { outline: 3px solid #dc2626; outline-offset: 2px; border-radius: 8px; }
 

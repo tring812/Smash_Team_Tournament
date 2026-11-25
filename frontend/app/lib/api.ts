@@ -2,6 +2,9 @@
  * Client gọi API cùng origin (Next rewrites /api → backend). Cookie phiên httpOnly tự gửi kèm;
  * không có token nào nằm trong JS/localStorage.
  */
+import { createSharedRead } from "./sharedRead";
+
+const sharedReads = createSharedRead();
 
 export class ApiError extends Error {
   constructor(
@@ -16,6 +19,19 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, init: { method?: string; body?: unknown; signal?: AbortSignal } = {}): Promise<T> {
+  const method = (init.method ?? "GET").toUpperCase();
+  if (method === "GET") {
+    // Không gộp request phía máy chủ: dữ liệu của hai phiên không được chia sẻ qua bộ nhớ server.
+    if (typeof window === "undefined" || init.body !== undefined) return request<T>(path, init);
+    return sharedReads.read(path, (signal) => request<T>(path, { ...init, signal }), init.signal);
+  }
+  // Không dùng lại GET đã bắt đầu trước hoặc trong thao tác ghi/đổi phiên đăng nhập.
+  sharedReads.clear();
+  try { return await request<T>(path, init); }
+  finally { sharedReads.clear(); }
+}
+
+async function request<T>(path: string, init: { method?: string; body?: unknown; signal?: AbortSignal }): Promise<T> {
   const res = await fetch(`/api${path}`, {
     method: init.method ?? "GET",
     credentials: "same-origin",

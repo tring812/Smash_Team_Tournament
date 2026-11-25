@@ -38,6 +38,7 @@ export default function CourtsPage() {
   const [pickFor, setPickFor] = useState<number | null>(null);
   const [pickErr, setPickErr] = useState<string | null>(null);
   const [moving, setMoving] = useState<Match | null>(null);
+  const [courtFilter, setCourtFilter] = useState<"all" | "free" | "live" | "called">("all");
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const i = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(i); }, []);
 
@@ -76,6 +77,8 @@ export default function CourtsPage() {
   const uncall = (m: Match, court: number) =>
     act(() => api(`/matches/${m.id}/uncall`, { method: "POST" }), `Đã rút trận khỏi sân ${court}`, boardOnly);
   const busyCourts = (b?.courts ?? []).filter((c) => c.current).map((c) => c.court);
+  const courtState = (m: Match | null) => !m ? "free" : m.status === "live" ? "live" : "called";
+  const filteredCourts = (b?.courts ?? []).filter((c) => courtFilter === "all" || courtState(c.current) === courtFilter);
 
   return (
     <div className="space-y-6">
@@ -86,14 +89,24 @@ export default function CourtsPage() {
       {board.error && <p role="alert" className="text-red-700">{board.error}</p>}
       {!b ? <CardSkeleton rows={4} /> : (
         <>
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3">
+            <div role="group" aria-label="Lọc sân theo trạng thái" className="flex flex-wrap gap-1">
+              {([{ id: "all", label: "Tất cả" }, { id: "free", label: "Sân trống" }, { id: "live", label: "Đang đánh" }, { id: "called", label: "Đã gọi" }] as const).map(({ id, label }) => {
+                const count = id === "all" ? b.courts.length : b.courts.filter((c) => courtState(c.current) === id).length;
+                return <button key={id} type="button" aria-pressed={courtFilter === id} onClick={() => setCourtFilter(id)} className={`inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-lg px-3 text-xs font-bold transition-colors ${courtFilter === id ? "bg-black text-white" : "text-slate-600 hover:bg-slate-100"}`}>{label}<span className={`rounded px-1.5 py-0.5 tabular-nums ${courtFilter === id ? "bg-white/15" : "bg-slate-100"}`}>{count}</span></button>;
+              })}
+            </div>
+            <p className="flex items-center gap-1.5 px-2 text-xs text-slate-500"><span aria-hidden className={`h-1.5 w-1.5 rounded-full ${live ? "bg-emerald-600" : "bg-slate-400"}`} />{live ? "Đang nhận cập nhật trực tiếp" : "Tự cập nhật mỗi 5 giây"}</p>
+          </div>
+          {!filteredCourts.length && <EmptyState title="Không có sân ở trạng thái này" desc="Chọn bộ lọc khác để xem các sân còn lại." />}
           <section aria-label="Các sân" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {b.courts.map((c) => {
+            {filteredCourts.map((c) => {
               const m = c.current;
               const sug = c.suggestionId ? byId.get(c.suggestionId) : undefined;
               const state = !m ? "free" : m.status === "live" ? "live" : "called";
               return (
                 <article key={c.court} aria-labelledby={`court-${c.court}`}
-                  className={`flex flex-col rounded-3xl border bg-white p-4 shadow-sm ${state === "live" ? "border-red-300 ring-2 ring-red-100" : state === "called" ? "border-amber-300 ring-2 ring-amber-100" : "border-slate-100"}`}>
+                  className={`flex min-w-0 flex-col rounded-xl border border-t-[3px] bg-white p-4 shadow-sm ${state === "live" ? "border-slate-200 border-t-primary" : state === "called" ? "border-slate-200 border-t-amber-500" : "border-slate-200 border-t-emerald-600"}`}>
                   <header className="mb-3 flex items-center justify-between gap-2">
                     <h2 id={`court-${c.court}`} className="headline flex items-center gap-2 text-2xl">
                       <MapPin className="h-5 w-5 text-primary" aria-hidden />Sân {c.court}

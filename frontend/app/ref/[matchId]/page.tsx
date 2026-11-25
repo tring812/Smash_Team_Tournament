@@ -8,7 +8,7 @@ import { api, ApiError } from "../../lib/api";
 import { gameState, matchProgress } from "../../lib/scoring";
 import { reminderAfterPoint, serviceCourt, type Reminder } from "../../lib/serve";
 import { emptyState, otherSide, replay, sideOf, slotName, type RallyInput, type RallyState, type Side } from "../../lib/rally";
-import type { Game, Match, Rally, Slot, StartMatchInput } from "../../lib/types";
+import type { Game, Match, Rally, Slot } from "../../lib/types";
 import { matchControls } from "../../lib/matchControls";
 import { Button } from "../../components/ui";
 import { matchTitle, StatusBadge } from "../../components/MatchViews";
@@ -178,7 +178,7 @@ export default function ScoringPage() {
       if (!saved) return;
       const last = m.rallies[m.rallies.length - 1]?.seq ?? 0;
       const closed = ["finished", "walkover", "bye", "cancelled"].includes(m.status) || m.tournamentStatus === "completed";
-      if (closed || m.status !== "live" || saved.serverSeq !== last) {
+      if (closed || saved.serverSeq !== last) {
         writeQueue(matchId, [], 0);
         if (!closed) setMessage("Biên bản trên máy chủ đã thay đổi từ thiết bị khác — đã bỏ các pha chưa gửi trên máy này.");
         return;
@@ -216,7 +216,7 @@ export default function ScoringPage() {
   const controls = matchControls(match, games, ops.length, actionBusy, sync);
   const closed = controls.closed;
   const locked = match.tournamentStatus === "completed";
-  const ready = controls.started;
+  const ready = controls.ready;
   const canScore = controls.canScore;
   const last = games[games.length - 1];
   // Đang đánh: game hiện tại; đã xong (kể cả sau khi xác nhận): tỉ số game cuối — không về 0–0.
@@ -269,26 +269,6 @@ export default function ScoringPage() {
     void flush();
   }
 
-  async function start() {
-    if (!match || !controls.canStart || actionLock.current) return;
-    actionLock.current = true;
-    setActionBusy(true);
-    setMessage(null);
-    try {
-      const body: StartMatchInput = { version: match.version };
-      adopt(await api<MatchWithRallies>(`/matches/${matchId}/start`, { method: "POST", body }));
-      setSync("saved");
-      setMessage("Đã bắt đầu trận — sân và VĐV đã được nhận cho trận này.");
-    } catch (e) {
-      setMessage((e as Error).message);
-      setSync("error");
-      try { await reload(); } catch { /* giữ thông báo và thử lại khi có mạng */ }
-    } finally {
-      actionLock.current = false;
-      setActionBusy(false);
-    }
-  }
-
   async function finish(action: "finish" | "walkover", walkoverWinner?: "a" | "b") {
     if (locked || closed || !match || actionLock.current || (action === "finish" && !controls.canFinish)) return;
     actionLock.current = true;
@@ -331,9 +311,9 @@ export default function ScoringPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm">
+      <div className="theme-fixed mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border-t-4 border-primary bg-secondary p-4 text-sm text-white">
         <Link href="/ref" className="min-h-11 content-center font-semibold underline-offset-4 hover:underline">← Hàng đợi</Link>
-        <span className="text-muted">{matchTitle(match)}{match.court ? ` · Sân ${match.court}` : ""} · <span className="font-semibold">{rulesLine(rules)}</span></span>
+        <span className="text-neutral-300">{matchTitle(match)}{match.court ? ` · Sân ${match.court}` : ""} · <span className="font-semibold">{rulesLine(rules)}</span></span>
         <StatusBadge status={match.status} called={Boolean(match.calledAt)} />
       </div>
 
@@ -344,18 +324,6 @@ export default function ScoringPage() {
       {locked && (
         <div role="status" className="mb-3 rounded-2xl border-2 border-slate-300 bg-slate-100 p-3 text-center font-bold text-slate-800">
           Giải đã kết thúc — khoá nhập điểm
-        </div>
-      )}
-
-      {!closed && !locked && !ready && (
-        <div className="mb-3 rounded-2xl border-2 border-sky-500 bg-sky-50 p-4 text-center text-slate-900">
-          <p className="font-bold">Chưa bắt đầu trận</p>
-          <p className="mt-1 text-sm">{match.court
-            ? `Bắt đầu trên sân ${match.court}. Hệ thống sẽ kiểm tra sân và tất cả VĐV trước khi mở ghi điểm.`
-            : "Trận chưa có sân — liên hệ BTC để gán sân trước khi bắt đầu."}</p>
-          <Button variant="primary" className="mt-3" disabled={!controls.canStart} loading={actionBusy} onClick={() => void start()}>
-            Bắt đầu trận
-          </Button>
         </div>
       )}
 
@@ -375,7 +343,8 @@ export default function ScoringPage() {
           return (
             <button key={s} type="button" disabled={!canScore || pickerShown} onClick={() => point(s)}
               aria-label={`Cộng 1 điểm cho ${team?.name ?? s}`}
-              className="flex min-h-[42dvh] flex-col items-center justify-between rounded-3xl border-2 border-line bg-surface p-4 text-center active:bg-surface-2 disabled:opacity-60">
+              data-serving={serving}
+              className="redline-score flex min-h-[42dvh] min-w-0 flex-col items-center justify-between rounded-xl border-2 border-line bg-surface p-4 text-center active:bg-surface-2 disabled:opacity-60">
               <span className="w-full truncate text-base font-extrabold sm:text-lg">{team?.name ?? "—"}</span>
               {serving && state.server ? (
                 <span className="max-w-full truncate rounded-full bg-sky-700 px-3 py-1 text-sm font-bold text-white">
@@ -384,7 +353,7 @@ export default function ScoringPage() {
               ) : receiving && state.receiver ? (
                 <span className="max-w-full truncate rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">Nhận · {name(state.receiver)}</span>
               ) : <span className="h-7" aria-hidden />}
-              <span className="tabular text-8xl font-extrabold leading-none sm:text-9xl">{pts}</span>
+              <span className="tabular font-display text-8xl font-extrabold italic leading-none sm:text-9xl">{pts}</span>
               <span className="text-sm text-muted">Game thắng: <strong className="text-fg">{gw}</strong></span>
             </button>
           );
@@ -444,14 +413,14 @@ export default function ScoringPage() {
         {sheetOpen && <div id="sheet-body" className="mt-1"><RallySheet match={match} state={state} pending={pending} /></div>}
       </section>
 
-      {ready && (
+      {prog.winner && ready && (
         <div className="mt-4 rounded-2xl border-2 border-success p-4 text-center">
           <p className="font-semibold">{prog.winner
-            ? `${match[prog.winner]?.name} thắng ${prog.gamesA}-${prog.gamesB}. Hoàn thành để cập nhật bảng/nhánh và giải phóng sân.`
+            ? `${match[prog.winner]?.name} thắng ${prog.gamesA}-${prog.gamesB}. Xác nhận để cập nhật bảng/nhánh và giải phóng sân.`
             : "Nhập đủ tỉ số hợp lệ và lưu hết các pha cầu để hoàn thành trận."}</p>
           {ops.length > 0 && <p className="mt-1 text-sm text-amber-700">Còn {ops.length} thao tác chưa lưu — chưa thể hoàn thành.</p>}
           <Button variant="primary" onClick={() => void finish("finish")} disabled={!controls.canFinish} loading={actionBusy} className="mt-3 min-h-12">
-            Hoàn thành trận
+            Xác nhận kết quả
           </Button>
         </div>
       )}
