@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowUpRight, CalendarClock, GitBranch, LayoutGrid, MapPin, MonitorPlay, RefreshCw, Search, X } from "lucide-react";
@@ -9,13 +10,16 @@ import { usePoll } from "../../lib/usePoll";
 import { useLive } from "../../lib/useLive";
 import type { Bracket, Category, GroupStanding, Match, StandingRow, Tournament } from "../../lib/types";
 import { MatchCard, StandingsTables } from "../../components/MatchViews";
-import { PlayerResults } from "../../components/PlayerResults";
 import { findPeople, hasDiacritics, involves, makeMatcher, peopleOf } from "../../lib/playerSearch";
-import { BracketExplorer, BracketViewToggle, type BracketView } from "../../components/BracketExplorer";
+import type { BracketView } from "../../components/BracketExplorer";
 import {
   AllMatchesTable, CourtView, ScheduleViewToggle, SCHEDULE_VIEWS, TimeView, dayKey, dayLabel, type ScheduleView,
 } from "../../components/ScheduleViews";
 import { CardSkeleton, EmptyState, PageHeader, textInputClass } from "../../components/ui";
+
+const BracketExplorer = dynamic(() => import("../../components/BracketExplorer").then((m) => m.BracketExplorer), { loading: () => <CardSkeleton rows={3} /> });
+const BracketViewToggle = dynamic(() => import("../../components/BracketExplorer").then((m) => m.BracketViewToggle));
+const PlayerResults = dynamic(() => import("../../components/PlayerResults").then((m) => m.PlayerResults), { loading: () => <CardSkeleton rows={2} /> });
 
 export type HubTab = "schedule" | "groups" | "bracket";
 
@@ -141,7 +145,11 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Giải cầu lông mở rộng" title={t.data.name}
+      <div className="theme-fixed flex items-center justify-between gap-4 rounded-lg bg-secondary px-5 py-3 text-white">
+        <p className="redline-kicker">Red Line · Sẵn sàng vào sân</p>
+        <span aria-hidden className="redline-checker h-4 w-16 shrink-0 text-white/50" />
+      </div>
+      <PageHeader eyebrow="Giải cầu lông Smash Team" title={t.data.name}
         desc={<span className="flex flex-wrap gap-x-4 gap-y-1">
           <span className="inline-flex items-center gap-1.5"><MapPin className="w-4 h-4" aria-hidden />{t.data.venue || "Chưa có địa điểm"}</span>
           <span className="inline-flex items-center gap-1.5"><CalendarClock className="w-4 h-4" aria-hidden />{fmtTime(t.data.starts_at)}</span>
@@ -160,10 +168,10 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
           )}
         </div>} />
 
-      <nav aria-label="Phần của giải" className="flex gap-1 overflow-x-auto rounded-full bg-slate-100 p-1 w-fit max-w-full">
+      <nav aria-label="Phần của giải" className="flex gap-1 overflow-x-auto rounded-lg border border-slate-200 bg-white p-1 w-fit max-w-full">
         {TABS.map(({ id, label, icon: Icon }) => (
           <Link key={id} href={tabHref(id)} aria-current={tab === id ? "page" : undefined} scroll={false}
-            className={`flex min-h-11 items-center gap-2 whitespace-nowrap rounded-full px-4 text-sm font-bold transition-colors ${tab === id ? "bg-black text-white shadow" : "text-slate-600 hover:text-black"}`}>
+            className={`flex min-h-11 items-center gap-2 whitespace-nowrap rounded-md border-b-2 px-4 text-sm font-bold transition-colors ${tab === id ? "border-primary bg-black text-white" : "border-transparent text-slate-600 hover:bg-slate-100 hover:text-black"}`}>
             <Icon className="w-4 h-4" aria-hidden />{label}
           </Link>
         ))}

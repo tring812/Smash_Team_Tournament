@@ -1,14 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowLeftRight, GitBranch, Pencil, Plus, RotateCcw, Shuffle, Trash2, UserX, Users } from "lucide-react";
+import dynamic from "next/dynamic";
+import { ArrowLeftRight, ChevronDown, FileSpreadsheet, GitBranch, Pencil, Plus, RotateCcw, Shuffle, Trash2, UserX, Users } from "lucide-react";
 import { api } from "../../../../lib/api";
 import { usePoll } from "../../../../lib/usePoll";
 import type { Category, Entry, Match } from "../../../../lib/types";
 import { Button, Card, DqBadge, EmptyState, Field, Modal, PageHeader, Select, textInputClass } from "../../../../components/ui";
 import { STAGE_LABEL, useAdmin } from "../AdminContext";
-import { ExcelPanel } from "./ExcelPanel";
 import { RoundRulesCard } from "./RoundRulesCard";
+
+const ExcelPanel = dynamic(() => import("./ExcelPanel").then((m) => m.ExcelPanel), {
+  loading: () => <p role="status" className="p-4 text-sm text-slate-500">Đang tải công cụ Excel…</p>,
+});
 
 const PRESETS = {
   bwf: { label: "21 điểm, trần 30 (BWF)", pointsToWin: 21, maxPoints: 30 },
@@ -39,6 +43,8 @@ function parseEntries(text: string, doubles: boolean) {
 export default function CategoriesPage() {
   const { t, version, busy, act } = useAdmin();
   const [catId, setCatId] = useState("");
+  const [excelOpen, setExcelOpen] = useState(false);
+  const [excelLoaded, setExcelLoaded] = useState(false);
   // Nội dung đang chọn bị xoá → tự quay về nội dung đầu tiên.
   const cat = t.categories.find((c) => c.id === catId) ?? t.categories[0];
   const cid = cat?.id ?? "";
@@ -64,7 +70,12 @@ export default function CategoriesPage() {
       <PageHeader eyebrow="Quản lý giải" title="Nội dung & VĐV" desc="Thêm nội dung, nhập danh sách đăng ký, bốc thăm ngẫu nhiên và điều hành đội."
         actions={<Button onClick={() => setAddOpen(true)}><Plus className="w-4 h-4" aria-hidden />Thêm nội dung</Button>} />
 
-      <ExcelPanel current={cat} />
+      <section className="rounded-xl border border-slate-200 bg-white">
+        <button type="button" aria-expanded={excelOpen} aria-controls="excel-tools" onClick={() => { setExcelLoaded(true); setExcelOpen((v) => !v); }} className="flex min-h-14 w-full cursor-pointer items-center gap-3 px-4 py-3 text-left text-sm font-bold text-slate-800">
+          <FileSpreadsheet className="h-5 w-5 shrink-0 text-primary" aria-hidden /><span className="flex-1">Nhập / xuất Excel</span><ChevronDown className={`h-4 w-4 transition-transform ${excelOpen ? "rotate-180" : ""}`} aria-hidden />
+        </button>
+        <div id="excel-tools" hidden={!excelOpen}>{excelLoaded && <ExcelPanel current={cat} />}</div>
+      </section>
 
       {t.categories.length === 0 ? (
         <Card><EmptyState icon={<Users className="w-10 h-10" />} title="Chưa có nội dung thi đấu" desc="Tạo nội dung đầu tiên, ví dụ Đơn nam (MS) hoặc Đôi nam nữ (XD)."
