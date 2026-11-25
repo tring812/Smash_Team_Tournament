@@ -4,6 +4,7 @@
  * Gắn thẳng vào router `/api` của app.js (cùng thứ tự, cùng middleware) — chỉ tách file, không đổi hành vi.
  */
 const users = require('../services/userService');
+const referees = require('../services/refereeService');
 const auth = require('../auth');
 const { schemas } = require('../schemas');
 const { HttpError } = require('../errors');
@@ -56,8 +57,8 @@ module.exports = function registerAuthRoutes(api, { pool, config, id, me }) {
     res.json(await users.listUsers(pool, schemas.userList.parse(req.query)));
   });
   api.post('/admin/users', auth.requireAdmin, async (req, res) => {
-    const u = await users.createUser(pool, schemas.createUser.parse(req.body));
-    log('info', 'user_created', { request_id: req.id, user_id: u.id, by: me(req).id, role: u.role });
+    const u = await referees.createAccount(pool, me(req), schemas.createUser.parse(req.body));
+    log('info', 'user_created', { request_id: req.id, user_id: u.id, by: me(req).id, role: u.role, referee_of: u.refereeTournamentIds.length });
     res.status(201).json(u);
   });
   api.patch('/admin/users/:id', auth.requireAdmin, async (req, res) => {

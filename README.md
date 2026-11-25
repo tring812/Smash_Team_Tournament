@@ -1,6 +1,6 @@
 # SmashTeam Tournament
 
-Last updated: 2026-11-18 11:04 PM CST
+Last updated: 2026-11-25 03:40 AM CST
 
 Web quản lý giải cầu lông **phong trào / mở rộng**, chạy độc lập: từ nhận đăng ký, bốc thăm, xếp lịch, điều phối sân, trọng tài chấm điểm trên điện thoại cho tới bảng xếp hạng, nhánh loại trực tiếp và màn hình chiếu tại nhà thi đấu. Mục tiêu: **BTC điều hành nhanh, gọn, ít thao tác** trong ngày thi đấu.
 
@@ -358,6 +358,7 @@ Chi tiết: [docs/FEATURES.md § Đăng nhập & bảo mật](docs/FEATURES.md#9
 | Nhập báo "đã bốc thăm" | Nội dung đó đã bốc thăm, không nhận thêm đội |
 | Gọi trận báo "Sân N đang có trận" / "X đang ở sân N" | Sân hoặc VĐV đang bận — kết thúc / **Rút về** trận kia, hoặc chọn sân khác |
 | Không **Rút về** được trận | Trận đã có điểm — dùng **Chuyển sân** |
+| Tài khoản trọng tài mới tạo không có trong ô phân công trận / sân | Tài khoản chưa thuộc giải: khi tạo ở **Tài khoản** chọn **Làm trọng tài giải**, hoặc thêm ở **Quản lý giải › Ban tổ chức** |
 | Bàn điểm báo "Mất kết nối — điểm đã lưu trên máy này" | Bình thường khi wifi chập chờn: cứ chấm tiếp, điểm tự gửi khi có mạng; đừng xoá dữ liệu trình duyệt trước khi thấy "Đã lưu" |
 | Bàn điểm báo "đã bỏ bản nháp trên máy này" | Máy khác đã sửa trận lúc máy này mất mạng — giữ tỉ số máy chủ, kiểm tra với trọng tài kia |
 | Trọng tài thấy "đã tải lại bản mới nhất" | Hai máy cùng nhập 1 trận (409) — thống nhất 1 máy/trận hoặc giao trọng tài theo sân |

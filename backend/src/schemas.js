@@ -17,6 +17,9 @@ const schemas = {
     fullName: name(255),
     password,
     role: z.enum(['admin', 'user']).default('user'),
+    // Thêm ngay làm trọng tài của các giải này (cùng giao dịch) — để tài khoản tạo ở trang Tài khoản
+    // xuất hiện trong ô phân công trọng tài mà không phải vào Ban tổ chức thêm lần nữa.
+    refereeTournamentIds: z.array(z.uuid()).max(20).optional(),
   }),
   updateUser: z.object({
     username: username.optional(), // chỉ đặt được cho tài khoản CHƯA có (user từ bản SSO cũ)

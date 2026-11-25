@@ -6,11 +6,16 @@ import { KeyRound, Lock, LockOpen, Pencil, Search, ShieldCheck, UserPlus, Users 
 import { api, fmtTime, loginUrl } from "../lib/api";
 import { tempPassword } from "../lib/password";
 import { usePoll } from "../lib/usePoll";
-import type { Account, Viewer } from "../lib/types";
+import { sortTournaments } from "../lib/tournamentOrder";
+import type { Account, TournamentSummary, Viewer } from "../lib/types";
 import { Button, Card, CardSkeleton, EmptyState, Field, Modal, Notice, PageHeader, Select } from "../components/ui";
 
 
-type Draft = { id?: string; username: string; hadUsername?: boolean; fullName: string; role: "admin" | "user"; password: string };
+type Draft = {
+  id?: string; username: string; hadUsername?: boolean; fullName: string; role: "admin" | "user"; password: string;
+  /** Chỉ khi tạo mới: thêm ngay làm trọng tài các giải này (cùng giao dịch ở máy chủ). */
+  refereeOf?: string[];
+};
 
 /**
  * TÀI KHOẢN — chỉ quản trị viên hệ thống. Không có đăng ký công khai: admin cấp tài khoản cho BTC/trọng tài,
@@ -34,6 +39,13 @@ export default function AccountsPage() {
   const list = usePoll(
     (s) => (viewer?.role === "admin" ? api<Account[]>(`/admin/users${query ? `?q=${encodeURIComponent(query)}` : ""}`, { signal: s }) : Promise.resolve([])),
     [viewer?.role, query, version], 120_000,
+  );
+  // Giải còn mở (chưa kết thúc) để chọn "làm trọng tài giải" ngay khi tạo tài khoản.
+  const tournaments = usePoll(
+    (s) => (viewer?.role === "admin"
+      ? api<TournamentSummary[]>("/tournaments", { signal: s }).then((ts) => sortTournaments(ts).filter((x) => x.status !== "completed"))
+      : Promise.resolve([])),
+    [viewer?.role], 300_000,
   );
 
   async function run(fn: () => Promise<unknown>, ok: string) {
@@ -59,8 +71,11 @@ export default function AccountsPage() {
     const ok = d.id
       ? await run(() => api(`/admin/users/${d.id}`, { method: "PATCH", body: { fullName: d.fullName, role: d.role, ...(d.password ? { password: d.password } : {}), ...(!d.hadUsername && d.username ? { username: d.username } : {}) } }),
         `Đã cập nhật ${d.fullName}${d.password ? " — mật khẩu mới có hiệu lực, các phiên cũ bị đăng xuất" : ""}`)
-      : await run(() => api("/admin/users", { method: "POST", body: { username: d.username, fullName: d.fullName, role: d.role, password: d.password } }),
-        `Đã tạo tài khoản @${d.username.toLowerCase()} — gửi mật khẩu cho người dùng qua kênh riêng`);
+      : await run(() => api("/admin/users", {
+        method: "POST",
+        body: { username: d.username, fullName: d.fullName, role: d.role, password: d.password, refereeTournamentIds: d.refereeOf ?? [] },
+      }), `Đã tạo tài khoản @${d.username.toLowerCase()}${d.refereeOf?.length
+        ? ` và thêm làm trọng tài ${d.refereeOf.length} giải — có thể phân công trận ngay` : ""} — gửi mật khẩu cho người dùng qua kênh riêng`);
     if (ok) setDraft(null);
   }
 
@@ -75,7 +90,7 @@ export default function AccountsPage() {
       <PageHeader eyebrow="Hệ thống" title="Tài khoản"
         desc={viewer.role === "admin" ? "Tạo tài khoản cho Ban tổ chức và trọng tài, đặt lại mật khẩu, khoá tài khoản." : "Đổi mật khẩu của bạn."}
         actions={viewer.role === "admin" && (
-          <Button variant="primary" onClick={() => setDraft({ username: "", fullName: "", role: "user", password: tempPassword() })}>
+          <Button variant="primary" onClick={() => setDraft({ username: "", fullName: "", role: "user", password: tempPassword(), refereeOf: [] })}>
             <UserPlus className="w-4 h-4" aria-hidden />Tạo tài khoản
           </Button>
         )} />
@@ -164,6 +179,29 @@ export default function AccountsPage() {
               <option value="user">Người dùng — được gán làm BTC / trọng tài từng giải</option>
               <option value="admin">Quản trị viên — tạo giải, quản lý tài khoản, toàn quyền</option>
             </Select>
+            {!draft.id && draft.role === "user" && (
+              <fieldset className="space-y-2 text-sm">
+                <legend className="font-bold text-slate-600">Làm trọng tài giải (tuỳ chọn)</legend>
+                {!tournaments.data ? <p className="text-xs text-slate-500">Đang tải danh sách giải…</p>
+                  : !tournaments.data.length ? <p className="text-xs text-slate-500">Chưa có giải nào đang mở.</p> : (
+                  <ul className="max-h-40 space-y-1 overflow-y-auto rounded-xl border border-slate-200 p-2">
+                    {tournaments.data.map((x) => {
+                      const on = draft.refereeOf?.includes(x.id) ?? false;
+                      return (
+                        <li key={x.id}>
+                          <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg px-2 hover:bg-slate-50">
+                            <input type="checkbox" checked={on} className="h-4 w-4 accent-black"
+                              onChange={() => setDraft({ ...draft, refereeOf: on ? (draft.refereeOf ?? []).filter((v) => v !== x.id) : [...(draft.refereeOf ?? []), x.id] })} />
+                            <span className="min-w-0 truncate">{x.name}</span>
+                          </label>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                <p className="text-xs text-slate-500">Tài khoản chỉ hiện trong ô phân công trọng tài của giải đã chọn. Thêm sau ở Quản lý giải › Ban tổ chức.</p>
+              </fieldset>
+            )}
             <div className="flex items-end gap-2">
               <div className="flex-1">
                 <Field label={draft.id ? "Mật khẩu mới (để trống nếu không đổi)" : "Mật khẩu tạm"} value={draft.password}

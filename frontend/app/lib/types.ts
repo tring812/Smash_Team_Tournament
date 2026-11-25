@@ -22,6 +22,11 @@ export interface Account extends Viewer {
   has_password: boolean;
 }
 
+/** POST /admin/users: tài khoản vừa tạo + các giải đã thêm làm trọng tài. */
+export interface CreatedAccount extends Viewer {
+  refereeTournamentIds: string[];
+}
+
 export interface TournamentSummary {
   id: string;
   slug: string;

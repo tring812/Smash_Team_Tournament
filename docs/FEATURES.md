@@ -276,6 +276,7 @@ Trang **Quản trị › Vận động viên** (chỉ BTC): mỗi người một
 - **Mọi người dùng**: đổi mật khẩu (nhập mật khẩu hiện tại; mật khẩu mới ≥ 8 ký tự). Thiết bị khác đang đăng nhập bị đăng xuất, thiết bị hiện tại giữ phiên.
 - **Quản trị viên**: danh sách tài khoản (tìm theo tên / tên đăng nhập; nhãn *Đã khoá*, *Chưa có mật khẩu*; lần đăng nhập cuối).
   - **Tạo tài khoản**: họ tên, tên đăng nhập (3–40 ký tự `a-z 0-9 . _ -`, không phân biệt hoa thường, không đổi được về sau), vai trò, mật khẩu tạm (nút sinh ngẫu nhiên). Gửi mật khẩu cho người dùng qua kênh riêng.
+    Tài khoản **Người dùng** có thể chọn ngay **Làm trọng tài giải** (các giải chưa kết thúc): tạo tài khoản và thêm vào giải trong cùng một giao dịch, nên phân công trận / sân được ngay. Không chọn giải thì tài khoản chưa thuộc giải nào — ô phân công trọng tài chỉ liệt kê trọng tài / BTC **của giải** (trang Trận đấu và Điều phối sân nhắc điều này khi giải chưa có trọng tài).
   - **Sửa**: họ tên, vai trò, đặt mật khẩu mới (đăng xuất mọi phiên của người đó).
   - **Khoá / Mở khoá**: khoá = đăng xuất ngay, không đăng nhập được, không thêm vào giải được. Không xoá cứng (giữ lịch sử nhật ký, phân công).
   - Không thể tự khoá mình; không thể khoá / hạ quyền **quản trị viên cuối cùng** (lỗi `LAST_ADMIN`).
@@ -435,7 +436,7 @@ Tiền tố `/api`. Request ghi phải có header `X-Requested-With: fetch`. L�
 | POST | `/auth/dev-login` | — (chỉ khi `DEV_LOGIN=1`) | Đăng nhập dev |
 | GET | `/me` | — | Người đang đăng nhập |
 | POST | `/me/password` `{currentPassword, newPassword}` | đã đăng nhập | Tự đổi mật khẩu |
-| GET · POST | `/admin/users[?q=]` · `{username, fullName, password, role}` | quản trị viên | Danh sách · tạo tài khoản |
+| GET · POST | `/admin/users[?q=]` · `{username, fullName, password, role, refereeTournamentIds?}` | quản trị viên | Danh sách · tạo tài khoản; `refereeTournamentIds` (≤ 20) thêm làm trọng tài các giải đó cùng giao dịch — giải không tồn tại / đã xoá → `422 TOURNAMENT_NOT_FOUND`, không tạo gì |
 | PATCH | `/admin/users/:id` `{fullName?, role?, password?, disabled?}` | quản trị viên | Sửa, đặt lại mật khẩu, khoá / mở khoá |
 | GET | `/tournaments` · `/tournaments/:slug` | công khai (Nháp: BTC) | Danh sách giải · chi tiết giải + nội dung |
 | POST | `/tournaments` | Quản trị viên | Tạo giải |

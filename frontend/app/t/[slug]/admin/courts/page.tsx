@@ -11,6 +11,7 @@ import { Button, Card, CardSkeleton, EmptyState, Modal, Notice, PageHeader, text
 import { matchTitle } from "../../../../components/MatchViews";
 import { useAdmin } from "../AdminContext";
 import { MoveMatchModal } from "../MoveMatchModal";
+import { NoRefereeHint, RefereeOptions } from "../RefereeOptions";
 
 type QueueItem = CourtBoard["queue"][number];
 
@@ -64,6 +65,7 @@ export default function CourtsPage() {
       <PageHeader eyebrow="Ngày thi đấu" title="Điều phối sân"
         desc="Sân trống → gọi trận kế tiếp. Hệ thống chỉ gợi ý trận mà cả hai đội đều rảnh và đã nghỉ đủ; lịch giờ chỉ là dự kiến." />
 
+      <NoRefereeHint staff={staff.data} slug={t.slug} />
       {board.error && <p role="alert" className="text-red-700">{board.error}</p>}
       {!b ? <CardSkeleton rows={4} /> : (
         <>
@@ -92,7 +94,7 @@ export default function CourtsPage() {
                         e.target.value ? `Đã giao sân ${c.court} cho trọng tài` : `Đã bỏ trọng tài sân ${c.court}`)}
                       className={`${textInputClass} min-h-11 text-sm cursor-pointer`}>
                       <option value="">— Chưa có trọng tài sân —</option>
-                      {(staff.data ?? []).map((s) => <option key={s.user_id} value={s.user_id}>{s.full_name}</option>)}
+                      <RefereeOptions staff={staff.data ?? []} />
                     </select>
                   </label>
 

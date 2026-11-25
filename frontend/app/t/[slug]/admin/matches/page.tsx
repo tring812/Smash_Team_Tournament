@@ -10,6 +10,7 @@ import { Button, Card, CardSkeleton, DqBadge, EmptyState, PageHeader, textInputC
 import { StatusBadge, matchTitle } from "../../../../components/MatchViews";
 import { useAdmin } from "../AdminContext";
 import { MoveMatchModal } from "../MoveMatchModal";
+import { NoRefereeHint, RefereeOptions } from "../RefereeOptions";
 
 const FILTERS: { id: "all" | "called" | MatchStatus; label: string }[] = [
   { id: "all", label: "Tất cả" }, { id: "called", label: "Mời ra sân" }, { id: "live", label: "Đang đánh" }, { id: "scheduled", label: "Sắp đánh" },
@@ -33,6 +34,8 @@ export default function MatchesPage() {
   return (
     <div className="space-y-6">
       <PageHeader eyebrow="Quản lý giải" title="Trận đấu & trọng tài" desc="Phân công trọng tài, dời giờ / sân từng trận, mở bàn nhập điểm, mở lại trận để sửa tỉ số. Gọi trận theo sân trống ở Điều phối sân." />
+
+      <NoRefereeHint staff={staff.data} slug={t.slug} />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-1 rounded-full bg-slate-100 p-1" role="group" aria-label="Lọc theo trạng thái">
@@ -89,7 +92,7 @@ export default function MatchesPage() {
                         onChange={(e) => act(() => api(`/matches/${m.id}/referee`, { method: "PUT", body: { refereeUserId: e.target.value || null } }), "Đã phân công trọng tài")}
                         className={`${textInputClass} min-w-40 cursor-pointer`}>
                         <option value="">— Ai cũng được —</option>
-                        {(staff.data ?? []).map((r) => <option key={r.user_id} value={r.user_id}>{r.full_name}</option>)}
+                        <RefereeOptions staff={staff.data ?? []} />
                       </select>
                     </td>
                     <td className="whitespace-nowrap py-3 pr-5 text-right">
