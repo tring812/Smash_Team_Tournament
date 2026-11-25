@@ -68,11 +68,11 @@ export function MatchCard({ m, compact = false }: { m: Match; compact?: boolean 
   );
 }
 
-/** `highlight`: dòng khớp ô tìm VĐV được tô nổi (đánh dấu "Bạn"). */
-export function StandingsTables({ groups, highlight }: { groups: GroupStanding[]; highlight?: (r: StandingRow) => boolean }) {
+/** `highlight`: dòng khớp ô tìm VĐV được tô nổi (đánh dấu "Bạn"). `single`: 1 cột (đặt cạnh lịch trong hồ sơ VĐV). */
+export function StandingsTables({ groups, highlight, single = false }: { groups: GroupStanding[]; highlight?: (r: StandingRow) => boolean; single?: boolean }) {
   if (!groups.length) return <EmptyState title="Chưa bốc thăm chia bảng" />;
   return (
-    <div className="grid gap-4 md:grid-cols-2">
+    <div className={`grid gap-4 ${single ? "" : "md:grid-cols-2"}`}>
       {groups.map((g) => (
         <section key={g.groupId} id={`g-${g.groupId}`} className="scroll-mt-28 overflow-hidden bg-white rounded-xl border border-slate-200 shadow-sm">
           <h3 className="theme-fixed flex items-center justify-between border-l-4 border-primary bg-black px-4 py-3 text-white">
