@@ -154,3 +154,15 @@ export function nextMatch(p: Person): Match | null {
     .filter((m) => m.status === "live" || m.status === "scheduled" || m.status === "pending");
   return open.find((m) => m.status === "live") ?? open.filter((m) => m.scheduledAt).sort(byTime)[0] ?? null;
 }
+
+/** Mọi VĐV trong giải khớp — dùng để lấy lại đúng người đã chọn theo khoá (`?p=` trên URL). */
+const everyone: Matcher = { test: () => true };
+
+/** VĐV có khoá `key` (đã chọn ở danh sách tên), gom đủ mọi nội dung; null nếu không còn trong giải. */
+export function findPerson(
+  key: string,
+  matches: Match[],
+  standings: { category: Category; groups: GroupStanding[] }[],
+): Person | null {
+  return findPeople(everyone, matches, standings).find((p) => p.key === key) ?? null;
+}

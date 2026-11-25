@@ -117,10 +117,12 @@ Thanh điều hướng nổi: logo · **Lịch thi đấu ▾** (mở danh sách
 | **Bảng đấu** | `/t/<slug>/groups` | Ô **tìm VĐV** · bảng xếp hạng từng bảng — mọi nội dung đã bốc thăm (mặc định) hoặc nội dung đang chọn |
 | **Loại trực tiếp** | `/t/<slug>/bracket` | Nhánh của nội dung đang chọn: **dạng cây** (đường nối, đội thắng ✓ + đường đỏ, "Thắng trận X", ô **Vô địch**) hoặc **dạng bảng** |
 
-**Tìm VĐV** (`?q=`, chia sẻ được; giữ nguyên khi chuyển giữa Lịch thi đấu ↔ Bảng đấu): gõ tên không cần dấu, không phân biệt hoa thường ("nguyen minh khoa"), hoặc tên CLB / trường; nhiều từ thì phải có đủ các từ ("an uit").
-- **Lịch thi đấu**: chỉ còn trận của người đó (cả khối đang thi đấu); ô tóm tắt "3 trận · Nguyễn Minh Khoa · MS Bảng C · hạng 3" — bấm chip sang tab Bảng đấu.
-- **Bảng đấu**: chỉ còn bảng có tên người đó, dòng của họ được tô vàng; bấm chip nhảy tới đúng bảng.
-- Không thấy → gợi ý gõ ít chữ hơn / chọn "Tất cả nội dung" (VĐV chỉ có sau khi bốc thăm).
+**Tìm VĐV** (có ở Lịch thi đấu và Bảng đấu, giữ nguyên khi chuyển giữa hai tab; URL `?q=` chữ đã gõ, `?p=` VĐV đã chọn — chia sẻ được): gõ tên không cần dấu, không phân biệt hoa thường ("nguyen minh khoa"), hoặc tên CLB / trường; nhiều từ thì phải có đủ các từ ("an uit"). Hai bước:
+1. **Gõ tên → chỉ hiện danh sách tên khớp** (mỗi người một dòng: họ tên, CLB, các nội dung — phân biệt được người trùng tên); lịch / bảng chung của giải tạm ẩn. Không ai khớp → gợi ý gõ ít chữ hơn / không dấu (VĐV chỉ có sau khi bốc thăm).
+2. **Bấm đúng tên của mình → chỉ hiện của người đó**:
+   - **Lịch thi đấu**: các trận của VĐV theo từng nội dung — giờ, ngày, sân, đối thủ, vòng, tỉ số / thắng thua, trạng thái; ô **Trận tới** (giờ + sân); bảng + hạng hiện tại (bấm sang Bảng đấu).
+   - **Bảng đấu**: chỉ các bảng có VĐV đó (mọi nội dung), dòng của họ được tô vàng.
+   - **Đổi VĐV** / xoá ô tìm → về xem chung; sửa chữ trong ô tìm → quay lại bước 1.
 
 **Cập nhật trực tiếp**: có điểm mới, gọi trận vào sân, dời trận… → trang tải lại trong khoảng nửa giây (Server-Sent Events; dòng trạng thái hiện "Trực tiếp"). Mất kết nối → tự nối lại, trong lúc đó tự làm mới mỗi 10 giây. Nút **Chiếu màn hình** mở màn hình TV.
 
