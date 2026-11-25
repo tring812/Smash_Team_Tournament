@@ -313,6 +313,8 @@ Tham số, body và quy tắc của từng endpoint: [docs/FEATURES.md § API](d
 
 ## Kiểm thử
 
+Font Inter/Barlow được lưu cùng ứng dụng, không cần tải Google Fonts lúc build. Nguồn, giấy phép và công cụ tạo lại WOFF2: [frontend/app/fonts/README.md](frontend/app/fonts/README.md). Kiểm tra cấu hình tải và ngân sách font bằng `node --test test/fontLoading.test.mjs` từ thư mục `frontend`.
+
 ```bash
 cd backend && npm test
 ```
