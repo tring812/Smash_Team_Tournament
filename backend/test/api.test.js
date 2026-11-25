@@ -228,8 +228,10 @@ describe('HTTP API (PGlite)', { skip: hasPglite ? false : 'chưa cài @electric-
     ctl.abort();
   });
 
+  // Hai test kế tiếp dùng chung một phiên admin: đăng nhập bị giới hạn 20 lần / 15 phút mỗi IP cho cả file.
+  /** @type {string|undefined} */ let sharedAdmin;
   test('kênh trực tiếp chỉ báo đúng phạm vi: gọi / dời / bắt đầu / lưu điểm = 1 trận; xác nhận = các trận bị ảnh hưởng + nội dung', async () => {
-    const cookie = await login();
+    const cookie = sharedAdmin ??= await login();
     const viewer = (await (await call('/api/me', { cookie })).json()).user;
     const svc = require('../src/services/tournamentService');
     const categorySvc = require('../src/services/categoryService');
@@ -287,6 +289,33 @@ describe('HTTP API (PGlite)', { skip: hasPglite ? false : 'chưa cài @electric-
     assert.equal(lean.status, 'finished');
     assert.ok(Array.isArray((await (await call(`/api/matches/${semi1.id}`)).json()).rallies), 'mặc định vẫn kèm biên bản');
     assert.equal((await call(`/api/matches/${semi1.id}?rallies=x`)).status, 422);
+  });
+
+  test('GET /tournaments/:id/standings: một request cho mọi nội dung, giống hệt từng nội dung; giải nháp ẩn với khách', async () => {
+    const cookie = sharedAdmin ??= await login();
+    const viewer = (await (await call('/api/me', { cookie })).json()).user;
+    const svc = require('../src/services/tournamentService');
+    const categorySvc = require('../src/services/categoryService');
+    const entrySvc = require('../src/services/entryService');
+    const t = await svc.createTournament(pool, viewer, { slug: 'bxh-gop', name: 'BXH gộp', startsAt: new Date(Date.now() + 7 * 86_400_000).toISOString() });
+    const ms = await categorySvc.createCategory(pool, viewer, t.id, { code: 'MS', name: 'Đơn nam', isDoubles: false, groupCount: 2 });
+    const wd = await categorySvc.createCategory(pool, viewer, t.id, { code: 'WD', name: 'Đôi nữ', isDoubles: true, groupCount: 1 });
+    await categorySvc.createCategory(pool, viewer, t.id, { code: 'XD', name: 'Chưa bốc thăm', isDoubles: true, groupCount: 1 });
+    await entrySvc.addEntries(pool, viewer, ms.id, ['An', 'Bình', 'Chi', 'Dũng', 'Em', 'Phú'].map((player1Name) => ({ player1Name })));
+    await entrySvc.addEntries(pool, viewer, wd.id, [['Hoa', 'Lan'], ['Mai', 'Đào'], ['Cúc', 'Trúc']].map(([player1Name, player2Name]) => ({ player1Name, player2Name })));
+    await svc.drawGroups(pool, viewer, ms.id);
+    await svc.drawGroups(pool, viewer, wd.id);
+
+    assert.equal((await call(`/api/tournaments/${t.id}/standings`)).status, 404, 'giải nháp: khách không thấy');
+    const r = await call(`/api/tournaments/${t.id}/standings`, { cookie });
+    assert.equal(r.status, 200);
+    const all = await r.json();
+    assert.deepEqual(all.map((x) => x.categoryId), [ms.id, wd.id], 'chỉ nội dung đã bốc thăm, theo mã');
+    for (const { categoryId, groups } of all) {
+      const one = await (await call(`/api/categories/${categoryId}/standings`, { cookie })).json();
+      assert.deepEqual(groups, one, 'cùng kết quả với API từng nội dung');
+    }
+    assert.ok(!JSON.stringify(all).includes('student_id') && !JSON.stringify(all).includes('phone'), 'không lộ MSSV / SĐT');
   });
 
   test('draft tournament detail is 404 for the public', async () => {

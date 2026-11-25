@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { api, vnLocalToIso } from "../lib/api";
+import { invalidateNavTournaments } from "../lib/tournamentOrder";
 import type { TournamentSummary } from "../lib/types";
 import { Button, Card, Field, Notice, PageHeader } from "../components/ui";
 
@@ -25,6 +26,7 @@ export default function NewTournamentPage() {
         method: "POST",
         body: { ...form, startsAt: vnLocalToIso(form.startsAt) },
       });
+      invalidateNavTournaments(); // menu "Lịch thi đấu ▾" có ngay giải mới
       router.push(`/t/${t.slug}/admin`);
     } catch (err) {
       setError((err as Error).message); // giữ nguyên dữ liệu đã nhập để sửa & gửi lại

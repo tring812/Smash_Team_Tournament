@@ -487,42 +487,74 @@ async function scheduleTournament(pool, viewer, tid, opts = {}) {
  * @param {Queryable} db @param {string} categoryId
  */
 async function groupStandings(db, categoryId) {
+  return (await standingsOf(db, { categoryId })).map(({ categoryId: _c, ...g }) => g);
+}
+
+/**
+ * BXH vòng bảng của MỌI nội dung trong giải — 3 truy vấn cho cả giải, thay cho 1 request (3 truy vấn + kiểm quyền) mỗi nội dung.
+ * Chỉ nội dung đã bốc thăm (có bảng); thứ tự nội dung theo mã như trang giải.
+ * @param {Queryable} db @param {string} tid
+ * @returns {Promise<{ categoryId: string, groups: any[] }[]>}
+ */
+async function tournamentStandings(db, tid) {
+  const all = await standingsOf(db, { tournamentId: tid });
+  /** @type {Map<string, any[]>} */ const byCat = new Map();
+  for (const { categoryId, ...g } of all) {
+    if (!byCat.has(categoryId)) byCat.set(categoryId, []);
+    byCat.get(categoryId)?.push(g);
+  }
+  return [...byCat.entries()].map(([categoryId, groups]) => ({ categoryId, groups }));
+}
+
+/**
+ * Tính BXH theo nội dung HOẶC theo cả giải (cùng một cách tính, chỉ khác phạm vi truy vấn).
+ * @param {Queryable} db @param {{ categoryId: string } | { tournamentId: string }} scope
+ */
+async function standingsOf(db, scope) {
+  const byCategory = 'categoryId' in scope;
+  // Hai mệnh đề cố định do mã chọn (không ghép chuỗi từ người dùng); giá trị luôn là tham số $1.
+  const groupWhere = byCategory ? 'g.category_id = $1' : 'c.tournament_id = $1';
+  const param = [byCategory ? scope.categoryId : scope.tournamentId];
   const { rows: groups } = await db.query(
-    'SELECT id, name FROM groups WHERE category_id = $1 ORDER BY sort_order', [categoryId],
+    `SELECT g.id, g.name, g.category_id FROM groups g JOIN categories c ON c.id = g.category_id
+      WHERE ${groupWhere} ORDER BY c.code, g.sort_order`, param,
   );
   const { rows: members } = await db.query(
     `SELECT gm.group_id, e.* FROM group_members gm JOIN entries e ON e.id = gm.entry_id
-      JOIN groups g ON g.id = gm.group_id WHERE g.category_id = $1`, [categoryId],
+      JOIN groups g ON g.id = gm.group_id JOIN categories c ON c.id = g.category_id WHERE ${groupWhere}`, param,
   );
   const { rows: matches } = await db.query(
     `SELECT group_id, entry_a_id, entry_b_id, winner_entry_id, games, status FROM matches
-      WHERE category_id = $1 AND stage = 'group'`, [categoryId],
+      WHERE ${byCategory ? 'category_id' : 'tournament_id'} = $1 AND stage = 'group'`, param,
   );
-  return groups.map((g) => {
-    const mem = members.filter((m) => m.group_id === g.id);
-    const active = mem.filter((e) => !e.disqualified_at);
-    // Trận bị huỷ do truất quyền không tính (theo BWF: xoá mọi kết quả của đội bị truất quyền).
-    const ms = matches.filter((m) => m.group_id === g.id && m.status !== 'cancelled');
-    const finished = ms.filter((m) => m.status === 'finished' || m.status === 'walkover').map((m) => ({
-      a: m.entry_a_id,
-      b: m.entry_b_id,
-      winner: /** @type {'a'|'b'} */ (m.winner_entry_id === m.entry_a_id ? 'a' : 'b'),
-      games: m.games,
-      walkover: m.status === 'walkover',
-    }));
-    // Phá hoà cuối cùng: bốc thăm phụ (lot nhỏ xếp trên) — giải mở rộng không dùng ELO.
-    const tiebreak = Object.fromEntries(active.map((e) => [e.id, -(e.draw_lot ?? 1e6)]));
-    const byId = new Map(mem.map((e) => [e.id, e]));
-    const rows = computeStandings(active.map((e) => e.id), finished, tiebreak).map((r) => ({
-      ...r, name: entryLabel(byId.get(r.entryId)), club: byId.get(r.entryId)?.club ?? '', disqualified: false, dqReason: null,
-      players: entryPlayers(byId.get(r.entryId)),
-    }));
-    const dq = mem.filter((e) => e.disqualified_at).map((e) => ({
-      entryId: e.id, rank: null, played: 0, won: 0, lost: 0, gamesFor: 0, gamesAgainst: 0, pointsFor: 0, pointsAgainst: 0,
-      name: entryLabel(e), club: e.club ?? '', disqualified: true, dqReason: e.dq_reason, players: entryPlayers(e),
-    }));
-    return { groupId: g.id, name: g.name, complete: finished.length === ms.length, standings: [...rows, ...dq] };
-  });
+  return groups.map((g) => ({ categoryId: g.category_id, ...standingsOfGroup(g, members, matches) }));
+}
+
+/** BXH một bảng từ các dòng đã tải sẵn. @param {{ id: string, name: string }} g @param {any[]} members @param {any[]} matches */
+function standingsOfGroup(g, members, matches) {
+  const mem = members.filter((m) => m.group_id === g.id);
+  const active = mem.filter((e) => !e.disqualified_at);
+  // Trận bị huỷ do truất quyền không tính (theo BWF: xoá mọi kết quả của đội bị truất quyền).
+  const ms = matches.filter((m) => m.group_id === g.id && m.status !== 'cancelled');
+  const finished = ms.filter((m) => m.status === 'finished' || m.status === 'walkover').map((m) => ({
+    a: m.entry_a_id,
+    b: m.entry_b_id,
+    winner: /** @type {'a'|'b'} */ (m.winner_entry_id === m.entry_a_id ? 'a' : 'b'),
+    games: m.games,
+    walkover: m.status === 'walkover',
+  }));
+  // Phá hoà cuối cùng: bốc thăm phụ (lot nhỏ xếp trên) — giải mở rộng không dùng ELO.
+  const tiebreak = Object.fromEntries(active.map((e) => [e.id, -(e.draw_lot ?? 1e6)]));
+  const byId = new Map(mem.map((e) => [e.id, e]));
+  const rows = computeStandings(active.map((e) => e.id), finished, tiebreak).map((r) => ({
+    ...r, name: entryLabel(byId.get(r.entryId)), club: byId.get(r.entryId)?.club ?? '', disqualified: false, dqReason: null,
+    players: entryPlayers(byId.get(r.entryId)),
+  }));
+  const dq = mem.filter((e) => e.disqualified_at).map((e) => ({
+    entryId: e.id, rank: null, played: 0, won: 0, lost: 0, gamesFor: 0, gamesAgainst: 0, pointsFor: 0, pointsAgainst: 0,
+    name: entryLabel(e), club: e.club ?? '', disqualified: true, dqReason: e.dq_reason, players: entryPlayers(e),
+  }));
+  return { groupId: g.id, name: g.name, complete: finished.length === ms.length, standings: [...rows, ...dq] };
 }
 
 /**
@@ -737,7 +769,7 @@ async function searchUsers(db, viewer, q) {
 }
 
 module.exports = {
-  assertVisible, assertCategoryVisible, tournamentOfCategory, listEntries, listStaff, searchUsers, listEvents,
+  tournamentStandings, assertVisible, assertCategoryVisible, tournamentOfCategory, listEntries, listStaff, searchUsers, listEvents,
   withTx, roleIn, requireOrganizer, logEvent, nameKey, participantKey, entryLabel, FINAL_STATUSES,
   createTournament, updateTournament, deleteTournament, restoreTournament, listDeletedTournaments, purgeDeletedTournaments, upsertStaff, removeStaff,
   drawGroups, scheduleTournament, groupStandings, generateKnockout,

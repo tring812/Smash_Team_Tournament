@@ -302,7 +302,7 @@ Tiền tố `/api`. Request ghi phải có header `X-Requested-With: fetch`. L�
 | BTC & nhật ký | `GET PUT DELETE /tournaments/:id/staff[/:userId]` · `GET /tournaments/:id/events` · `GET /users?q=` | BTC |
 | Nội dung | `POST /tournaments/:id/categories` · `PATCH DELETE /categories/:id` · `PUT /categories/:id/round-rules` | BTC |
 | Đội & VĐV | `POST /categories/:id/entries` · `PATCH DELETE /entries/:id` · `POST /entries/:id/disqualify\|reinstate` · `GET /tournaments/:id/athletes` · `PATCH /athletes/:id` | BTC |
-| Bảng & nhánh | `POST /categories/:id/draw\|swap\|knockout` · `GET /categories/:id/entries\|standings\|bracket` | BTC / công khai |
+| Bảng & nhánh | `POST /categories/:id/draw\|swap\|knockout` · `GET /categories/:id/entries\|standings\|bracket` · `GET /tournaments/:id/standings` (mọi nội dung) | BTC / công khai |
 | Lịch & sân | `POST /tournaments/:id/schedule` · `GET /tournaments/:id/courts` · `PUT /tournaments/:id/courts/:court/referee` · `POST /matches/:id/call\|uncall` · `PATCH /matches/:id` | BTC |
 | Trận & điểm | `GET /tournaments/:id/matches` · `GET /matches/:id` · `GET /referee/queue` · `PUT /matches/:id/score` · `POST /matches/:id/reopen` · `PUT /matches/:id/referee` | công khai / trọng tài / BTC |
 | Trực tiếp | `GET /tournaments/:id/stream` (Server-Sent Events) | công khai (giải nháp: BTC) |

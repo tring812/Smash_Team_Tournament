@@ -8,7 +8,7 @@ import { api, fmtTime } from "../../lib/api";
 import { usePoll } from "../../lib/usePoll";
 import { useLive } from "../../lib/useLive";
 import { useMatchPatches } from "../../lib/useMatchPatches";
-import type { Bracket, Category, GroupStanding, Match, StandingRow, Tournament } from "../../lib/types";
+import type { Bracket, GroupStanding, Match, StandingRow, Tournament } from "../../lib/types";
 import { MatchCard, StandingsTables } from "../../components/MatchViews";
 import { PlayerResults } from "../../components/PlayerResults";
 import { findPeople, hasDiacritics, involves, makeMatcher, peopleOf } from "../../lib/playerSearch";
@@ -50,8 +50,9 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
   const court = search.get("court") ?? "";
   const qParam = search.get("q") ?? "";
 
-  const t = usePoll((s) => api<Tournament>(`/tournaments/${encodeURIComponent(slug)}`, { signal: s }), [slug], 60_000);
-  const cats = t.data?.categories ?? [];
+  // cacheKey: chuyển tab (mỗi tab một trang) hiện ngay dữ liệu vừa xem rồi làm mới ngầm, không phải chờ tải lại từ đầu.
+  const t = usePoll((s) => api<Tournament>(`/tournaments/${encodeURIComponent(slug)}`, { signal: s }), [slug], 60_000, `hub:t:${slug}`);
+  const cats = useMemo(() => t.data?.categories ?? [], [t.data]);
   const cat = cats.find((c) => c.code === catCode);
   // Loại trực tiếp chỉ xem được từng nội dung → mặc định nội dung đã có nhánh.
   const focusCat = cat ?? cats.find((c) => c.stage === "knockout" || c.stage === "completed") ?? cats[0];
@@ -59,29 +60,40 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
   // Nội dung đang chọn, hoặc mọi nội dung đã bốc thăm.
   const searching = Boolean(qParam.trim());
   // Khi tìm VĐV: lấy MỌI nội dung đã bốc thăm để thẻ VĐV liệt kê đủ các nội dung người đó đánh.
-  const standingCats: Category[] = tab === "groups" || (tab === "schedule" && searching)
-    ? (cat && !searching ? [cat] : cats.filter((c) => c.stage !== "setup")) : [];
-  const standingKey = standingCats.map((c) => c.id).join(",");
+  const needStandings = tab === "groups" || (tab === "schedule" && searching);
 
   // Bốc thăm / xếp lịch / sửa đội → tải lại toàn bộ (`tick`). Điểm, gọi sân, dời trận, kết quả → chỉ tải riêng các trận đó
   // (`matchEvent` → patch); có kết quả mới thì tải thêm bảng xếp hạng / nhánh (`resultTick`), không tải lại cả lịch.
   // Polling 10s (30s khi đang nhận trực tiếp) chỉ là dự phòng.
   const { tick, matchEvent, resultTick, live: streaming } = useLive(t.data?.id);
   const patch = useMatchPatches(matchEvent);
+  const matchesPath = t.data ? `/tournaments/${t.data.id}/matches${tab === "schedule" && cat && !searching ? `?categoryId=${cat.id}` : ""}` : null;
   const matches = usePoll(
-    (s) => (t.data ? api<Match[]>(`/tournaments/${t.data.id}/matches${tab === "schedule" && cat && !searching ? `?categoryId=${cat.id}` : ""}`, { signal: s }) : Promise.resolve([])),
-    [t.data?.id, cat?.id, tab, tick, searching], streaming ? 30_000 : 10_000,
+    (s) => (matchesPath ? api<Match[]>(matchesPath, { signal: s }) : Promise.resolve([])),
+    [matchesPath, tick], streaming ? 30_000 : 10_000, matchesPath ? `hub:${matchesPath}` : undefined,
   );
-  const groups = usePoll(
-    (s) => Promise.all(standingCats.map(async (c) => ({ category: c, groups: await api<GroupStanding[]>(`/categories/${c.id}/standings`, { signal: s }) }))),
-    [standingKey, tick, resultTick], streaming ? 30_000 : 10_000,
+  // BXH mọi nội dung trong MỘT request (trước: 1 request mỗi nội dung, chờ tải xong thông tin giải mới bắt đầu).
+  const standingsPath = t.data && needStandings ? `/tournaments/${t.data.id}/standings` : null;
+  const standingsRaw = usePoll(
+    (s) => (standingsPath ? api<{ categoryId: string; groups: GroupStanding[] }[]>(standingsPath, { signal: s }) : Promise.resolve(null)),
+    [standingsPath, tick, resultTick], streaming ? 30_000 : 10_000, standingsPath ? `hub:${standingsPath}` : undefined,
   );
+  const groups = useMemo(() => {
+    if (!standingsRaw.data) return { data: needStandings ? null : [], error: standingsRaw.error };
+    const byId = new Map(cats.map((c) => [c.id, c]));
+    const data = standingsRaw.data.flatMap((x) => {
+      const category = byId.get(x.categoryId);
+      return category ? [{ category, groups: x.groups }] : [];
+    });
+    return { data, error: standingsRaw.error };
+  }, [standingsRaw.data, standingsRaw.error, cats, needStandings]);
 
   // Ô tìm VĐV: gõ ngay trên máy, URL (?q=) cập nhật sau 300 ms để chia sẻ / quay lại được.
   const [q, setQ] = useState(qParam);
+  const bracketPath = tab === "bracket" && focusCat ? `/categories/${focusCat.id}/bracket` : null;
   const bracket = usePoll(
-    (s) => (tab === "bracket" && focusCat ? api<Bracket>(`/categories/${focusCat.id}/bracket`, { signal: s }) : Promise.resolve({ rounds: [] })),
-    [tab, focusCat?.id, tick, resultTick], streaming ? 30_000 : 10_000,
+    (s) => (bracketPath ? api<Bracket>(bracketPath, { signal: s }) : Promise.resolve({ rounds: [] })),
+    [bracketPath, tick, resultTick], streaming ? 30_000 : 10_000, bracketPath ? `hub:${bracketPath}` : undefined,
   );
 
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
