@@ -17,9 +17,35 @@ const bus = new EventEmitter();
 bus.setMaxListeners(MAX_SUBSCRIBERS + 10);
 let subscribers = 0;
 
-/** Báo giải `tid` vừa thay đổi. */
-function publish(tid) {
-  if (tid) bus.emit(`t:${tid}`);
+/** Quá số trận này trong một lần gộp thì coi như "đổi nhiều" → client tải lại toàn bộ. */
+const MAX_MATCH_IDS = 20;
+
+/**
+ * Phạm vi thay đổi:
+ *  - `{ kind: 'match', matchId }`: chỉ tỉ số / biên bản / trọng tài của MỘT trận đổi (mỗi điểm) → client chỉ tải lại trận đó.
+ *  - `{ kind: 'structure' }` (mặc định): lịch, sân, kết quả, bốc thăm… → client tải lại toàn bộ như cũ.
+ * @typedef {{ kind: 'match', matchId: string } | { kind: 'structure' }} Scope
+ * @typedef {{ kind: 'match', matchIds: string[] } | { kind: 'structure' }} Signal
+ */
+
+/**
+ * Gộp một thay đổi vào tín hiệu đang chờ gửi (trong cửa sổ debounce).
+ * @param {Signal|null} acc @param {Scope|undefined} scope @returns {Signal}
+ */
+function mergeScope(acc, scope) {
+  const isMatch = scope?.kind === 'match' && typeof scope.matchId === 'string';
+  if (!isMatch || acc?.kind === 'structure') return { kind: 'structure' };
+  const ids = acc ? acc.matchIds : [];
+  if (!ids.includes(scope.matchId)) {
+    if (ids.length >= MAX_MATCH_IDS) return { kind: 'structure' };
+    ids.push(scope.matchId);
+  }
+  return { kind: 'match', matchIds: ids };
+}
+
+/** Báo giải `tid` vừa thay đổi. @param {string|undefined} tid @param {Scope} [scope] */
+function publish(tid, scope) {
+  if (tid) bus.emit(`t:${tid}`, scope ?? { kind: 'structure' });
 }
 
 /**
@@ -39,9 +65,18 @@ function subscribe(req, res, tid) {
   res.write('retry: 5000\n: connected\n\n');
 
   /** @type {NodeJS.Timeout|null} */ let pending = null;
-  const onChange = () => {
+  /** @type {Signal|null} */ let acc = null;
+  // data: {"kind":"match","matchIds":[…]} | {"kind":"structure"} — chỉ là phạm vi, không mang dữ liệu trận.
+  /** @param {Scope} [scope] */
+  const onChange = (scope) => {
+    acc = mergeScope(acc, scope);
     if (pending) return;
-    pending = setTimeout(() => { pending = null; res.write(`event: changed\ndata: ${Date.now()}\n\n`); }, DEBOUNCE_MS);
+    pending = setTimeout(() => {
+      pending = null;
+      const out = acc;
+      acc = null;
+      res.write(`event: changed\ndata: ${JSON.stringify(out)}\n\n`);
+    }, DEBOUNCE_MS);
   };
   const beat = setInterval(() => res.write(': ping\n\n'), HEARTBEAT_MS);
   bus.on(`t:${tid}`, onChange);
@@ -54,4 +89,4 @@ function subscribe(req, res, tid) {
   return true;
 }
 
-module.exports = { publish, subscribe, bus };
+module.exports = { publish, subscribe, mergeScope, bus };

@@ -414,7 +414,7 @@ Mỗi giải có danh sách **hồ sơ VĐV** riêng. Khi thêm đội (dán, Ex
 - Chống CSRF: header `X-Requested-With: fetch` + kiểm tra `Origin`.
 - Excel/CSV xử lý trên trình duyệt (không có endpoint nhận file → không có rủi ro file độc/zip bomb phía server); dùng bản đọc không cần Web Worker nên hợp CSP `script-src 'self'`.
 - **MSSV, SĐT, email là dữ liệu cá nhân**: chỉ API dành cho BTC trả ra (`/tournaments/:id/athletes`); danh sách đội công khai chỉ có tên, CLB và id hồ sơ. Nhật ký sửa hồ sơ chỉ ghi **tên trường** đã sửa, không ghi giá trị. Hồ sơ không còn ở đội nào bị xoá. File Excel xuất ra có MSSV/SĐT — BTC tự bảo quản.
-- **Kênh trực tiếp (SSE)** `/tournaments/:id/stream` chỉ báo "giải vừa đổi", không mang dữ liệu → client gọi lại API thường, quyền xem không đổi; giải nháp chỉ BTC mở được. Tối đa 1.000 kết nối/instance (quá → 503, client dùng polling).
+- **Kênh trực tiếp (SSE)** `/tournaments/:id/stream` chỉ báo "giải vừa đổi" kèm phạm vi, không mang dữ liệu trận → client gọi lại API thường, quyền xem không đổi. `data` là `{"kind":"match","matchIds":[…]}` khi chỉ tỉ số / biên bản / trọng tài của vài trận đổi (nhập điểm, lưu tạm, phân công trọng tài) → trang công khai và TV chỉ tải `GET /matches/:id` của trận đó; mọi thay đổi khác (gọi sân, dời trận, xác nhận kết quả, bốc thăm…) là `{"kind":"structure"}` → tải lại toàn bộ. Các thay đổi trong 250 ms được gộp; quá 20 trận coi như `structure`; giải nháp chỉ BTC mở được. Tối đa 1.000 kết nối/instance (quá → 503, client dùng polling).
 - Mọi truy vấn SQL tham số hoá; mọi dữ liệu vào kiểm tra bằng zod; lỗi trả `application/problem+json` không lộ chi tiết nội bộ.
 - **Chỉ có giao diện sáng** (đã bỏ bộ chọn Hệ thống / Sáng / Tối): không phụ thuộc cài đặt Tối của máy; lựa chọn cũ còn lưu (`localStorage` khoá `st-theme`) được xoá khi mở trang. Vùng cố ý tối (sidebar quản trị, TV, banner, chân trang) giữ nguyên. Tương phản chữ đạt WCAG AA trên các trang chính.
 - **Chỉ khi dev**: `DATABASE_URL=pglite:...` (Postgres WASM, không cần cài Postgres) và `DEV_LOGIN=1` (nút "Dev: Admin / Dev: Trọng tài"). Cấu hình **từ chối** cả hai ở production.
@@ -451,7 +451,7 @@ Tiền tố `/api`. Request ghi phải có header `X-Requested-With: fetch`. L�
 | POST | `/categories/:id/entries` `{entries: [{player1Name, player1StudentId?, player1Phone?, player1Email?, player2…, club}]}` | BTC | Thêm đội (≤ 256 / lần, cả lô một giao dịch); gắn hồ sơ VĐV theo [7.10](#710-nhận-diện-vđv) |
 | GET | `/tournaments/:id/athletes` | BTC | Hồ sơ VĐV (MSSV, SĐT, email, nội dung đăng ký) |
 | PATCH | `/athletes/:id` `{fullName?, studentId?, phone?, email?, club?}` | BTC | Sửa hồ sơ VĐV |
-| GET | `/tournaments/:id/stream` | công khai (Nháp: BTC) | Server-Sent Events: `event: changed` mỗi khi giải đổi |
+| GET | `/tournaments/:id/stream` | công khai (Nháp: BTC) | Server-Sent Events: `event: changed` mỗi khi giải đổi; `data`: `{"kind":"match","matchIds":[…]}` hoặc `{"kind":"structure"}` |
 | POST | `/categories/:id/draw` `{groups?: [{name, entryIds}]}` | BTC | Bốc thăm ngẫu nhiên / bốc lại; có `groups` = chia bảng có sẵn |
 | POST | `/categories/:id/swap` `{entryA, entryB}` | BTC | Đổi bảng 2 đội |
 | POST | `/categories/:id/knockout` | BTC | Tạo nhánh loại trực tiếp |
