@@ -13,6 +13,7 @@ try { require.resolve('@electric-sql/pglite'); } catch { hasPglite = false; }
 
 const svc = require('../src/services/tournamentService');
 const courts = require('../src/services/courtService');
+const { beginMatch } = require('./support/match');
 
 const ADMIN = { id: '00000000-0000-4000-8000-0000000000c1', full_name: 'Admin', role: 'admin' };
 const REF = { id: '00000000-0000-4000-8000-0000000000c2', full_name: 'TT Sân 2', role: 'user' };
@@ -149,7 +150,7 @@ describe('Điều phối sân (PGlite)', { skip: hasPglite ? false : 'chưa cài
     await courts.setCourtReferee(pool, ADMIN, t.id, 2, REF.id);
     const m = (await board()).queue.find((q) => !q.busyWith.length).match;
     await courts.callMatch(pool, ADMIN, m.id, { court: 2 });
-    const fresh = await svc.getMatch(pool, m.id);
+    const fresh = await beginMatch(pool, ADMIN, REF, m);
     await rejectsWith(svc.recordScore(pool, REF2, m.id, { action: 'save', version: fresh.version, games: [[1, 0]] }), 403);
     const q = await svc.refereeQueue(pool, REF);
     assert.equal(q[0].id, m.id, 'trận ở sân mình lên đầu hàng đợi');

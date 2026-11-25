@@ -2,6 +2,11 @@ export type Role = "admin" | "user";
 export type MatchStatus = "pending" | "scheduled" | "live" | "finished" | "walkover" | "bye" | "cancelled";
 export type Game = [number, number];
 
+/** Yêu cầu bắt đầu trận trên sân đã được BTC gán. */
+export interface StartMatchInput {
+  version: number;
+}
+
 export interface Viewer {
   id: string;
   username: string | null;
@@ -199,7 +204,7 @@ export interface TournamentEvent {
     | "category_create" | "category_update" | "category_delete"
     | "call_match" | "uncall_match" | "move_match" | "court_referee" | "athlete_update" | "rules_update"
     | "referee_create" | "referee_update" | "referee_remove"
-    | "rally_fix_server" | "rally_undo" | "score_confirm";
+    | "rally_fix_server" | "rally_undo" | "score_confirm" | "start_match";
   details: Record<string, unknown>;
   created_at: string;
   actor: string;
