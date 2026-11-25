@@ -4,14 +4,18 @@ import { createContext, useContext } from "react";
 import { fmtTime } from "../../../lib/api";
 import type { Tournament, TournamentEvent } from "../../../lib/types";
 
-export type ActFn = <R>(fn: () => Promise<R>, ok: string | ((r: R) => string)) => Promise<boolean>;
+/**
+ * `local`: trang tự cập nhật phần dữ liệu vừa đổi (vd thay đúng trận máy chủ trả về) → KHÔNG tăng `version`, nên không tải
+ * lại thông tin giải + mọi danh sách của trang. Bỏ trống = tải lại toàn bộ như trước (bốc thăm, xếp lịch, sửa đội…).
+ */
+export type ActFn = <R>(fn: () => Promise<R>, ok: string | ((r: R) => string), opts?: { local?: (r: R) => void }) => Promise<boolean>;
 
 export interface AdminCtx {
   t: Tournament;
   /** Tăng sau mỗi thao tác thành công → các trang con tải lại dữ liệu. */
   version: number;
   busy: boolean;
-  /** Chạy một thao tác ghi, báo kết quả ở đầu trang, tải lại. Trả về true nếu thành công. */
+  /** Chạy một thao tác ghi, báo kết quả ở đầu trang, tải lại (hoặc để trang tự cập nhật — xem ActFn). True nếu thành công. */
   act: ActFn;
   setError: (text: string) => void;
 }
@@ -35,6 +39,7 @@ export const ACTION_LABEL: Record<TournamentEvent["action"], string> = {
   call_match: "Gọi vào sân", uncall_match: "Rút trận", move_match: "Dời trận", court_referee: "Trọng tài sân", athlete_update: "Sửa hồ sơ VĐV", rules_update: "Luật điểm theo vòng",
   referee_create: "Tạo TK trọng tài", referee_update: "Sửa TK trọng tài", referee_remove: "Gỡ trọng tài",
   rally_fix_server: "Sửa người giao", rally_undo: "Hoàn tác pha cầu", score_confirm: "Xác nhận kết quả",
+  start_match: "Bắt đầu trận",
 };
 
 /** Tóm tắt 1 dòng nhật ký để hiển thị. */
@@ -51,6 +56,7 @@ export function describeEvent(ev: TournamentEvent): string {
     case "category_update": return d.before?.code !== d.after?.code || d.before?.name !== d.after?.name
       ? `${d.before?.code} — ${d.before?.name} → ${d.after?.code} — ${d.after?.name}` : `${d.after?.code}: ${(d.fields as string[] | undefined)?.join(", ") ?? ""}`;
     case "category_delete": return `${d.code} — ${d.name} (${d.entries} đội)`;
+    case "start_match": return `Bắt đầu trên sân ${d.court}`;
     case "call_match": return `Sân ${d.court}${d.fromCourt && d.fromCourt !== d.court ? ` (lịch dự kiến sân ${d.fromCourt})` : ""}`;
     case "rally_fix_server": return `Người giao: ${d.name ?? d.server}${Array.isArray(d.score) ? ` (lúc ${d.score[0]}-${d.score[1]})` : ""}`;
     case "rally_undo": return `Bỏ ${d.type === "point" ? `pha cầu${Array.isArray(d.score) ? ` ${d.score[0]}-${d.score[1]}` : ""}` : d.type === "start" ? "chọn người giao" : "sửa người giao"}`;

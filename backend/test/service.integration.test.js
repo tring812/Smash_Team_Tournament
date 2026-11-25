@@ -9,6 +9,10 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 
 const svc = require('../src/services/tournamentService');
+const categorySvc = require('../src/services/categoryService');
+const entrySvc = require('../src/services/entryService');
+const matchSvc = require('../src/services/matchService');
+const { beginMatch } = require('./support/match');
 
 const fs = require('node:fs');
 
@@ -87,10 +91,10 @@ describe('tournament service (real Postgres)', { skip }, () => {
   });
 
   test('entries must match singles/doubles of the category', async () => {
-    ms = await svc.createCategory(pool, ADMIN, t.id, { code: 'MS', name: 'Đơn nam', isDoubles: false, groupCount: 2, advancePerGroup: 2 });
-    await rejectsWith(svc.addEntries(pool, ADMIN, ms.id, [{ player1Name: 'A', player2Name: 'B' }]), 422);
+    ms = await categorySvc.createCategory(pool, ADMIN, t.id, { code: 'MS', name: 'Đơn nam', isDoubles: false, groupCount: 2, advancePerGroup: 2 });
+    await rejectsWith(entrySvc.addEntries(pool, ADMIN, ms.id, [{ player1Name: 'A', player2Name: 'B' }]), 422);
     const names = ['An', 'Bình', 'Cường', 'Dũng', 'Em', 'Phúc', 'Giang', 'Hải'];
-    const added = await svc.addEntries(pool, ADMIN, ms.id, names.map((n, i) => ({ player1Name: n, rating: 1500 - i * 50 })));
+    const added = await entrySvc.addEntries(pool, ADMIN, ms.id, names.map((n, i) => ({ player1Name: n, rating: 1500 - i * 50 })));
     assert.equal(added.length, 8);
   });
 
@@ -105,13 +109,13 @@ describe('tournament service (real Postgres)', { skip }, () => {
     const res = await svc.drawGroups(pool, ADMIN, ms.id, { manual });
     assert.deepEqual(res.groups, [{ name: 'A', size: 4 }, { name: 'B', size: 4 }]);
     assert.equal(res.matchCount, 12);
-    await rejectsWith(svc.addEntries(pool, ADMIN, ms.id, [{ player1Name: 'Muộn' }]), 409, 'ALREADY_DRAWN');
+    await rejectsWith(entrySvc.addEntries(pool, ADMIN, ms.id, [{ player1Name: 'Muộn' }]), 409, 'ALREADY_DRAWN');
   });
 
   test('schedule never puts the same player on two courts at once, across categories', async () => {
-    const xd = await svc.createCategory(pool, ADMIN, t.id, { code: 'XD', name: 'Đôi nam nữ', isDoubles: true, groupCount: 1, advancePerGroup: 2 });
+    const xd = await categorySvc.createCategory(pool, ADMIN, t.id, { code: 'XD', name: 'Đôi nam nữ', isDoubles: true, groupCount: 1, advancePerGroup: 2 });
     // An và Bình cũng đánh Đơn nam (khớp theo tên chuẩn hoá, kể cả khác hoa/thường & khoảng trắng).
-    await svc.addEntries(pool, ADMIN, xd.id, [
+    await entrySvc.addEntries(pool, ADMIN, xd.id, [
       { player1Name: 'an', player2Name: 'Chi', rating: 1200 },
       { player1Name: '  Bình ', player2Name: 'Dung', rating: 1100 },
       { player1Name: 'Khoa', player2Name: 'Linh', rating: 1000 },
@@ -120,7 +124,7 @@ describe('tournament service (real Postgres)', { skip }, () => {
     await svc.drawGroups(pool, ADMIN, xd.id);
     const out = await svc.scheduleTournament(pool, ADMIN, t.id);
     assert.equal(out.scheduled, 18);
-    const all = await svc.listMatches(pool, t.id);
+    const all = await matchSvc.listMatches(pool, t.id);
     const slotPeople = new Map();
     for (const m of all) {
       assert.ok(m.court >= 1 && m.court <= 3);
@@ -137,22 +141,23 @@ describe('tournament service (real Postgres)', { skip }, () => {
 
   test('referee scoring: authz, validation, optimistic locking', async () => {
     await svc.updateTournament(pool, ADMIN, t.id, { status: 'published' });
-    const [m] = await svc.listMatches(pool, t.id, { categoryId: ms.id });
-    await rejectsWith(svc.recordScore(pool, NOBODY, m.id, { action: 'save', version: m.version, games: [[1, 0]] }), 403);
-    await rejectsWith(svc.recordScore(pool, REF, m.id, { action: 'save', version: m.version, games: [[25, 3]] }), 422);
-    await rejectsWith(svc.recordScore(pool, REF, m.id, { action: 'finish', version: m.version, games: [[21, 3]] }), 422);
+    const [pending] = await matchSvc.listMatches(pool, t.id, { categoryId: ms.id });
+    const m = await beginMatch(pool, ADMIN, REF, pending);
+    await rejectsWith(matchSvc.recordScore(pool, NOBODY, m.id, { action: 'save', version: m.version, games: [[1, 0]] }), 403);
+    await rejectsWith(matchSvc.recordScore(pool, REF, m.id, { action: 'save', version: m.version, games: [[25, 3]] }), 422);
+    await rejectsWith(matchSvc.recordScore(pool, REF, m.id, { action: 'finish', version: m.version, games: [[21, 3]] }), 422);
 
-    const saved = await svc.recordScore(pool, REF, m.id, { action: 'save', version: m.version, games: [[11, 9]] });
+    const saved = await matchSvc.recordScore(pool, REF, m.id, { action: 'save', version: m.version, games: [[11, 9]] });
     assert.equal(saved.status, 'live');
-    assert.equal(saved.referee_user_id, REF.id, 'first referee to score claims the match');
+    assert.equal(saved.referee_user_id, REF.id, 'trọng tài đã nhận trận khi bấm bắt đầu');
     // Thiết bị thứ 2 còn giữ version cũ → 409 kèm bản mới.
-    await rejectsWith(svc.recordScore(pool, REF, m.id, { action: 'save', version: m.version, games: [[12, 9]] }), 409, 'VERSION_CONFLICT');
+    await rejectsWith(matchSvc.recordScore(pool, REF, m.id, { action: 'save', version: m.version, games: [[12, 9]] }), 409, 'VERSION_CONFLICT');
     // Trọng tài khác không được ghi đè trận đã có người nhận.
-    await rejectsWith(svc.recordScore(pool, REF2, m.id, { action: 'save', version: saved.version, games: [[12, 9]] }), 403);
+    await rejectsWith(matchSvc.recordScore(pool, REF2, m.id, { action: 'save', version: saved.version, games: [[12, 9]] }), 403);
 
     const t2 = await svc.getTournament(pool, 'smash-team-iv', null);
-    assert.equal(t2.status, 'ongoing', 'first score moves tournament to ongoing');
-    const q = await svc.refereeQueue(pool, REF);
+    assert.equal(t2.status, 'ongoing', 'bắt đầu trận chuyển giải sang đang diễn ra');
+    const q = await matchSvc.refereeQueue(pool, REF);
     assert.equal(q[0].id, m.id, 'live match is first in the referee queue');
     assert.equal(q[0].status, 'live');
   });
@@ -162,13 +167,14 @@ describe('tournament service (real Postgres)', { skip }, () => {
   });
 
   test('finishing all group matches produces standings ordered by results', async () => {
-    const all = await svc.listMatches(pool, t.id, { categoryId: ms.id });
+    const all = await matchSvc.listMatches(pool, t.id, { categoryId: ms.id });
     const ratings = new Map();
     const { rows } = await pool.query('SELECT id, rating FROM entries WHERE category_id = $1', [ms.id]);
     for (const r of rows) ratings.set(r.id, r.rating);
-    for (const m of all) {
+    for (const m of [...all].sort((a, b) => Number(b.status === 'live') - Number(a.status === 'live'))) {
       const side = ratings.get(m.a.id) > ratings.get(m.b.id) ? 'a' : 'b';
-      await svc.recordScore(pool, ADMIN, m.id, { action: 'finish', version: m.version, games: twoNil(side) });
+      const started = await beginMatch(pool, ADMIN, ADMIN, m);
+      await matchSvc.recordScore(pool, ADMIN, m.id, { action: 'finish', version: started.version, games: twoNil(side) });
     }
     const st = await svc.groupStandings(pool, ms.id);
     assert.deepEqual(st.map((g) => g.complete), [true, true]);
@@ -176,51 +182,53 @@ describe('tournament service (real Postgres)', { skip }, () => {
     assert.deepEqual(st[0].standings.map((r) => r.name), ['An', 'Dũng', 'Em', 'Hải']);
     assert.deepEqual(st[1].standings.map((r) => r.name), ['Bình', 'Cường', 'Phúc', 'Giang']);
     assert.deepEqual(st[0].standings.map((r) => r.won), [3, 2, 1, 0]);
-    await rejectsWith(svc.recordScore(pool, ADMIN, all[0].id, { action: 'save', version: 999, games: [] }), 409, 'MATCH_CLOSED');
+    await rejectsWith(matchSvc.recordScore(pool, ADMIN, all[0].id, { action: 'save', version: 999, games: [] }), 409, 'MATCH_CLOSED');
   });
 
   test('knockout: cross-group semis, winners advance, reopen guarded, final completes category', async () => {
     const k = await svc.generateKnockout(pool, ADMIN, ms.id);
     assert.deepEqual(k, { qualifiers: 4, rounds: 2, matches: 3 });
-    let br = await svc.getBracket(pool, ms.id);
+    let br = await matchSvc.getBracket(pool, ms.id);
     assert.equal(br.rounds[1].label, 'Chung kết');
     assert.deepEqual(br.rounds[0].matches.map((m) => [m.a.name, m.b.name]), [['An', 'Cường'], ['Bình', 'Dũng']]);
 
     const [s1, s2] = br.rounds[0].matches;
-    await svc.recordScore(pool, REF, s1.id, { action: 'finish', version: s1.version, games: twoNil('a') });
-    await svc.recordScore(pool, REF, s2.id, { action: 'walkover', version: s2.version, walkoverWinner: 'b' });
-    br = await svc.getBracket(pool, ms.id);
+    const started = await beginMatch(pool, ADMIN, REF, s1);
+    await matchSvc.recordScore(pool, REF, s1.id, { action: 'finish', version: started.version, games: twoNil('a') });
+    await matchSvc.recordScore(pool, REF, s2.id, { action: 'walkover', version: s2.version, walkoverWinner: 'b' });
+    br = await matchSvc.getBracket(pool, ms.id);
     const fin = br.rounds[1].matches[0];
     assert.deepEqual([fin.a.name, fin.b.name], ['An', 'Dũng']);
 
     // Sửa bán kết khi chung kết chưa đánh → chung kết mất slot A.
-    await svc.reopenMatch(pool, ADMIN, s1.id);
-    br = await svc.getBracket(pool, ms.id);
+    await matchSvc.reopenMatch(pool, ADMIN, s1.id);
+    br = await matchSvc.getBracket(pool, ms.id);
     assert.equal(br.rounds[1].matches[0].a, null);
-    const s1b = (await svc.getMatch(pool, s1.id));
-    await svc.recordScore(pool, ADMIN, s1.id, { action: 'finish', version: s1b.version, games: [[21, 19], [19, 21], [22, 20]] });
+    const s1b = (await matchSvc.getMatch(pool, s1.id));
+    await matchSvc.recordScore(pool, ADMIN, s1.id, { action: 'finish', version: s1b.version, games: [[21, 19], [19, 21], [22, 20]] });
 
-    let f = await svc.getMatch(pool, fin.id);
-    await svc.recordScore(pool, REF, f.id, { action: 'save', version: f.version, games: [[5, 3]] });
-    await rejectsWith(svc.reopenMatch(pool, ADMIN, s1.id), 409, 'NEXT_STARTED');
-    await rejectsWith(svc.reopenMatch(pool, ADMIN, (await svc.listMatches(pool, t.id, { categoryId: ms.id }))[0].id), 409, 'KNOCKOUT_STARTED');
+    let f = await beginMatch(pool, ADMIN, REF, fin);
+    await matchSvc.recordScore(pool, REF, f.id, { action: 'save', version: f.version, games: [[5, 3]] });
+    await rejectsWith(matchSvc.reopenMatch(pool, ADMIN, s1.id), 409, 'NEXT_STARTED');
+    await rejectsWith(matchSvc.reopenMatch(pool, ADMIN, (await matchSvc.listMatches(pool, t.id, { categoryId: ms.id }))[0].id), 409, 'KNOCKOUT_STARTED');
 
-    f = await svc.getMatch(pool, fin.id);
-    await svc.recordScore(pool, REF, f.id, { action: 'finish', version: f.version, games: [[21, 3], [21, 3]] });
+    f = await matchSvc.getMatch(pool, fin.id);
+    await matchSvc.recordScore(pool, REF, f.id, { action: 'finish', version: f.version, games: [[21, 3], [21, 3]] });
     const { rows } = await pool.query('SELECT stage FROM categories WHERE id = $1', [ms.id]);
     assert.equal(rows[0].stage, 'completed');
   });
 
   test('byes: 3 groups × 2 qualifiers → top two seeds go straight to round 2', async () => {
-    const ws = await svc.createCategory(pool, ADMIN, t.id, { code: 'WS', name: 'Đơn nữ', isDoubles: false, groupCount: 3, advancePerGroup: 2 });
-    await svc.addEntries(pool, ADMIN, ws.id, Array.from({ length: 9 }, (_, i) => ({ player1Name: `Nữ ${i + 1}`, rating: 1500 - i * 10 })));
+    const ws = await categorySvc.createCategory(pool, ADMIN, t.id, { code: 'WS', name: 'Đơn nữ', isDoubles: false, groupCount: 3, advancePerGroup: 2 });
+    await entrySvc.addEntries(pool, ADMIN, ws.id, Array.from({ length: 9 }, (_, i) => ({ player1Name: `Nữ ${i + 1}`, rating: 1500 - i * 10 })));
     await svc.drawGroups(pool, ADMIN, ws.id);
-    for (const m of await svc.listMatches(pool, t.id, { categoryId: ws.id })) {
-      await svc.recordScore(pool, ADMIN, m.id, { action: 'finish', version: m.version, games: twoNil('a') });
+    for (const m of await matchSvc.listMatches(pool, t.id, { categoryId: ws.id })) {
+      const started = await beginMatch(pool, ADMIN, ADMIN, m);
+      await matchSvc.recordScore(pool, ADMIN, m.id, { action: 'finish', version: started.version, games: twoNil('a') });
     }
     const k = await svc.generateKnockout(pool, ADMIN, ws.id);
     assert.equal(k.qualifiers, 6);
-    const br = await svc.getBracket(pool, ws.id);
+    const br = await matchSvc.getBracket(pool, ws.id);
     assert.equal(br.rounds[0].matches.filter((m) => m.status === 'bye').length, 2);
     const r2 = br.rounds[1].matches;
     assert.ok(r2.every((m) => m.a !== null), 'bye winners pre-filled into round 2');

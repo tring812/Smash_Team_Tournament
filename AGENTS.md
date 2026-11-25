@@ -17,7 +17,8 @@ bảng = group, trọng tài = referee, sân = court, MSSV = student ID, SĐT = 
 
 | Path | What |
 |---|---|
-| `backend/src/app.js` | Express 5 routes (no `listen`; `server.js` starts it) |
+| `backend/src/app.js` | Express 5 app: middleware, live publish hook, error handler (no `listen`; `server.js` starts it) |
+| `backend/src/routes/` | route handlers by area (`auth`, `tournaments`, `categories`, `matches`), registered on the `/api` router in that order |
 | `backend/src/schemas.js` | zod schemas for every request body |
 | `backend/src/domain/` | pure logic (scoring, draw, bracket, schedule, standings) — no I/O, no DB |
 | `backend/src/services/` | business rules + SQL, one file per area |

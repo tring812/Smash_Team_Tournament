@@ -11,6 +11,7 @@ import { Button, Card, CardSkeleton, EmptyState, Modal, Notice, PageHeader, text
 import { matchTitle } from "../../../../components/MatchViews";
 import { useAdmin } from "../AdminContext";
 import { MoveMatchModal } from "../MoveMatchModal";
+import { NoRefereeHint, RefereeOptions } from "../RefereeOptions";
 
 type QueueItem = CourtBoard["queue"][number];
 
@@ -29,9 +30,9 @@ const scoreLine = (m: Match) => m.games.map((g) => `${g[0]}-${g[1]}`).join(", ")
  * đã gọi / đang đánh → mở bàn điểm, chuyển sân, rút về hàng chờ. Tự cập nhật mỗi 5 giây.
  */
 export default function CourtsPage() {
-  const { t, version, busy, act } = useAdmin();
-  // Trọng tài nhập điểm / BTC khác gọi trận → bảng cập nhật ngay qua SSE; polling chỉ dự phòng.
-  const { tick, live } = useLive(t.id);
+  const { t, version, busy, act, setError } = useAdmin();
+  // Trọng tài nhập điểm / BTC khác gọi trận → bảng cập nhật ngay qua SSE (mọi thay đổi, kể cả từng điểm); polling chỉ dự phòng.
+  const { anyTick: tick, live } = useLive(t.id);
   const board = usePoll((s) => api<CourtBoard>(`/tournaments/${t.id}/courts`, { signal: s }), [t.id, version, tick], live ? 20_000 : 5_000);
   const staff = usePoll((s) => api<Staff[]>(`/tournaments/${t.id}/staff`, { signal: s }), [t.id, version], 120_000);
   const [pickFor, setPickFor] = useState<number | null>(null);
@@ -43,8 +44,25 @@ export default function CourtsPage() {
   const b = board.data;
   const byId = new Map((b?.queue ?? []).map((q) => [q.match.id, q]));
   const freeCourts = (b?.courts ?? []).filter((c) => !c.current).map((c) => c.court);
+  // Gọi / rút / chuyển sân chỉ đổi bảng sân → tải lại riêng bảng sân (không tải lại thông tin giải + danh sách BTC).
+  const boardOnly = { local: () => { void board.refresh(); } };
   const doCall = (m: Match, court: number) =>
-    act(() => api(`/matches/${m.id}/call`, { method: "POST", body: { court } }), `Đã gọi ${m.a?.name} – ${m.b?.name} vào sân ${court}`);
+    act(() => api(`/matches/${m.id}/call`, { method: "POST", body: { court } }), `Đã gọi ${m.a?.name} – ${m.b?.name} vào sân ${court}`, boardOnly);
+  /** Trọng tài sân: đổi ngay trên thẻ sân, chỉ khoá ô của sân đó; lỗi → báo và tải lại bảng sân. */
+  const [savingCourt, setSavingCourt] = useState<number | null>(null);
+  async function setCourtReferee(court: number, refereeUserId: string) {
+    const who = (staff.data ?? []).find((s) => s.user_id === refereeUserId);
+    board.mutate((bd) => ({ ...bd, courts: bd.courts.map((c) => (c.court === court ? { ...c, referee: who ? { id: who.user_id, name: who.full_name } : null } : c)) }));
+    setSavingCourt(court);
+    try {
+      await api(`/tournaments/${t.id}/courts/${court}/referee`, { method: "PUT", body: { refereeUserId: refereeUserId || null } });
+    } catch (e) {
+      setError(`Giao trọng tài sân ${court} thất bại: ${(e as Error).message}`);
+      void board.refresh();
+    } finally {
+      setSavingCourt(null);
+    }
+  }
   /** Gọi trận TRƯỚC giờ khai mạc → hỏi lại (dễ bấm nhầm khi đang chuẩn bị). */
   const [early, setEarly] = useState<{ m: Match; court: number; run: () => Promise<unknown> } | null>(null);
   const beforeOpening = now < new Date(t.starts_at).getTime();
@@ -56,7 +74,7 @@ export default function CourtsPage() {
   /** Rút về trận ĐÃ CÓ ĐIỂM → hỏi lại. */
   const [uncalling, setUncalling] = useState<{ m: Match; court: number } | null>(null);
   const uncall = (m: Match, court: number) =>
-    act(() => api(`/matches/${m.id}/uncall`, { method: "POST" }), `Đã rút trận khỏi sân ${court}`);
+    act(() => api(`/matches/${m.id}/uncall`, { method: "POST" }), `Đã rút trận khỏi sân ${court}`, boardOnly);
   const busyCourts = (b?.courts ?? []).filter((c) => c.current).map((c) => c.court);
 
   return (
@@ -64,6 +82,7 @@ export default function CourtsPage() {
       <PageHeader eyebrow="Ngày thi đấu" title="Điều phối sân"
         desc="Sân trống → gọi trận kế tiếp. Hệ thống chỉ gợi ý trận mà cả hai đội đều rảnh và đã nghỉ đủ; lịch giờ chỉ là dự kiến." />
 
+      <NoRefereeHint staff={staff.data} slug={t.slug} />
       {board.error && <p role="alert" className="text-red-700">{board.error}</p>}
       {!b ? <CardSkeleton rows={4} /> : (
         <>
@@ -87,12 +106,11 @@ export default function CourtsPage() {
 
                   <label className="mb-3 flex items-center gap-2 text-xs font-bold text-slate-500">
                     <UserCheck className="h-4 w-4 shrink-0" aria-hidden /><span className="sr-only">Trọng tài sân {c.court}</span>
-                    <select value={c.referee?.id ?? ""} disabled={busy}
-                      onChange={(e) => act(() => api(`/tournaments/${t.id}/courts/${c.court}/referee`, { method: "PUT", body: { refereeUserId: e.target.value || null } }),
-                        e.target.value ? `Đã giao sân ${c.court} cho trọng tài` : `Đã bỏ trọng tài sân ${c.court}`)}
+                    <select value={c.referee?.id ?? ""} disabled={savingCourt === c.court} aria-busy={savingCourt === c.court}
+                      onChange={(e) => void setCourtReferee(c.court, e.target.value)}
                       className={`${textInputClass} min-h-11 text-sm cursor-pointer`}>
                       <option value="">— Chưa có trọng tài sân —</option>
-                      {(staff.data ?? []).map((s) => <option key={s.user_id} value={s.user_id}>{s.full_name}</option>)}
+                      <RefereeOptions staff={staff.data ?? []} />
                     </select>
                   </label>
 
@@ -181,7 +199,7 @@ export default function CourtsPage() {
                   void guard(q.match, court, async () => {
                     try {
                       await api(`/matches/${q.match.id}/call`, { method: "POST", body: { court } });
-                      await act(async () => undefined, `Đã gọi ${q.match.a?.name} – ${q.match.b?.name} vào sân ${court}`);
+                      await act(async () => undefined, `Đã gọi ${q.match.a?.name} – ${q.match.b?.name} vào sân ${court}`, boardOnly);
                       setPickFor(null);
                     } catch (e) {
                       setPickErr((e as Error).message); // hiện trong hộp thoại, không bị che
@@ -195,7 +213,8 @@ export default function CourtsPage() {
         </ul>
       </Modal>
 
-      <MoveMatchModal key={moving?.id ?? "none"} match={moving} courts={t.courts} busyCourts={busyCourts} onClose={() => setMoving(null)} />
+      <MoveMatchModal key={moving?.id ?? "none"} match={moving} courts={t.courts} busyCourts={busyCourts} onClose={() => setMoving(null)}
+        onDone={() => { void board.refresh(); }} />
 
       <Modal open={Boolean(early)} onClose={() => setEarly(null)} title="Giải chưa khai mạc">
         {early && (

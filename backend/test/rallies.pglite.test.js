@@ -12,7 +12,11 @@ let hasPglite = true;
 try { require.resolve('@electric-sql/pglite'); } catch { hasPglite = false; }
 
 const svc = require('../src/services/tournamentService');
+const categorySvc = require('../src/services/categoryService');
+const entrySvc = require('../src/services/entryService');
+const matchSvc = require('../src/services/matchService');
 const rallies = require('../src/services/rallyService');
+const { beginMatch } = require('./support/match');
 
 const ADMIN = { id: '00000000-0000-4000-8000-0000000000d1', full_name: 'Admin', role: 'admin' };
 const REF = { id: '00000000-0000-4000-8000-0000000000d2', full_name: 'Trọng tài', role: 'user' };
@@ -42,14 +46,15 @@ describe('Biên bản diễn biến điểm (PGlite)', { skip: hasPglite ? false
     }
     t = await svc.createTournament(pool, ADMIN, { slug: 'rally-cup', name: 'Rally Cup', startsAt: future(7), courts: 2 });
     await svc.upsertStaff(pool, ADMIN, t.id, { userId: REF.id, role: 'referee' });
-    const md = await svc.createCategory(pool, ADMIN, t.id, { code: 'MD', name: 'Đôi nam', isDoubles: true, groupCount: 1, advancePerGroup: 1 });
-    await svc.addEntries(pool, ADMIN, md.id, [
+    const md = await categorySvc.createCategory(pool, ADMIN, t.id, { code: 'MD', name: 'Đôi nam', isDoubles: true, groupCount: 1, advancePerGroup: 1 });
+    await entrySvc.addEntries(pool, ADMIN, md.id, [
       { player1Name: 'Phạm Vũ Chí Cường', player2Name: 'Phạm Thị Hiếu' },
       { player1Name: 'Phạm Thiên Phúc', player2Name: 'Phạm Tú Hằng' },
     ]);
     await svc.drawGroups(pool, ADMIN, md.id);
     await svc.updateTournament(pool, ADMIN, t.id, { status: 'published' });
-    match = (await svc.listMatches(pool, t.id))[0];
+    match = (await matchSvc.listMatches(pool, t.id))[0];
+    match = await beginMatch(pool, ADMIN, REF, match);
   });
   after(async () => { await pool?.end(); });
 
@@ -64,7 +69,7 @@ describe('Biên bản diễn biến điểm (PGlite)', { skip: hasPglite ? false
     await add(REF, { type: 'start', server: 'a2', receiver: 'b2', expectedSeq: 1 });
     await add(REF, { type: 'point', side: 'a', expectedSeq: 2 });
     await add(REF, { type: 'point', side: 'b', expectedSeq: 3 });
-    const m = await svc.getMatch(pool, match.id);
+    const m = await matchSvc.getMatch(pool, match.id);
     assert.deepEqual(m.games, [[1, 1]]);
     assert.equal(m.status, 'live');
     const list = await rallies.listRallies(pool, match.id);
@@ -82,7 +87,7 @@ describe('Biên bản diễn biến điểm (PGlite)', { skip: hasPglite ? false
   test('hoàn tác xoá sự kiện cuối (đúng seq), tính lại tỉ số; nhật ký ghi hoàn tác', async () => {
     await rejectsWith(rallies.undoRally(pool, REF, match.id, 2), 409, 'RALLY_CONFLICT');
     await rallies.undoRally(pool, REF, match.id, 3);
-    assert.deepEqual((await svc.getMatch(pool, match.id)).games, [[1, 0]]);
+    assert.deepEqual((await matchSvc.getMatch(pool, match.id)).games, [[1, 0]]);
     const actions = (await svc.listEvents(pool, ADMIN, t.id)).map((e) => e.action);
     assert.ok(actions.includes('rally_undo'));
   });
@@ -92,27 +97,27 @@ describe('Biên bản diễn biến điểm (PGlite)', { skip: hasPglite ? false
     const evs = await svc.listEvents(pool, ADMIN, t.id);
     const fix = evs.find((e) => e.action === 'rally_fix_server');
     // Ô a1 = VĐV 1 của đội a — đội nào là a tuỳ kết quả bốc thăm ngẫu nhiên.
-    assert.equal(fix.details.name, (await svc.getMatch(pool, match.id)).a.players[0].name);
+    assert.equal(fix.details.name, (await matchSvc.getMatch(pool, match.id)).a.players[0].name);
     assert.ok(!evs.some((e) => e.action === 'rally_point'));
   });
 
   test('BTC sửa tay tỉ số khác biên bản → mốc override; xác nhận → nhật ký; trận xong thì khoá biên bản', async () => {
-    const m = await svc.getMatch(pool, match.id);
-    await svc.recordScore(pool, ADMIN, match.id, { action: 'save', version: m.version, games: [[20, 5]] });
+    const m = await matchSvc.getMatch(pool, match.id);
+    await matchSvc.recordScore(pool, ADMIN, match.id, { action: 'save', version: m.version, games: [[20, 5]] });
     const list = await rallies.listRallies(pool, match.id);
     assert.equal(list[list.length - 1].type, 'override');
     assert.deepEqual(list[list.length - 1].games, [[20, 5]]);
     // Điểm tiếp theo tính từ bản sửa.
     await add(REF, { type: 'point', side: 'a', expectedSeq: list.length + 1 });
-    let fresh = await svc.getMatch(pool, match.id);
+    let fresh = await matchSvc.getMatch(pool, match.id);
     assert.deepEqual(fresh.games, [[21, 5]]);
     // Game 2: chọn lại người giao / nhận.
     const seq = (await rallies.listRallies(pool, match.id)).length + 1;
     await add(REF, { type: 'start', server: 'b2', receiver: 'a1', expectedSeq: seq });
     for (let i = 0; i < 21; i += 1) await add(REF, { type: 'point', side: 'a', expectedSeq: seq + 1 + i });
-    fresh = await svc.getMatch(pool, match.id);
+    fresh = await matchSvc.getMatch(pool, match.id);
     assert.deepEqual(fresh.games, [[21, 5], [21, 0]]);
-    await svc.recordScore(pool, REF, match.id, { action: 'finish', version: fresh.version, games: fresh.games });
+    await matchSvc.recordScore(pool, REF, match.id, { action: 'finish', version: fresh.version, games: fresh.games });
     const confirm = (await svc.listEvents(pool, ADMIN, t.id)).find((e) => e.action === 'score_confirm');
     assert.equal(confirm.details.winner, 'a');
     const n = (await rallies.listRallies(pool, match.id)).length;
@@ -122,7 +127,7 @@ describe('Biên bản diễn biến điểm (PGlite)', { skip: hasPglite ? false
   });
 
   test('giải đã kết thúc: không ghi biên bản', async () => {
-    await svc.reopenMatch(pool, ADMIN, match.id);
+    await matchSvc.reopenMatch(pool, ADMIN, match.id);
     await svc.updateTournament(pool, ADMIN, t.id, { status: 'completed' });
     const n = (await rallies.listRallies(pool, match.id)).length;
     await rejectsWith(add(REF, { type: 'point', side: 'b', expectedSeq: n + 1 }), 409, 'TOURNAMENT_CLOSED');

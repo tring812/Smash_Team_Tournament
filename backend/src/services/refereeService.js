@@ -83,6 +83,31 @@ async function createReferee(pool, viewer, tid, input) {
 }
 
 /**
+ * Quản trị viên tạo tài khoản ở trang Tài khoản, tuỳ chọn thêm ngay làm TRỌNG TÀI của một số giải.
+ * Một giao dịch: giải không tồn tại / đã xoá → huỷ cả việc tạo tài khoản (không để tài khoản nửa vời).
+ * Chỉ admin (route đã chặn bằng requireAdmin; kiểm lại ở đây vì service có thể được gọi từ nơi khác).
+ * @param {Pool} pool @param {Viewer} viewer
+ * @param {{ username: string, fullName: string, password: string, role: 'admin'|'user', refereeTournamentIds?: string[] }} input
+ */
+async function createAccount(pool, viewer, input) {
+  if (viewer.role !== 'admin') throw forbidden('Chỉ quản trị viên hệ thống tạo được tài khoản');
+  const { refereeTournamentIds = [], ...user } = input;
+  const tids = [...new Set(refereeTournamentIds)];
+  return withTx(pool, async (c) => {
+    const u = await users.createUser(c, user);
+    if (tids.length) {
+      const { rows } = await c.query('SELECT id FROM tournaments WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL', [tids]);
+      if (rows.length !== tids.length) throw new HttpError(422, 'TOURNAMENT_NOT_FOUND', 'Có giải không tồn tại hoặc đã bị xoá');
+      for (const tid of tids) {
+        await c.query(`INSERT INTO tournament_staff (tournament_id, user_id, role) VALUES ($1, $2, 'referee')`, [tid, u.id]);
+        await logEvent(c, tid, null, viewer.id, 'referee_create', { userId: u.id, username: u.username, name: u.full_name });
+      }
+    }
+    return { ...u, refereeTournamentIds: tids };
+  });
+}
+
+/**
  * Sửa tên / đặt lại mật khẩu / khoá – mở khoá. Đổi mật khẩu hoặc khoá → đăng xuất mọi phiên của người đó.
  * @param {Pool} pool @param {Viewer} viewer @param {string} tid @param {string} userId
  * @param {{ fullName?: string, password?: string, disabled?: boolean }} patch
@@ -126,4 +151,4 @@ async function removeReferee(pool, viewer, tid, userId) {
   });
 }
 
-module.exports = { listReferees, createReferee, updateReferee, removeReferee };
+module.exports = { listReferees, createReferee, createAccount, updateReferee, removeReferee };

@@ -2,6 +2,11 @@ export type Role = "admin" | "user";
 export type MatchStatus = "pending" | "scheduled" | "live" | "finished" | "walkover" | "bye" | "cancelled";
 export type Game = [number, number];
 
+/** Yêu cầu bắt đầu trận trên sân đã được BTC gán. */
+export interface StartMatchInput {
+  version: number;
+}
+
 export interface Viewer {
   id: string;
   username: string | null;
@@ -15,6 +20,11 @@ export interface Account extends Viewer {
   last_login_at: string | null;
   created_at: string;
   has_password: boolean;
+}
+
+/** POST /admin/users: tài khoản vừa tạo + các giải đã thêm làm trọng tài. */
+export interface CreatedAccount extends Viewer {
+  refereeTournamentIds: string[];
 }
 
 export interface TournamentSummary {
@@ -164,6 +174,16 @@ export interface Bracket {
   rounds: { round: number; label: string; matches: Match[] }[];
 }
 
+/**
+ * `data` của sự kiện SSE `changed` (`GET /tournaments/:id/stream`): chỉ là phạm vi thay đổi, không mang dữ liệu trận.
+ * `match`: chỉ tỉ số / biên bản / trọng tài của các trận này đổi; `structure`: tải lại toàn bộ.
+ */
+/**
+ * `data` của sự kiện SSE `changed`. `match`: chỉ các trận này đổi; có `categoryIds` = kết quả của các nội dung đó đổi
+ * (bảng xếp hạng / nhánh cần tải lại). `structure`: tải lại toàn bộ.
+ */
+export type LiveChange = { kind: "match"; matchIds: string[]; categoryIds?: string[] } | { kind: "structure" };
+
 export interface Entry {
   id: string;
   name: string;
@@ -199,7 +219,7 @@ export interface TournamentEvent {
     | "category_create" | "category_update" | "category_delete"
     | "call_match" | "uncall_match" | "move_match" | "court_referee" | "athlete_update" | "rules_update"
     | "referee_create" | "referee_update" | "referee_remove"
-    | "rally_fix_server" | "rally_undo" | "score_confirm";
+    | "rally_fix_server" | "rally_undo" | "score_confirm" | "start_match";
   details: Record<string, unknown>;
   created_at: string;
   actor: string;

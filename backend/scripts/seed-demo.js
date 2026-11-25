@@ -7,6 +7,9 @@
 const crypto = require('node:crypto');
 const { createPool } = require('../src/db');
 const svc = require('../src/services/tournamentService');
+const categorySvc = require('../src/services/categoryService');
+const entrySvc = require('../src/services/entryService');
+const matchSvc = require('../src/services/matchService');
 const { hashPassword } = require('../src/auth');
 
 if (process.env.NODE_ENV === 'production') {
@@ -58,6 +61,17 @@ const WOMEN = [
 ];
 
 /**
+ * Ghi điểm cho dữ liệu demo. Từ migration 012 trận phải "Bắt đầu" trước khi nhập điểm; seed không đi qua
+ * luồng gọi sân (nhiều trận demo chưa có sân) nên đánh dấu `live` trực tiếp rồi ghi điểm như trọng tài.
+ * CHỈ dùng cho seed dev — mã ứng dụng luôn đi qua startMatch.
+ */
+async function play(pool, admin, matchId, action, games) {
+  await pool.query(`UPDATE matches SET status = 'live', version = version + 1, updated_at = now() WHERE id = $1 AND status <> 'live'`, [matchId]);
+  const m = await matchSvc.getMatch(pool, matchId);
+  await matchSvc.recordScore(pool, admin, matchId, { action, version: m.version, games });
+}
+
+/**
  * Nội dung WS: vòng bảng đã xong → nhánh 8 đội (tứ kết → chung kết), xếp lịch ngày hôm sau,
  * 3 trận tứ kết đã có kết quả, 1 trận đang đánh — để xem cây thi đấu có dữ liệu thật.
  * @returns {Promise<boolean>} true nếu vừa tạo
@@ -65,25 +79,23 @@ const WOMEN = [
 async function ensureKnockoutDemo(pool, admin, t) {
   const has = await pool.query(`SELECT 1 FROM categories WHERE tournament_id = $1 AND code = 'WS'`, [t.id]);
   if (has.rows[0]) return false;
-  const ws = await svc.createCategory(pool, admin, t.id, { code: 'WS', name: 'Đơn nữ', isDoubles: false, groupCount: 4, advancePerGroup: 2 });
-  await svc.addEntries(pool, admin, ws.id, WOMEN.map(([player1Name, club]) => ({ player1Name, club })));
+  const ws = await categorySvc.createCategory(pool, admin, t.id, { code: 'WS', name: 'Đơn nữ', isDoubles: false, groupCount: 4, advancePerGroup: 2 });
+  await entrySvc.addEntries(pool, admin, ws.id, WOMEN.map(([player1Name, club]) => ({ player1Name, club })));
   await svc.drawGroups(pool, admin, ws.id);
   const groupScores = [[[21, 15], [21, 18]], [[19, 21], [21, 17], [21, 16]], [[21, 11], [21, 13]], [[17, 21], [18, 21]]];
-  const groupMatches = await svc.listMatches(pool, t.id, { categoryId: ws.id });
+  const groupMatches = await matchSvc.listMatches(pool, t.id, { categoryId: ws.id });
   for (const [k, m] of groupMatches.entries()) {
-    await svc.recordScore(pool, admin, m.id, { action: 'finish', version: m.version, games: groupScores[k % groupScores.length] });
+    await play(pool, admin, m.id, 'finish', groupScores[k % groupScores.length]);
   }
   await svc.generateKnockout(pool, admin, ws.id);
   const day2 = new Date(new Date(t.starts_at).getTime() + 86_400_000).toISOString().slice(0, 10);
   await svc.scheduleTournament(pool, admin, t.id, { stage: 'knockout', startAt: `${day2}T08:00:00+07:00`, courts: 4, slotMinutes: 40 });
-  const qf = (await svc.getBracket(pool, ws.id)).rounds[0].matches;
+  const qf = (await matchSvc.getBracket(pool, ws.id)).rounds[0].matches;
   const koScores = [[[21, 16], [21, 19]], [[21, 23], [21, 14], [21, 18]], [[15, 21], [12, 21]]];
   for (const [k, games] of koScores.entries()) {
-    const m = await svc.getMatch(pool, qf[k].id);
-    await svc.recordScore(pool, admin, m.id, { action: 'finish', version: m.version, games });
+    await play(pool, admin, qf[k].id, 'finish', games);
   }
-  const live = await svc.getMatch(pool, qf[3].id);
-  await svc.recordScore(pool, admin, live.id, { action: 'save', version: live.version, games: [[21, 19], [9, 12]] });
+  await play(pool, admin, qf[3].id, 'save', [[21, 19], [9, 12]]);
   return true;
 }
 
@@ -108,24 +120,22 @@ async function main() {
     });
     await svc.upsertStaff(pool, admin, t.id, { userId: ref.id, role: 'referee' });
 
-    const ms = await svc.createCategory(pool, admin, t.id, { code: 'MS', name: 'Đơn nam', isDoubles: false, groupCount: 3, advancePerGroup: 2 });
-    const xd = await svc.createCategory(pool, admin, t.id, { code: 'XD', name: 'Đôi nam nữ', isDoubles: true, groupCount: 2, advancePerGroup: 2 });
-    await svc.addEntries(pool, admin, ms.id, SINGLES.map(([player1Name, club]) => ({ player1Name, club })));
-    await svc.addEntries(pool, admin, xd.id, MIXED.map(([player1Name, player2Name, club]) => ({ player1Name, player2Name, club })));
+    const ms = await categorySvc.createCategory(pool, admin, t.id, { code: 'MS', name: 'Đơn nam', isDoubles: false, groupCount: 3, advancePerGroup: 2 });
+    const xd = await categorySvc.createCategory(pool, admin, t.id, { code: 'XD', name: 'Đôi nam nữ', isDoubles: true, groupCount: 2, advancePerGroup: 2 });
+    await entrySvc.addEntries(pool, admin, ms.id, SINGLES.map(([player1Name, club]) => ({ player1Name, club })));
+    await entrySvc.addEntries(pool, admin, xd.id, MIXED.map(([player1Name, player2Name, club]) => ({ player1Name, player2Name, club })));
     await svc.drawGroups(pool, admin, ms.id);
     await svc.drawGroups(pool, admin, xd.id);
     await svc.scheduleTournament(pool, admin, t.id, { stage: 'group' });
     await svc.updateTournament(pool, admin, t.id, { status: 'published' });
 
     // Vài kết quả ở Đơn nam để bảng xếp hạng / "đang thi đấu" có dữ liệu.
-    const list = (await svc.listMatches(pool, t.id, { categoryId: ms.id })).filter((m) => m.status === 'scheduled');
+    const list = (await matchSvc.listMatches(pool, t.id, { categoryId: ms.id })).filter((m) => m.status === 'scheduled');
     const scores = [[[21, 17], [21, 19]], [[18, 21], [21, 15], [21, 12]], [[21, 9], [21, 14]]];
     for (const [i, games] of scores.entries()) {
-      const m = list[i];
-      await svc.recordScore(pool, admin, m.id, { action: 'finish', version: m.version, games });
+      await play(pool, admin, list[i].id, 'finish', games);
     }
-    const live = list[3];
-    await svc.recordScore(pool, admin, live.id, { action: 'save', version: live.version, games: [[21, 18], [11, 9]] });
+    await play(pool, admin, list[3].id, 'save', [[21, 18], [11, 9]]);
     await ensureKnockoutDemo(pool, admin, t);
     process.stdout.write(`Đã tạo giải demo: /t/${t.slug}\n`);
   } finally {

@@ -14,3 +14,12 @@ export function sortTournaments(ts: TournamentSummary[]): TournamentSummary[] {
     return a.status === "completed" ? -d : d;
   });
 }
+
+/**
+ * Lần tải danh sách giải gần nhất của thanh điều hướng (dùng chung trong trang). Thanh điều hướng chỉ tải lại khi
+ * danh sách đã cũ hơn NAV_LIST_TTL_MS hoặc đổi tài khoản — trước đây tải lại MỖI lần chuyển trang, nối tiếp sau /me.
+ */
+export const NAV_LIST_TTL_MS = 30_000;
+export const navList = { at: 0, viewer: null as string | null };
+/** Vừa tạo / sửa giải → lần chuyển trang kế tiếp tải lại danh sách giải của thanh điều hướng ngay. */
+export function invalidateNavTournaments() { navList.at = 0; }

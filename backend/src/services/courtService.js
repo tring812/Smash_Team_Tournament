@@ -12,8 +12,9 @@
  */
 const { notFound, conflict, unprocessable } = require('../errors');
 const {
-  withTx, requireOrganizer, logEvent, participantKey, presentMatch, MATCH_SELECT, FINAL_STATUSES,
+  withTx, requireOrganizer, logEvent, participantKey, FINAL_STATUSES,
 } = require('./tournamentService');
+const { presentMatch, MATCH_SELECT } = require('./matchService');
 
 /** @typedef {import('./tournamentService').Pool} Pool */
 /** @typedef {import('./tournamentService').Queryable} Queryable */
@@ -326,4 +327,7 @@ async function setCourtReferee(pool, viewer, tid, court, userId) {
   });
 }
 
-module.exports = { REST_MINUTES, courtBoard, callMatch, uncallMatch, moveMatch, setCourtReferee };
+module.exports = {
+  REST_MINUTES, courtBoard, callMatch, uncallMatch, moveMatch, setCourtReferee,
+  lockMatch, checkCourt, assertCourtFree, assertPlayersFree,
+};

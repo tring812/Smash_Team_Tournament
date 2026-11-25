@@ -11,6 +11,10 @@ let hasPglite = true;
 try { require.resolve('@electric-sql/pglite'); } catch { hasPglite = false; }
 
 const svc = require('../src/services/tournamentService');
+const categorySvc = require('../src/services/categoryService');
+const entrySvc = require('../src/services/entryService');
+const matchSvc = require('../src/services/matchService');
+const { beginMatch } = require('./support/match');
 const rr = require('../src/domain/roundRules');
 
 const ADMIN = { id: '00000000-0000-4000-8000-0000000000e1', full_name: 'Admin', role: 'admin' };
@@ -49,62 +53,64 @@ describe('Luật điểm theo vòng (PGlite)', { skip: hasPglite ? false : 'chư
     }
     await pool.query('INSERT INTO users (id, full_name, role) VALUES ($1, $2, $3)', [ADMIN.id, ADMIN.full_name, ADMIN.role]);
     t = await svc.createTournament(pool, ADMIN, { slug: 'rr-cup', name: 'RR Cup', startsAt: future(7), courts: 4 });
-    ms = await svc.createCategory(pool, ADMIN, t.id, { code: 'MS', name: 'Đơn nam', isDoubles: false, groupCount: 2, advancePerGroup: 2 });
-    await svc.addEntries(pool, ADMIN, ms.id, ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((n) => ({ player1Name: `VĐV ${n}` })));
+    ms = await categorySvc.createCategory(pool, ADMIN, t.id, { code: 'MS', name: 'Đơn nam', isDoubles: false, groupCount: 2, advancePerGroup: 2 });
+    await entrySvc.addEntries(pool, ADMIN, ms.id, ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((n) => ({ player1Name: `VĐV ${n}` })));
     await svc.drawGroups(pool, ADMIN, ms.id);
     await svc.updateTournament(pool, ADMIN, t.id, { status: 'published' });
   });
   after(async () => { await pool?.end(); });
 
-  const groupMatches = async () => (await svc.listMatches(pool, t.id)).filter((m) => m.stage === 'group');
+  const groupMatches = async () => (await matchSvc.listMatches(pool, t.id)).filter((m) => m.stage === 'group');
 
   test('đặt luật theo vòng; trận vòng bảng dùng 11 điểm 1 game', async () => {
-    await svc.setRoundRules(pool, ADMIN, ms.id, [
+    await categorySvc.setRoundRules(pool, ADMIN, ms.id, [
       { stage: 'group', ...R(11, 15, 1) },
       { stage: 'knockout', fromEnd: null, ...R(15, 21, 2) },
       { stage: 'knockout', fromEnd: 1, ...R(21, 30, 2) },
     ]);
-    const [m] = await groupMatches();
+    const [pending] = await groupMatches();
+    const m = await beginMatch(pool, ADMIN, ADMIN, pending);
     assert.deepEqual(m.rules, R(11, 15, 1));
     // 11-5 một game là đủ thắng — với luật mặc định 21 điểm 2 game thì không hợp lệ.
-    await svc.recordScore(pool, ADMIN, m.id, { action: 'finish', version: m.version, games: [[11, 5]] });
+    await matchSvc.recordScore(pool, ADMIN, m.id, { action: 'finish', version: m.version, games: [[11, 5]] });
     const ev = (await svc.listEvents(pool, ADMIN, t.id)).find((e) => e.action === 'rules_update');
     assert.ok(ev);
   });
 
   test('khoá: không đổi luật vòng bảng khi đã có trận bắt đầu; vẫn đổi được luật loại trực tiếp và luật mặc định', async () => {
-    await rejectsWith(svc.setRoundRules(pool, ADMIN, ms.id, [{ stage: 'group', ...R(15, 21, 1) }]), 409, 'RULES_LOCKED', /Vòng bảng/);
-    await svc.setRoundRules(pool, ADMIN, ms.id, [
+    await rejectsWith(categorySvc.setRoundRules(pool, ADMIN, ms.id, [{ stage: 'group', ...R(15, 21, 1) }]), 409, 'RULES_LOCKED', /Vòng bảng/);
+    await categorySvc.setRoundRules(pool, ADMIN, ms.id, [
       { stage: 'group', ...R(11, 15, 1) },
       { stage: 'knockout', fromEnd: null, ...R(15, 21, 1) },
       { stage: 'knockout', fromEnd: 1, ...R(21, 30, 2) },
     ]);
     // Mặc định không còn trận đã bắt đầu nào dùng → đổi được.
-    await svc.updateCategory(pool, ADMIN, ms.id, { pointsToWin: 15, maxPoints: 21 });
+    await categorySvc.updateCategory(pool, ADMIN, ms.id, { pointsToWin: 15, maxPoints: 21 });
     // Bỏ luật riêng vòng bảng = vòng bảng quay về mặc định (15) ≠ 11 đang dùng → khoá.
-    await rejectsWith(svc.setRoundRules(pool, ADMIN, ms.id, []), 409, 'RULES_LOCKED');
-    await rejectsWith(svc.setRoundRules(pool, ADMIN, ms.id, [{ stage: 'group', ...R(21, 15, 1) }]), 422);
+    await rejectsWith(categorySvc.setRoundRules(pool, ADMIN, ms.id, []), 409, 'RULES_LOCKED');
+    await rejectsWith(categorySvc.setRoundRules(pool, ADMIN, ms.id, [{ stage: 'group', ...R(21, 15, 1) }]), 422);
   });
 
   test('nhánh: bán kết theo "mọi vòng loại", chung kết theo luật riêng; trận bán kết đã đánh khoá luật bán kết', async () => {
     for (const m of await groupMatches()) {
       if (m.status === 'finished') continue;
-      await svc.recordScore(pool, ADMIN, m.id, { action: 'finish', version: m.version, games: [[11, 3]] });
+      const started = await beginMatch(pool, ADMIN, ADMIN, m);
+      await matchSvc.recordScore(pool, ADMIN, m.id, { action: 'finish', version: started.version, games: [[11, 3]] });
     }
     await svc.generateKnockout(pool, ADMIN, ms.id);
-    const ko = (await svc.listMatches(pool, t.id)).filter((m) => m.stage === 'knockout');
-    const semi = ko.find((m) => m.roundLabel === 'Bán kết');
+    const ko = (await matchSvc.listMatches(pool, t.id)).filter((m) => m.stage === 'knockout');
+    const semi = await beginMatch(pool, ADMIN, ADMIN, ko.find((m) => m.roundLabel === 'Bán kết'));
     const final = ko.find((m) => m.roundLabel === 'Chung kết');
     assert.deepEqual(semi.rules, R(15, 21, 1));
     assert.deepEqual(final.rules, R(21, 30, 2));
-    await svc.recordScore(pool, ADMIN, semi.id, { action: 'save', version: semi.version, games: [[3, 1]] });
-    await rejectsWith(svc.setRoundRules(pool, ADMIN, ms.id, [
+    await matchSvc.recordScore(pool, ADMIN, semi.id, { action: 'save', version: semi.version, games: [[3, 1]] });
+    await rejectsWith(categorySvc.setRoundRules(pool, ADMIN, ms.id, [
       { stage: 'group', ...R(11, 15, 1) }, { stage: 'knockout', fromEnd: 2, ...R(21, 30, 2) }, { stage: 'knockout', fromEnd: 1, ...R(21, 30, 2) },
     ]), 409, 'RULES_LOCKED', /Bán kết/);
     // Chung kết chưa đánh → đổi được (vd 3 game).
-    await svc.setRoundRules(pool, ADMIN, ms.id, [
+    await categorySvc.setRoundRules(pool, ADMIN, ms.id, [
       { stage: 'group', ...R(11, 15, 1) }, { stage: 'knockout', fromEnd: null, ...R(15, 21, 1) }, { stage: 'knockout', fromEnd: 1, ...R(21, 30, 3) },
     ]);
-    assert.deepEqual((await svc.getMatch(pool, final.id)).rules, R(21, 30, 3));
+    assert.deepEqual((await matchSvc.getMatch(pool, final.id)).rules, R(21, 30, 3));
   });
 });

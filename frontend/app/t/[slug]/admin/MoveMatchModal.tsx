@@ -20,11 +20,13 @@ function isoToVnLocal(iso: string | null): string {
  * Dời MỘT trận: đổi sân và/hoặc giờ dự kiến (server chặn trùng sân / trùng VĐV trong cùng khung giờ).
  * Trận đang ở sân (đang đánh / đã gọi) chỉ đổi được sân — "chuyển sân".
  */
-export function MoveMatchModal({ match, courts, busyCourts = [], onClose }: {
+export function MoveMatchModal({ match, courts, busyCourts = [], onClose, onDone }: {
   match: Match | null; courts: number;
   /** Sân đang có trận (đang đánh / đã gọi): không chọn được khi chuyển sân. */
   busyCourts?: number[];
   onClose: () => void;
+  /** Có thì trang tự cập nhật bằng trận máy chủ trả về (không tải lại cả trang). */
+  onDone?: (m: Match) => void;
 }) {
   const { busy, act } = useAdmin();
   const onCourt = Boolean(match && (match.status === "live" || match.calledAt));
@@ -48,8 +50,8 @@ export function MoveMatchModal({ match, courts, busyCourts = [], onClose }: {
     setSaving(true);
     setErr(null);
     try {
-      await api(`/matches/${match.id}`, { method: "PATCH", body });
-      await act(async () => undefined, onCourt ? `Đã chuyển sang sân ${court}` : "Đã dời trận");
+      const moved = await api<Match>(`/matches/${match.id}`, { method: "PATCH", body });
+      await act(async () => moved, onCourt ? `Đã chuyển sang sân ${court}` : "Đã dời trận", onDone ? { local: onDone } : undefined);
       onClose();
     } catch (e) {
       setErr((e as Error).message);

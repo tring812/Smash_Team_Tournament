@@ -57,6 +57,54 @@ describe('HTTP API (PGlite)', { skip: hasPglite ? false : 'chưa cài @electric-
     return c.split(';')[0];
   }
 
+  test('API bắt đầu: xác thực, CSRF, schema, chặn sân bận và hoàn thành giải phóng sân', async () => {
+    const cookie = await login();
+    const viewer = (await (await call('/api/me', { cookie })).json()).user;
+    const svc = require('../src/services/tournamentService');
+    const categorySvc = require('../src/services/categoryService');
+    const entrySvc = require('../src/services/entryService');
+    const matchSvc = require('../src/services/matchService');
+    const courts = require('../src/services/courtService');
+    const t = await svc.createTournament(pool, viewer, { slug: 'http-start', name: 'Giải thử HTTP', startsAt: new Date(Date.now() + 7 * 86_400_000).toISOString() });
+    const cat = await categorySvc.createCategory(pool, viewer, t.id, { code: 'MS', name: 'Đơn nam', isDoubles: false, groupCount: 1 });
+    await entrySvc.addEntries(pool, viewer, cat.id, ['An', 'Bình', 'Chi', 'Dũng'].map((player1Name) => ({ player1Name })));
+    await svc.drawGroups(pool, viewer, cat.id);
+    const matches = await matchSvc.listMatches(pool, t.id);
+    const a = matches[0];
+    const b = matches.find((m) => ![a.a.id, a.b.id].includes(m.a.id) && ![a.a.id, a.b.id].includes(m.b.id));
+    for (const m of [a, b]) await courts.moveMatch(pool, viewer, m.id, { court: 1 });
+    const before = await matchSvc.getMatch(pool, a.id);
+    const route = `/api/matches/${a.id}/start`;
+    const body = { version: before.version };
+    assert.equal((await call(route, { method: 'POST', body })).status, 401);
+    assert.equal((await call(route, { method: 'POST', body, cookie, headers: { 'x-requested-with': '' } })).status, 403);
+    assert.equal((await call(route, { method: 'POST', body: {}, cookie })).status, 422);
+    const blocked = await call(`/api/matches/${a.id}/score`, { method: 'PUT', cookie, body: { action: 'save', version: before.version, games: [[1, 0]] } });
+    assert.equal(blocked.status, 409);
+    assert.equal((await blocked.json()).code, 'MATCH_NOT_STARTED');
+    const started = await call(route, { method: 'POST', body, cookie });
+    assert.equal(started.status, 200);
+    let m = await started.json();
+    assert.equal(m.status, 'live');
+    assert.deepEqual(m.rallies, []);
+    assert.equal(m.version, before.version + 1);
+    const startB = () => call(`/api/matches/${b.id}/start`, { method: 'POST', cookie, body: { version: b.version + 1 } });
+    const busy = await startB();
+    assert.equal(busy.status, 409);
+    assert.equal((await busy.json()).code, 'COURT_BUSY');
+    const invalid = await call(`/api/matches/${a.id}/score`, { method: 'PUT', cookie, body: { action: 'finish', version: m.version, games: [[1, 0]] } });
+    assert.equal(invalid.status, 422);
+    const saved = await call(`/api/matches/${a.id}/score`, { method: 'PUT', cookie, body: { action: 'save', version: m.version, games: [[21, 0], [21, 0]] } });
+    assert.equal(saved.status, 200);
+    m = await saved.json();
+    assert.equal(m.status, 'live');
+    assert.equal((await startB()).status, 409, 'đủ điểm vẫn giữ sân');
+    const done = await call(`/api/matches/${a.id}/score`, { method: 'PUT', cookie, body: { action: 'finish', version: m.version, games: m.games } });
+    assert.equal(done.status, 200);
+    assert.equal((await done.json()).status, 'finished');
+    assert.equal((await startB()).status, 200, 'xác nhận xong mới cho nhận sân');
+  });
+
   test('wrong username and wrong password give the same 401', async () => {
     for (const body of [{ username: 'boss', password: 'nope-nope' }, { username: 'ghost', password: 'nope-nope' }]) {
       const r = await call('/api/auth/login', { method: 'POST', body });
@@ -175,7 +223,99 @@ describe('HTTP API (PGlite)', { skip: hasPglite ? false : 'chưa cài @electric-
     await waitFor(': connected');
     assert.equal((await call(`/api/tournaments/${t.id}`, { method: 'PATCH', cookie: admin, body: { venue: 'Nhà thi đấu UIT' } })).status, 200);
     await waitFor('event: changed');
+    await waitFor('\n\n');
+    assert.match(buf, /event: changed\ndata: \{"kind":"structure"\}\n\n/, 'sửa giải là thay đổi cấu trúc');
     ctl.abort();
+  });
+
+  // Hai test kế tiếp dùng chung một phiên admin: đăng nhập bị giới hạn 20 lần / 15 phút mỗi IP cho cả file.
+  /** @type {string|undefined} */ let sharedAdmin;
+  test('kênh trực tiếp chỉ báo đúng phạm vi: gọi / dời / bắt đầu / lưu điểm = 1 trận; xác nhận = các trận bị ảnh hưởng + nội dung', async () => {
+    const cookie = sharedAdmin ??= await login();
+    const viewer = (await (await call('/api/me', { cookie })).json()).user;
+    const svc = require('../src/services/tournamentService');
+    const categorySvc = require('../src/services/categoryService');
+    const entrySvc = require('../src/services/entryService');
+    const matchSvc = require('../src/services/matchService');
+    const courts = require('../src/services/courtService');
+    const live = require('../src/liveBus');
+    const t = await svc.createTournament(pool, viewer, { slug: 'live-scope', name: 'Phạm vi trực tiếp', startsAt: new Date(Date.now() + 7 * 86_400_000).toISOString(), courts: 4 });
+    const cat = await categorySvc.createCategory(pool, viewer, t.id, { code: 'MS', name: 'Đơn nam', isDoubles: false, groupCount: 2, advancePerGroup: 2 });
+    await entrySvc.addEntries(pool, viewer, cat.id, ['An', 'Bình', 'Chi', 'Dũng'].map((player1Name) => ({ player1Name })));
+    await svc.drawGroups(pool, viewer, cat.id);
+    for (const g of await matchSvc.listMatches(pool, t.id)) {
+      await courts.moveMatch(pool, viewer, g.id, { court: 1 });
+      await matchSvc.startMatch(pool, viewer, g.id, { version: (await matchSvc.getMatch(pool, g.id)).version });
+      await matchSvc.recordScore(pool, viewer, g.id, { action: 'finish', version: (await matchSvc.getMatch(pool, g.id)).version, games: [[21, 5], [21, 5]] });
+    }
+    await svc.generateKnockout(pool, viewer, cat.id);
+    await svc.updateTournament(pool, viewer, t.id, { status: 'published' });
+    const ko = (await matchSvc.getBracket(pool, cat.id)).rounds;
+    const [semi1, semi2] = ko[0].matches;
+    const final = ko[1].matches[0];
+
+    /** @type {any[]} */ const seen = [];
+    const onScope = (scope) => seen.push(scope);
+    live.bus.on(`t:${t.id}`, onScope);
+    // Báo kênh trực tiếp chạy ở sự kiện 'finish' của response → đợi một nhịp sau khi nhận response.
+    const next = async (req) => {
+      const r = await req;
+      assert.ok(r.status < 300, `${r.status} ${await r.clone().text()}`);
+      await new Promise((ok) => { setTimeout(ok, 20); });
+      return { body: await r.json(), scope: seen.pop() };
+    };
+    try {
+      let out = await next(call(`/api/matches/${semi1.id}`, { method: 'PATCH', cookie, body: { court: 1 } }));
+      assert.deepEqual(out.scope, { kind: 'match', matchIds: [semi1.id] }, 'dời trận = 1 trận');
+      out = await next(call(`/api/matches/${semi2.id}/call`, { method: 'POST', cookie, body: { court: 2 } }));
+      assert.deepEqual(out.scope, { kind: 'match', matchIds: [semi2.id] }, 'gọi vào sân = 1 trận');
+      out = await next(call(`/api/matches/${semi1.id}/start`, { method: 'POST', cookie, body: { version: (await matchSvc.getMatch(pool, semi1.id)).version } }));
+      assert.deepEqual(out.scope, { kind: 'structure' }, 'trận đầu tiên chuyển giải sang "đang diễn ra" = tải lại toàn bộ');
+      out = await next(call(`/api/matches/${semi2.id}/start`, { method: 'POST', cookie, body: { version: (await matchSvc.getMatch(pool, semi2.id)).version } }));
+      assert.deepEqual(out.scope, { kind: 'match', matchIds: [semi2.id] }, 'bắt đầu trận khi giải đã diễn ra = 1 trận');
+      out = await next(call(`/api/matches/${semi1.id}/score`, { method: 'PUT', cookie, body: { action: 'save', version: (await matchSvc.getMatch(pool, semi1.id)).version, games: [[21, 3], [21, 4]] } }));
+      assert.deepEqual(out.scope, { kind: 'match', matchIds: [semi1.id] }, 'lưu điểm = 1 trận');
+      out = await next(call(`/api/matches/${semi1.id}/score`, { method: 'PUT', cookie, body: { action: 'finish', version: out.body.version, games: [[21, 3], [21, 4]] } }));
+      assert.equal(out.scope.kind, 'match');
+      assert.equal(out.scope.categoryId, cat.id, 'xác nhận kết quả → nhánh / bảng xếp hạng của nội dung đổi');
+      assert.deepEqual([...out.scope.matchIds].sort(), [semi1.id, final.id].sort(), 'trận vừa xong + trận chung kết nhận đội thắng');
+      assert.equal(seen.length, 0, 'mỗi thao tác chỉ báo một lần');
+    } finally {
+      live.bus.off(`t:${t.id}`, onScope);
+    }
+
+    const lean = await (await call(`/api/matches/${semi1.id}?rallies=0`)).json();
+    assert.equal(lean.rallies, undefined, '?rallies=0 bỏ biên bản');
+    assert.equal(lean.status, 'finished');
+    assert.ok(Array.isArray((await (await call(`/api/matches/${semi1.id}`)).json()).rallies), 'mặc định vẫn kèm biên bản');
+    assert.equal((await call(`/api/matches/${semi1.id}?rallies=x`)).status, 422);
+  });
+
+  test('GET /tournaments/:id/standings: một request cho mọi nội dung, giống hệt từng nội dung; giải nháp ẩn với khách', async () => {
+    const cookie = sharedAdmin ??= await login();
+    const viewer = (await (await call('/api/me', { cookie })).json()).user;
+    const svc = require('../src/services/tournamentService');
+    const categorySvc = require('../src/services/categoryService');
+    const entrySvc = require('../src/services/entryService');
+    const t = await svc.createTournament(pool, viewer, { slug: 'bxh-gop', name: 'BXH gộp', startsAt: new Date(Date.now() + 7 * 86_400_000).toISOString() });
+    const ms = await categorySvc.createCategory(pool, viewer, t.id, { code: 'MS', name: 'Đơn nam', isDoubles: false, groupCount: 2 });
+    const wd = await categorySvc.createCategory(pool, viewer, t.id, { code: 'WD', name: 'Đôi nữ', isDoubles: true, groupCount: 1 });
+    await categorySvc.createCategory(pool, viewer, t.id, { code: 'XD', name: 'Chưa bốc thăm', isDoubles: true, groupCount: 1 });
+    await entrySvc.addEntries(pool, viewer, ms.id, ['An', 'Bình', 'Chi', 'Dũng', 'Em', 'Phú'].map((player1Name) => ({ player1Name })));
+    await entrySvc.addEntries(pool, viewer, wd.id, [['Hoa', 'Lan'], ['Mai', 'Đào'], ['Cúc', 'Trúc']].map(([player1Name, player2Name]) => ({ player1Name, player2Name })));
+    await svc.drawGroups(pool, viewer, ms.id);
+    await svc.drawGroups(pool, viewer, wd.id);
+
+    assert.equal((await call(`/api/tournaments/${t.id}/standings`)).status, 404, 'giải nháp: khách không thấy');
+    const r = await call(`/api/tournaments/${t.id}/standings`, { cookie });
+    assert.equal(r.status, 200);
+    const all = await r.json();
+    assert.deepEqual(all.map((x) => x.categoryId), [ms.id, wd.id], 'chỉ nội dung đã bốc thăm, theo mã');
+    for (const { categoryId, groups } of all) {
+      const one = await (await call(`/api/categories/${categoryId}/standings`, { cookie })).json();
+      assert.deepEqual(groups, one, 'cùng kết quả với API từng nội dung');
+    }
+    assert.ok(!JSON.stringify(all).includes('student_id') && !JSON.stringify(all).includes('phone'), 'không lộ MSSV / SĐT');
   });
 
   test('draft tournament detail is 404 for the public', async () => {

@@ -8,7 +8,9 @@ import { api, ApiError } from "../../lib/api";
 import { gameState, matchProgress } from "../../lib/scoring";
 import { reminderAfterPoint, serviceCourt, type Reminder } from "../../lib/serve";
 import { emptyState, otherSide, replay, sideOf, slotName, type RallyInput, type RallyState, type Side } from "../../lib/rally";
-import type { Game, Match, Rally, Slot } from "../../lib/types";
+import type { Game, Match, Rally, Slot, StartMatchInput } from "../../lib/types";
+import { matchControls } from "../../lib/matchControls";
+import { Button } from "../../components/ui";
 import { matchTitle, StatusBadge } from "../../components/MatchViews";
 import { isDoublesMatch, RallySheet } from "../../components/RallySheet";
 
@@ -95,6 +97,8 @@ export default function ScoringPage() {
   const [reminder, setReminder] = useState<(Reminder & { id: number }) | null>(null);
   const [fixing, setFixing] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(true);
+  const [actionBusy, setActionBusy] = useState(false);
+  const actionLock = useRef(false);
   const reminderSeq = useRef(0);
   const sending = useRef<Promise<void> | null>(null);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -174,7 +178,7 @@ export default function ScoringPage() {
       if (!saved) return;
       const last = m.rallies[m.rallies.length - 1]?.seq ?? 0;
       const closed = ["finished", "walkover", "bye", "cancelled"].includes(m.status) || m.tournamentStatus === "completed";
-      if (closed || saved.serverSeq !== last) {
+      if (closed || m.status !== "live" || saved.serverSeq !== last) {
         writeQueue(matchId, [], 0);
         if (!closed) setMessage("Biên bản trên máy chủ đã thay đổi từ thiết bị khác — đã bỏ các pha chưa gửi trên máy này.");
         return;
@@ -209,10 +213,11 @@ export default function ScoringPage() {
   const rules = match.rules;
   const games: Game[] = state.games.length ? state.games : match.games;
   const prog = matchProgress(games, rules);
-  const closed = ["finished", "walkover", "bye"].includes(match.status);
+  const controls = matchControls(match, games, ops.length, actionBusy, sync);
+  const closed = controls.closed;
   const locked = match.tournamentStatus === "completed";
-  const ready = !closed && !locked && Boolean(match.a && match.b);
-  const canScore = ready && !prog.winner;
+  const ready = controls.started;
+  const canScore = controls.canScore;
   const last = games[games.length - 1];
   // Đang đánh: game hiện tại; đã xong (kể cả sau khi xác nhận): tỉ số game cuối — không về 0–0.
   const current: Game = last && (gameState(last, rules) === "in_progress" || closed || prog.winner) ? last : [0, 0];
@@ -222,6 +227,7 @@ export default function ScoringPage() {
   const pickerShown = needStart && (doubles || !prevWinner);
 
   function enqueue(evs: Omit<RallyInput, "seq">[]) {
+    if (!ready || actionLock.current) return;
     let seq = nextSeq;
     const added: Op[] = evs.map((e) => ({ kind: "add", ev: { ...e, seq: seq++ } as RallyInput }));
     setMessage(null);
@@ -250,7 +256,7 @@ export default function ScoringPage() {
   }
 
   function undo() {
-    if (closed || locked) return;
+    if (!ready || actionLock.current) return;
     const lastEv = events[events.length - 1];
     if (!lastEv) return;
     setReminder(null);
@@ -263,26 +269,58 @@ export default function ScoringPage() {
     void flush();
   }
 
-  async function finish(action: "finish" | "walkover", walkoverWinner?: "a" | "b") {
-    if (locked || !match) return;
-    await flush();
-    if (opsRef.current.length) {
-      setMessage("Còn pha chưa gửi được (mất mạng). Chờ có mạng rồi xác nhận lại.");
-      return;
-    }
+  async function start() {
+    if (!match || !controls.canStart || actionLock.current) return;
+    actionLock.current = true;
+    setActionBusy(true);
+    setMessage(null);
     try {
+      const body: StartMatchInput = { version: match.version };
+      adopt(await api<MatchWithRallies>(`/matches/${matchId}/start`, { method: "POST", body }));
+      setSync("saved");
+      setMessage("Đã bắt đầu trận — sân và VĐV đã được nhận cho trận này.");
+    } catch (e) {
+      setMessage((e as Error).message);
+      setSync("error");
+      try { await reload(); } catch { /* giữ thông báo và thử lại khi có mạng */ }
+    } finally {
+      actionLock.current = false;
+      setActionBusy(false);
+    }
+  }
+
+  async function finish(action: "finish" | "walkover", walkoverWinner?: "a" | "b") {
+    if (locked || closed || !match || actionLock.current || (action === "finish" && !controls.canFinish)) return;
+    actionLock.current = true;
+    setActionBusy(true);
+    try {
+      await flush();
+      if (opsRef.current.length) {
+        setMessage("Còn pha chưa gửi được (mất mạng). Chờ có mạng rồi xác nhận lại.");
+        return;
+      }
+      // flush có thể đổi phiên bản trong lúc chờ; lấy lại bản máy chủ và không ghi đè điểm máy khác.
+      const fresh = await reload();
+      if (JSON.stringify(fresh.games) !== JSON.stringify(games)) {
+        setMessage("Tỉ số vừa thay đổi — đã tải lại, hãy kiểm tra trước khi xác nhận.");
+        return;
+      }
       const m = await api<Match>(`/matches/${matchId}/score`, {
-        method: "PUT", body: { action, version: match.version, games, ...(walkoverWinner ? { walkoverWinner } : {}) },
+        method: "PUT", body: { action, version: fresh.version, games: fresh.games, ...(walkoverWinner ? { walkoverWinner } : {}) },
       });
-      adopt({ ...m, rallies: match.rallies });
+      adopt({ ...m, rallies: fresh.rallies });
       setConfirmWo(null);
-      setMessage(action === "finish" ? "Đã xác nhận kết quả trận." : "Đã ghi nhận bỏ cuộc.");
+      setSync("saved");
+      setMessage(action === "finish" ? "Đã hoàn thành trận — sân và VĐV đã được giải phóng." : "Đã ghi nhận bỏ cuộc.");
       void reload().catch(() => {});
     } catch (e) {
       if (retriable(e)) { setMessage((e as Error).message); return; }
       try { await reload(); } catch { /* giữ */ }
       setSync("error");
       setMessage(`${(e as Error).message} — đã trả điểm về như trước.`);
+    } finally {
+      actionLock.current = false;
+      setActionBusy(false);
     }
   }
 
@@ -306,6 +344,18 @@ export default function ScoringPage() {
       {locked && (
         <div role="status" className="mb-3 rounded-2xl border-2 border-slate-300 bg-slate-100 p-3 text-center font-bold text-slate-800">
           Giải đã kết thúc — khoá nhập điểm
+        </div>
+      )}
+
+      {!closed && !locked && !ready && (
+        <div className="mb-3 rounded-2xl border-2 border-sky-500 bg-sky-50 p-4 text-center text-slate-900">
+          <p className="font-bold">Chưa bắt đầu trận</p>
+          <p className="mt-1 text-sm">{match.court
+            ? `Bắt đầu trên sân ${match.court}. Hệ thống sẽ kiểm tra sân và tất cả VĐV trước khi mở ghi điểm.`
+            : "Trận chưa có sân — liên hệ BTC để gán sân trước khi bắt đầu."}</p>
+          <Button variant="primary" className="mt-3" disabled={!controls.canStart} loading={actionBusy} onClick={() => void start()}>
+            Bắt đầu trận
+          </Button>
         </div>
       )}
 
@@ -371,13 +421,13 @@ export default function ScoringPage() {
 
       {!closed && !locked && (
         <div className="mt-4 grid grid-cols-3 gap-2">
-          <button type="button" onClick={undo} disabled={!events.length} className="min-h-12 rounded-2xl border border-line font-semibold disabled:opacity-50">
+          <button type="button" onClick={undo} disabled={!ready || !events.length || actionBusy} className="min-h-12 rounded-2xl border border-line font-semibold disabled:opacity-50">
             Hoàn tác
           </button>
           <button type="button" onClick={() => setSwapped((v) => !v)} className="min-h-12 rounded-2xl border border-line font-semibold">
             Đổi sân
           </button>
-          <button type="button" onClick={() => setConfirmWo(confirmWo ? null : "a")} className="min-h-12 rounded-2xl border border-line font-semibold">
+          <button type="button" disabled={actionBusy} onClick={() => setConfirmWo(confirmWo ? null : "a")} className="min-h-12 rounded-2xl border border-line font-semibold disabled:opacity-50">
             Bỏ cuộc…
           </button>
         </div>
@@ -394,12 +444,15 @@ export default function ScoringPage() {
         {sheetOpen && <div id="sheet-body" className="mt-1"><RallySheet match={match} state={state} pending={pending} /></div>}
       </section>
 
-      {prog.winner && !closed && !locked && (
+      {ready && (
         <div className="mt-4 rounded-2xl border-2 border-success p-4 text-center">
-          <p className="font-semibold">{match[prog.winner]?.name} thắng {prog.gamesA}-{prog.gamesB}. Xác nhận để cập nhật bảng/nhánh.</p>
-          <button type="button" onClick={() => finish("finish")} className="mt-3 min-h-12 rounded-full bg-primary px-6 font-extrabold text-on-primary">
-            Xác nhận kết quả
-          </button>
+          <p className="font-semibold">{prog.winner
+            ? `${match[prog.winner]?.name} thắng ${prog.gamesA}-${prog.gamesB}. Hoàn thành để cập nhật bảng/nhánh và giải phóng sân.`
+            : "Nhập đủ tỉ số hợp lệ và lưu hết các pha cầu để hoàn thành trận."}</p>
+          {ops.length > 0 && <p className="mt-1 text-sm text-amber-700">Còn {ops.length} thao tác chưa lưu — chưa thể hoàn thành.</p>}
+          <Button variant="primary" onClick={() => void finish("finish")} disabled={!controls.canFinish} loading={actionBusy} className="mt-3 min-h-12">
+            Hoàn thành trận
+          </Button>
         </div>
       )}
 
@@ -414,7 +467,7 @@ export default function ScoringPage() {
               </label>
             ))}
           </div>
-          <button type="button" onClick={() => finish("walkover", confirmWo)} className="mt-3 min-h-11 rounded-full bg-live px-5 font-semibold text-on-primary">
+          <button type="button" disabled={actionBusy || ops.length > 0} onClick={() => finish("walkover", confirmWo)} className="mt-3 min-h-11 rounded-full bg-live px-5 font-semibold text-on-primary disabled:opacity-50">
             Xác nhận bỏ cuộc
           </button>
         </fieldset>
