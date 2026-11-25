@@ -11,6 +11,9 @@ let hasPglite = true;
 try { require.resolve('@electric-sql/pglite'); } catch { hasPglite = false; }
 
 const svc = require('../src/services/tournamentService');
+const categorySvc = require('../src/services/categoryService');
+const entrySvc = require('../src/services/entryService');
+const matchSvc = require('../src/services/matchService');
 const courts = require('../src/services/courtService');
 const ath = require('../src/services/athleteService');
 
@@ -51,22 +54,22 @@ describe('Hồ sơ VĐV & bảng có sẵn (PGlite)', { skip: hasPglite ? false 
     for (const u of [ADMIN, REF]) await pool.query('INSERT INTO users (id, full_name, role) VALUES ($1, $2, $3)', [u.id, u.full_name, u.role]);
     t = await svc.createTournament(pool, ADMIN, { slug: 'uit-cup', name: 'UIT Cup', startsAt: future(7), courts: 4 });
     await svc.upsertStaff(pool, ADMIN, t.id, { userId: REF.id, role: 'referee' });
-    ms = await svc.createCategory(pool, ADMIN, t.id, { code: 'MS', name: 'Đơn nam', isDoubles: false, groupCount: 2 });
-    xd = await svc.createCategory(pool, ADMIN, t.id, { code: 'XD', name: 'Đôi nam nữ', isDoubles: true, groupCount: 1 });
+    ms = await categorySvc.createCategory(pool, ADMIN, t.id, { code: 'MS', name: 'Đơn nam', isDoubles: false, groupCount: 2 });
+    xd = await categorySvc.createCategory(pool, ADMIN, t.id, { code: 'XD', name: 'Đôi nam nữ', isDoubles: true, groupCount: 1 });
   });
   after(async () => { await pool?.end(); });
 
   const athletesOf = () => ath.listAthletes(pool, ADMIN, t.id);
 
   test('cùng MSSV ở 2 nội dung = 1 người; 2 người trùng tên khác MSSV = 2 người', async () => {
-    await svc.addEntries(pool, ADMIN, ms.id, [
+    await entrySvc.addEntries(pool, ADMIN, ms.id, [
       { player1Name: 'Nguyễn An', player1StudentId: '21520001', player1Phone: '0901234567' },
       { player1Name: 'Nguyễn An', player1StudentId: '21520002' }, // người khác, trùng tên
       { player1Name: 'Lê Bình', player1Phone: '0902000000' },
       { player1Name: 'Trần Chi', player1StudentId: '21520004' },
     ]);
     // Ở nội dung đôi chỉ ghi SĐT dạng +84 của An #1 → vẫn nhận đúng người.
-    await svc.addEntries(pool, ADMIN, xd.id, [
+    await entrySvc.addEntries(pool, ADMIN, xd.id, [
       { player1Name: 'nguyễn  an', player1Phone: '+84 901 234 567', player2Name: 'Mai Hoa', player2StudentId: '21529999' },
       { player1Name: 'Lê Bình', player1Phone: '0902000000', player2Name: 'Đỗ Lan' },
     ]);
@@ -80,14 +83,14 @@ describe('Hồ sơ VĐV & bảng có sẵn (PGlite)', { skip: hasPglite ? false 
 
   test('tên mơ hồ, MSSV/SĐT mâu thuẫn, đăng ký trùng nội dung bị chặn; cả lô không thêm gì', async () => {
     const before = (await svc.listEntries(pool, ms.id)).length;
-    await rejectsWith(svc.addEntries(pool, ADMIN, xd.id, [{ player1Name: 'Nguyễn An', player2Name: 'Ai Đó' }]), 422, null, /Dòng 1: Có 2 VĐV tên/);
-    await rejectsWith(svc.addEntries(pool, ADMIN, ms.id, [{ player1Name: 'X', player1StudentId: '21520001', player1Phone: '0902000000' }]), 409, 'ATHLETE_MISMATCH');
-    await rejectsWith(svc.addEntries(pool, ADMIN, ms.id, [
+    await rejectsWith(entrySvc.addEntries(pool, ADMIN, xd.id, [{ player1Name: 'Nguyễn An', player2Name: 'Ai Đó' }]), 422, null, /Dòng 1: Có 2 VĐV tên/);
+    await rejectsWith(entrySvc.addEntries(pool, ADMIN, ms.id, [{ player1Name: 'X', player1StudentId: '21520001', player1Phone: '0902000000' }]), 409, 'ATHLETE_MISMATCH');
+    await rejectsWith(entrySvc.addEntries(pool, ADMIN, ms.id, [
       { player1Name: 'Mới Toanh', player1StudentId: '21521111' },
       { player1Name: 'Trần Chi', player1StudentId: '21520004' },
     ]), 409, 'ATHLETE_ALREADY_ENTERED', /Dòng 2/);
-    await rejectsWith(svc.addEntries(pool, ADMIN, xd.id, [{ player1Name: 'A', player1StudentId: 'SV001', player2Name: 'A', player2StudentId: 'SV001' }]), 422);
-    await rejectsWith(svc.addEntries(pool, ADMIN, ms.id, [{ player1Name: 'Y', player1StudentId: '!' }]), 422, null, /MSSV/);
+    await rejectsWith(entrySvc.addEntries(pool, ADMIN, xd.id, [{ player1Name: 'A', player1StudentId: 'SV001', player2Name: 'A', player2StudentId: 'SV001' }]), 422);
+    await rejectsWith(entrySvc.addEntries(pool, ADMIN, ms.id, [{ player1Name: 'Y', player1StudentId: '!' }]), 422, null, /MSSV/);
     assert.equal((await svc.listEntries(pool, ms.id)).length, before, 'lô lỗi không để lại đội nào');
     assert.ok(!(await athletesOf()).some((a) => a.full_name === 'Mới Toanh'), 'không để lại hồ sơ rác');
   });
@@ -108,10 +111,10 @@ describe('Hồ sơ VĐV & bảng có sẵn (PGlite)', { skip: hasPglite ? false 
 
   test('chống trùng lịch theo NGƯỜI: An #1 đang ở sân → không gọi được trận XD của An #1, nhưng An #2 thì được', async () => {
     await svc.drawGroups(pool, ADMIN, ms.id);
-    await svc.addEntries(pool, ADMIN, xd.id, [{ player1Name: 'Phạm Dũng', player2Name: 'Võ Em' }]);
+    await entrySvc.addEntries(pool, ADMIN, xd.id, [{ player1Name: 'Phạm Dũng', player2Name: 'Võ Em' }]);
     await svc.drawGroups(pool, ADMIN, xd.id);
     await svc.updateTournament(pool, ADMIN, t.id, { status: 'published' });
-    const all = await svc.listMatches(pool, t.id);
+    const all = await matchSvc.listMatches(pool, t.id);
     const an1 = (await athletesOf()).find((a) => a.student_id === '21520001');
     const entryIds = new Set(an1.entries.map((e) => e.entryId));
     const msAn1 = all.find((m) => m.category.code === 'MS' && (entryIds.has(m.a.id) || entryIds.has(m.b.id)));
@@ -125,8 +128,8 @@ describe('Hồ sơ VĐV & bảng có sẵn (PGlite)', { skip: hasPglite ? false 
   });
 
   test('chia bảng có sẵn: đúng đội, tên "Bảng A" → A, số bảng cập nhật; thiếu/lặp đội bị từ chối', async () => {
-    const ws = await svc.createCategory(pool, ADMIN, t.id, { code: 'WS', name: 'Đơn nữ', isDoubles: false, groupCount: 4 });
-    const added = await svc.addEntries(pool, ADMIN, ws.id, ['Thu', 'Trang', 'Vy', 'Yến', 'Ánh'].map((n) => ({ player1Name: n })));
+    const ws = await categorySvc.createCategory(pool, ADMIN, t.id, { code: 'WS', name: 'Đơn nữ', isDoubles: false, groupCount: 4 });
+    const added = await entrySvc.addEntries(pool, ADMIN, ws.id, ['Thu', 'Trang', 'Vy', 'Yến', 'Ánh'].map((n) => ({ player1Name: n })));
     const ids = added.map((e) => e.id);
     await rejectsWith(svc.drawGroups(pool, ADMIN, ws.id, { manual: [{ name: 'A', entryIds: ids.slice(0, 2) }, { name: 'B', entryIds: ids.slice(2, 4) }] }), 422, null, /chưa được xếp/);
     await rejectsWith(svc.drawGroups(pool, ADMIN, ws.id, { manual: [{ name: 'A', entryIds: ids.slice(0, 3) }, { name: 'B', entryIds: ids.slice(2) }] }), 422, null, /2 bảng/);
@@ -143,22 +146,22 @@ describe('Hồ sơ VĐV & bảng có sẵn (PGlite)', { skip: hasPglite ? false 
   });
 
   test('xoá đội / nội dung → xoá hồ sơ không còn dùng (không giữ MSSV/SĐT thừa)', async () => {
-    const tmp = await svc.createCategory(pool, ADMIN, t.id, { code: 'TMP', name: 'Tạm', isDoubles: false });
-    const [x] = await svc.addEntries(pool, ADMIN, tmp.id, [{ player1Name: 'Người Tạm', player1StudentId: 'TMP0001' },
+    const tmp = await categorySvc.createCategory(pool, ADMIN, t.id, { code: 'TMP', name: 'Tạm', isDoubles: false });
+    const [x] = await entrySvc.addEntries(pool, ADMIN, tmp.id, [{ player1Name: 'Người Tạm', player1StudentId: 'TMP0001' },
       { player1Name: 'Trần Chi', player1StudentId: '21520004' }]);
-    await svc.removeEntry(pool, ADMIN, x.id);
+    await entrySvc.removeEntry(pool, ADMIN, x.id);
     assert.ok(!(await athletesOf()).some((a) => a.student_id === 'TMP0001'));
-    await svc.deleteCategory(pool, ADMIN, tmp.id);
+    await categorySvc.deleteCategory(pool, ADMIN, tmp.id);
     assert.ok((await athletesOf()).some((a) => a.student_id === '21520004'), 'người còn ở nội dung khác vẫn giữ');
   });
   test('trùng tên, khác người: newAthlete tạo hồ sơ riêng thay vì báo "đã đăng ký"', async () => {
-    const md = await svc.createCategory(pool, ADMIN, t.id, { code: 'MD2', name: 'Đôi nam 2', isDoubles: true, groupCount: 1 });
-    await svc.addEntries(pool, ADMIN, md.id, [{ player1Name: 'Nguyễn Thành Đạt', player1Phone: '0901000001', player2Name: 'Trần Phú', club: 'UEF' }]);
+    const md = await categorySvc.createCategory(pool, ADMIN, t.id, { code: 'MD2', name: 'Đôi nam 2', isDoubles: true, groupCount: 1 });
+    await entrySvc.addEntries(pool, ADMIN, md.id, [{ player1Name: 'Nguyễn Thành Đạt', player1Phone: '0901000001', player2Name: 'Trần Phú', club: 'UEF' }]);
     // Không MSSV/SĐT, trùng tên → mặc định coi là cùng người → bị chặn trùng nội dung (hành vi cũ).
-    await assert.rejects(svc.addEntries(pool, ADMIN, md.id, [{ player1Name: 'Nguyễn Thành Đạt', player2Name: 'Nguyễn Viết Huy', club: 'VLU' }]),
+    await assert.rejects(entrySvc.addEntries(pool, ADMIN, md.id, [{ player1Name: 'Nguyễn Thành Đạt', player2Name: 'Nguyễn Viết Huy', club: 'VLU' }]),
       (err) => err.code === 'ATHLETE_ALREADY_ENTERED');
     // BTC xác nhận "người khác" → hồ sơ mới, nhập được.
-    const [e] = await svc.addEntries(pool, ADMIN, md.id, [{ player1Name: 'Nguyễn Thành Đạt', player1NewAthlete: true, player2Name: 'Nguyễn Viết Huy', club: 'VLU' }]);
+    const [e] = await entrySvc.addEntries(pool, ADMIN, md.id, [{ player1Name: 'Nguyễn Thành Đạt', player1NewAthlete: true, player2Name: 'Nguyễn Viết Huy', club: 'VLU' }]);
     const { rows } = await pool.query(`SELECT id, club FROM athletes WHERE tournament_id = $1 AND name_key = 'nguyễn thành đạt' ORDER BY created_at`, [t.id]);
     assert.equal(rows.length, 2);
     assert.equal(e.player1_athlete_id, rows[1].id);
@@ -166,16 +169,16 @@ describe('Hồ sơ VĐV & bảng có sẵn (PGlite)', { skip: hasPglite ? false 
   });
 
   test('nhiều hồ sơ cùng tên: CLB trùng đúng 1 người thì dùng người đó, không thì vẫn hỏi MSSV/SĐT', async () => {
-    const s2 = await svc.createCategory(pool, ADMIN, t.id, { code: 'S2', name: 'Đơn 2', isDoubles: false, groupCount: 1 });
-    const [e] = await svc.addEntries(pool, ADMIN, s2.id, [{ player1Name: 'Nguyễn Thành Đạt', club: 'VLU' }]);
+    const s2 = await categorySvc.createCategory(pool, ADMIN, t.id, { code: 'S2', name: 'Đơn 2', isDoubles: false, groupCount: 1 });
+    const [e] = await entrySvc.addEntries(pool, ADMIN, s2.id, [{ player1Name: 'Nguyễn Thành Đạt', club: 'VLU' }]);
     const { rows } = await pool.query(`SELECT club FROM athletes WHERE id = $1`, [e.player1_athlete_id]);
     assert.equal(rows[0].club, 'VLU');
-    await assert.rejects(svc.addEntries(pool, ADMIN, s2.id, [{ player1Name: 'Nguyễn Thành Đạt', club: 'HUTECH' }]), /nhập MSSV hoặc SĐT/);
+    await assert.rejects(entrySvc.addEntries(pool, ADMIN, s2.id, [{ player1Name: 'Nguyễn Thành Đạt', club: 'HUTECH' }]), /nhập MSSV hoặc SĐT/);
   });
 
   test('email sai định dạng bị bỏ qua, không làm hỏng cả lô', async () => {
-    const es = await svc.createCategory(pool, ADMIN, t.id, { code: 'ES', name: 'Email', isDoubles: false, groupCount: 1 });
-    const out = await svc.addEntries(pool, ADMIN, es.id, [
+    const es = await categorySvc.createCategory(pool, ADMIN, t.id, { code: 'ES', name: 'Email', isDoubles: false, groupCount: 1 });
+    const out = await entrySvc.addEntries(pool, ADMIN, es.id, [
       { player1Name: 'Nguyễn Hữu Bằng', player1Email: 'Bằng Nguyễn Hữu', player1Phone: '0901000002' },
       { player1Name: 'Người Có Mail', player1Email: 'ok@example.com' },
     ]);

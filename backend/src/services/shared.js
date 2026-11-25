@@ -2,7 +2,7 @@
 /**
  * Tiện ích nội bộ dùng chung giữa tournamentService và các service theo khu vực
  * (categoryService, entryService, matchService). Không phụ thuộc service nào → không vòng require.
- * Không re-export qua tournamentService (giữ nguyên bề mặt export cũ).
+ * Chỉ dùng nội bộ trong services/, không export ra ngoài tầng service.
  */
 
 const { roundRobin } = require('../domain/draw');

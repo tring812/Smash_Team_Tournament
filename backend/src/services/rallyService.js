@@ -6,7 +6,8 @@
  *  - Nhật ký BTC chỉ ghi sửa người giao và hoàn tác — không ghi từng điểm.
  */
 const { conflict, unprocessable } = require('../errors');
-const { withTx, lockScorable, logEvent } = require('./tournamentService');
+const { withTx, logEvent } = require('./tournamentService');
+const { lockScorable } = require('./matchService');
 const store = require('./rallyStore');
 const { replay, applyEvent, RallyError } = require('../domain/rally');
 

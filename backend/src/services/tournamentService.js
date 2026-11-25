@@ -2,8 +2,7 @@
 /**
  * Nghiệp vụ giải đấu: quản lý giải, BTC / trọng tài, quyền xem, bốc thăm, xếp lịch, BXH & loại trực tiếp,
  * cùng các tiện ích dùng chung (withTx, roleIn, requireOrganizer, logEvent…).
- * Nội dung thi đấu → categoryService, đội → entryService, trận → matchService; tệp này vẫn re-export
- * mọi hàm đó (nạp muộn) để mã cũ require('./tournamentService') chạy như trước.
+ * Nội dung thi đấu → categoryService, đội → entryService, trận → matchService (require thẳng tệp đó).
  * Chỉ phụ thuộc interface `{ query(text, params) }` và `pool.connect()`
  * nên test được với Postgres thật mà không cần HTTP.
  *
@@ -737,35 +736,10 @@ async function searchUsers(db, viewer, q) {
   return rows;
 }
 
-// Hàm đã chuyển sang service theo khu vực: re-export bằng getter (nạp muộn) để không vòng require lúc nạp
-// và giữ nguyên Object.keys / thứ tự export cũ. Bỏ re-export ở PR sau.
 module.exports = {
   assertVisible, assertCategoryVisible, tournamentOfCategory, listEntries, listStaff, searchUsers, listEvents,
-  get disqualifyEntry() { return require('./entryService').disqualifyEntry; },
-  get reinstateEntry() { return require('./entryService').reinstateEntry; },
-  get swapEntries() { return require('./entryService').swapEntries; },
-  get updateEntry() { return require('./entryService').updateEntry; },
-  withTx, roleIn, requireOrganizer,
-  get lockScorable() { return require('./matchService').lockScorable; },
-  logEvent, nameKey, participantKey, entryLabel,
-  get presentMatch() { return require('./matchService').presentMatch; },
-  get MATCH_SELECT() { return require('./matchService').MATCH_SELECT; },
-  FINAL_STATUSES,
+  withTx, roleIn, requireOrganizer, logEvent, nameKey, participantKey, entryLabel, FINAL_STATUSES,
   createTournament, updateTournament, deleteTournament, restoreTournament, listDeletedTournaments, purgeDeletedTournaments, upsertStaff, removeStaff,
-  get createCategory() { return require('./categoryService').createCategory; },
-  get updateCategory() { return require('./categoryService').updateCategory; },
-  get deleteCategory() { return require('./categoryService').deleteCategory; },
-  get addEntries() { return require('./entryService').addEntries; },
-  get removeEntry() { return require('./entryService').removeEntry; },
   drawGroups, scheduleTournament, groupStandings, generateKnockout,
-  get startMatch() { return require('./matchService').startMatch; },
-  get recordScore() { return require('./matchService').recordScore; },
-  get reopenMatch() { return require('./matchService').reopenMatch; },
-  get assignReferee() { return require('./matchService').assignReferee; },
-  get setRoundRules() { return require('./categoryService').setRoundRules; },
   getTournament, listTournaments,
-  get listMatches() { return require('./matchService').listMatches; },
-  get getMatch() { return require('./matchService').getMatch; },
-  get getBracket() { return require('./matchService').getBracket; },
-  get refereeQueue() { return require('./matchService').refereeQueue; },
 };

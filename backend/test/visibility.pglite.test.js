@@ -13,6 +13,7 @@ let hasPglite = true;
 try { require.resolve('@electric-sql/pglite'); } catch { hasPglite = false; }
 
 const svc = require('../src/services/tournamentService');
+const categorySvc = require('../src/services/categoryService');
 
 const ADMIN = { id: '00000000-0000-4000-8000-0000000000f1', full_name: 'Admin', role: 'admin' };
 const ORG = { id: '00000000-0000-4000-8000-0000000000f2', full_name: 'BTC giải này', role: 'user' };
@@ -50,8 +51,8 @@ describe('Quyền xem giải và nội dung (PGlite)', { skip: hasPglite ? false
     }
     await svc.upsertStaff(pool, ADMIN, other.id, { userId: OTHER_ORG.id, role: 'organizer' });
     const cat = { code: 'MS', name: 'Đơn nam', isDoubles: false, groupCount: 1, advancePerGroup: 1 };
-    const draftCat = await svc.createCategory(pool, ADMIN, draft.id, cat);
-    const pubCat = await svc.createCategory(pool, ADMIN, pub.id, cat);
+    const draftCat = await categorySvc.createCategory(pool, ADMIN, draft.id, cat);
+    const pubCat = await categorySvc.createCategory(pool, ADMIN, pub.id, cat);
     await svc.updateTournament(pool, ADMIN, pub.id, { status: 'published' });
     d = { draft, draftCat, pub, pubCat, other };
   });
@@ -72,7 +73,7 @@ describe('Quyền xem giải và nội dung (PGlite)', { skip: hasPglite ? false
   test('giải không tồn tại hoặc đã xoá: 404 với cả admin', async () => {
     await rejectsWith(svc.assertVisible(pool, MISSING, ADMIN), 404, 'Không tìm thấy giải');
     const gone = await svc.createTournament(pool, ADMIN, { slug: 'vis-gone', name: 'Giải đã xoá', startsAt: future(7) });
-    const goneCat = await svc.createCategory(pool, ADMIN, gone.id, { code: 'WS', name: 'Đơn nữ', isDoubles: false, groupCount: 1, advancePerGroup: 1 });
+    const goneCat = await categorySvc.createCategory(pool, ADMIN, gone.id, { code: 'WS', name: 'Đơn nữ', isDoubles: false, groupCount: 1, advancePerGroup: 1 });
     await svc.deleteTournament(pool, ADMIN, gone.id, 'vis-gone');
     await rejectsWith(svc.assertVisible(pool, gone.id, ADMIN), 404, 'Không tìm thấy giải');
     await rejectsWith(svc.assertCategoryVisible(pool, goneCat.id, ADMIN), 404, 'Không tìm thấy giải');

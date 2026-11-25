@@ -4,6 +4,9 @@
  * Gắn thẳng vào router `/api` của app.js (cùng thứ tự, cùng middleware) — chỉ tách file, không đổi hành vi.
  */
 const svc = require('../services/tournamentService');
+const categorySvc = require('../services/categoryService');
+const entrySvc = require('../services/entryService');
+const matchSvc = require('../services/matchService');
 const auth = require('../auth');
 const { schemas } = require('../schemas');
 
@@ -18,44 +21,44 @@ module.exports = function registerCategoriesRoutes(api, { pool, id, me, touchCat
     return cid;
   };
   api.patch('/categories/:id', auth.requireAuth, async (req, res) => {
-    res.json(await svc.updateCategory(pool, me(req), id(req.params.id), schemas.updateCategory.parse(req.body)));
+    res.json(await categorySvc.updateCategory(pool, me(req), id(req.params.id), schemas.updateCategory.parse(req.body)));
   });
   api.put('/categories/:id/round-rules', auth.requireAuth, async (req, res) => {
     const { rules } = schemas.roundRules.parse(req.body);
     await touchCategory(res, id(req.params.id));
-    res.json(await svc.setRoundRules(pool, me(req), id(req.params.id), rules));
+    res.json(await categorySvc.setRoundRules(pool, me(req), id(req.params.id), rules));
   });
   api.delete('/categories/:id', auth.requireAuth, async (req, res) => {
-    await svc.deleteCategory(pool, me(req), id(req.params.id));
+    await categorySvc.deleteCategory(pool, me(req), id(req.params.id));
     res.status(204).end();
   });
   api.get('/categories/:id/entries', async (req, res) => res.json(await svc.listEntries(pool, await visibleCategory(req))));
   api.get('/categories/:id/standings', async (req, res) => res.json(await svc.groupStandings(pool, await visibleCategory(req))));
-  api.get('/categories/:id/bracket', async (req, res) => res.json(await svc.getBracket(pool, await visibleCategory(req))));
+  api.get('/categories/:id/bracket', async (req, res) => res.json(await matchSvc.getBracket(pool, await visibleCategory(req))));
   api.post('/categories/:id/entries', auth.requireAuth, async (req, res) => {
     const { entries } = schemas.addEntries.parse(req.body);
     await touchCategory(res, id(req.params.id));
-    res.status(201).json(await svc.addEntries(pool, me(req), id(req.params.id), entries));
+    res.status(201).json(await entrySvc.addEntries(pool, me(req), id(req.params.id), entries));
   });
   api.patch('/entries/:id', auth.requireAuth, async (req, res) => {
     await touchEntry(res, id(req.params.id));
-    res.json(await svc.updateEntry(pool, me(req), id(req.params.id), schemas.updateEntry.parse(req.body)));
+    res.json(await entrySvc.updateEntry(pool, me(req), id(req.params.id), schemas.updateEntry.parse(req.body)));
   });
   api.post('/entries/:id/disqualify', auth.requireAuth, async (req, res) => {
     await touchEntry(res, id(req.params.id));
-    res.json(await svc.disqualifyEntry(pool, me(req), id(req.params.id), schemas.disqualify.parse(req.body).reason));
+    res.json(await entrySvc.disqualifyEntry(pool, me(req), id(req.params.id), schemas.disqualify.parse(req.body).reason));
   });
   api.post('/entries/:id/reinstate', auth.requireAuth, async (req, res) => {
     await touchEntry(res, id(req.params.id));
-    res.json(await svc.reinstateEntry(pool, me(req), id(req.params.id)));
+    res.json(await entrySvc.reinstateEntry(pool, me(req), id(req.params.id)));
   });
   api.post('/categories/:id/swap', auth.requireAuth, async (req, res) => {
     const { entryA, entryB } = schemas.swap.parse(req.body);
     await touchCategory(res, id(req.params.id));
-    res.json(await svc.swapEntries(pool, me(req), id(req.params.id), entryA, entryB));
+    res.json(await entrySvc.swapEntries(pool, me(req), id(req.params.id), entryA, entryB));
   });
   api.delete('/entries/:id', auth.requireAuth, async (req, res) => {
-    await svc.removeEntry(pool, me(req), id(req.params.id));
+    await entrySvc.removeEntry(pool, me(req), id(req.params.id));
     res.status(204).end();
   });
   api.post('/categories/:id/draw', auth.requireAuth, async (req, res) => {
