@@ -5,6 +5,7 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- Bảng đấu và tìm VĐV tự dùng API bảng xếp hạng từng nội dung khi máy chủ chưa hỗ trợ API tổng hợp, thay vì hiện “API không tồn tại”. Vẫn ưu tiên một request trên máy chủ mới; không che lỗi quyền hoặc lỗi dữ liệu.
 - Hoàn tác bản tối ưu font: khôi phục cấu hình Inter/Barlow qua `next/font/google` như trước đợt thay đổi font. Giữ nguyên API, dữ liệu và các cải tiến Red Line khác; cần kiểm tra lại lỗi bảng đấu trên môi trường triển khai.
 - Khi chọn người giao đầu tiên tự chuyển giải sang đang diễn ra, các màn hình khác cập nhật trạng thái giải ngay qua kênh trực tiếp; các điểm tiếp theo vẫn chỉ tải lại trận bị đổi.
 - **Tài khoản trọng tài tạo ở trang Tài khoản phân công được ngay**: trước đây tài khoản tạo ở đây chưa thuộc giải nào nên không hiện trong ô phân công trọng tài của trận / sân (máy chủ cũng từ chối). Nay hộp **Tạo tài khoản** có mục **Làm trọng tài giải** (chọn một hoặc nhiều giải chưa kết thúc) — tạo tài khoản và thêm vào giải trong cùng một giao dịch, ghi nhật ký giải. Ô phân công gom theo *Trọng tài* / *Ban tổ chức* và nhắc đường thêm trọng tài khi giải chưa có ai. `POST /admin/users` nhận thêm `refereeTournamentIds` (lỗi mới `422 TOURNAMENT_NOT_FOUND`), trả thêm `refereeTournamentIds`.
