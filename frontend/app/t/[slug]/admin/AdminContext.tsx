@@ -4,14 +4,18 @@ import { createContext, useContext } from "react";
 import { fmtTime } from "../../../lib/api";
 import type { Tournament, TournamentEvent } from "../../../lib/types";
 
-export type ActFn = <R>(fn: () => Promise<R>, ok: string | ((r: R) => string)) => Promise<boolean>;
+/**
+ * `local`: trang tự cập nhật phần dữ liệu vừa đổi (vd thay đúng trận máy chủ trả về) → KHÔNG tăng `version`, nên không tải
+ * lại thông tin giải + mọi danh sách của trang. Bỏ trống = tải lại toàn bộ như trước (bốc thăm, xếp lịch, sửa đội…).
+ */
+export type ActFn = <R>(fn: () => Promise<R>, ok: string | ((r: R) => string), opts?: { local?: (r: R) => void }) => Promise<boolean>;
 
 export interface AdminCtx {
   t: Tournament;
   /** Tăng sau mỗi thao tác thành công → các trang con tải lại dữ liệu. */
   version: number;
   busy: boolean;
-  /** Chạy một thao tác ghi, báo kết quả ở đầu trang, tải lại. Trả về true nếu thành công. */
+  /** Chạy một thao tác ghi, báo kết quả ở đầu trang, tải lại (hoặc để trang tự cập nhật — xem ActFn). True nếu thành công. */
   act: ActFn;
   setError: (text: string) => void;
 }

@@ -38,13 +38,14 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   // eslint-disable-next-line react-hooks/set-state-in-effect -- tải giải từ API (hệ thống ngoài) khi đổi slug / sau mỗi thao tác
   useEffect(() => { void loadTournament(); }, [loadTournament, version]);
 
-  const act: ActFn = useCallback(async (fn, ok) => {
+  const act: ActFn = useCallback(async (fn, ok, opts) => {
     setBusy(true);
     setMsg(null);
     try {
       const r = await fn();
       setMsg({ kind: "ok", text: typeof ok === "function" ? ok(r) : ok });
-      setVersion((v) => v + 1);
+      if (opts?.local) opts.local(r);
+      else setVersion((v) => v + 1);
       return true;
     } catch (e) {
       setMsg({ kind: "error", text: (e as Error).message });

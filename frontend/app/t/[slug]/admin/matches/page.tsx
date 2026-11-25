@@ -18,12 +18,34 @@ const FILTERS: { id: "all" | "called" | MatchStatus; label: string }[] = [
 ];
 
 export default function MatchesPage() {
-  const { t, version, busy, act } = useAdmin();
+  const { t, version, busy, act, setError } = useAdmin();
   const [cat, setCat] = useState("");
   const [status, setStatus] = useState<(typeof FILTERS)[number]["id"]>("all");
   const matches = usePoll((s) => api<Match[]>(`/tournaments/${t.id}/matches${cat ? `?categoryId=${cat}` : ""}`, { signal: s }), [t.id, cat, version], 15_000);
   const staff = usePoll((s) => api<Staff[]>(`/tournaments/${t.id}/staff`, { signal: s }), [t.id, version], 120_000);
   const [moving, setMoving] = useState<Match | null>(null);
+  /** Trận đang lưu trọng tài — chỉ khoá đúng ô đó, các ô khác vẫn chọn tiếp được. */
+  const [saving, setSaving] = useState<ReadonlySet<string>>(new Set());
+  const replace = (r: Match) => matches.mutate((list) => list.map((x) => (x.id === r.id ? r : x)));
+
+  /**
+   * Phân công trọng tài: đổi NGAY trên màn hình, gửi máy chủ, thay bằng trận máy chủ trả về.
+   * Không tải lại danh sách trận / giải (trước đây ô chọn nhảy về tên cũ 1–2 giây chờ tải lại cả giải).
+   * Lỗi → báo ở đầu trang và tải lại để hiện đúng trạng thái.
+   */
+  async function assignReferee(m: Match, refereeUserId: string) {
+    const who = (staff.data ?? []).find((s) => s.user_id === refereeUserId);
+    matches.mutate((list) => list.map((x) => (x.id === m.id ? { ...x, referee: who ? { id: who.user_id, name: who.full_name } : null } : x)));
+    setSaving((s) => new Set(s).add(m.id));
+    try {
+      replace(await api<Match>(`/matches/${m.id}/referee`, { method: "PUT", body: { refereeUserId: refereeUserId || null } }));
+    } catch (e) {
+      setError(`Phân công trọng tài trận ${m.a?.name ?? "?"} – ${m.b?.name ?? "?"} thất bại: ${(e as Error).message}`);
+      void matches.refresh();
+    } finally {
+      setSaving((s) => { const n = new Set(s); n.delete(m.id); return n; });
+    }
+  }
 
   // "Mời ra sân" = đã gọi vào sân, chưa có điểm. "Sắp đánh" không gồm các trận đó (đã ở bộ lọc riêng).
   const rows = useMemo(() => (matches.data ?? []).filter((m) => m.status !== "bye" && (
@@ -88,8 +110,8 @@ export default function MatchesPage() {
                     <td className="tabular py-3 pr-3 font-semibold">{m.games.map((g) => g.join("-")).join(", ") || "—"}</td>
                     <td className="py-3 pr-3">
                       <label className="sr-only" htmlFor={`ref-${m.id}`}>Trọng tài trận {m.a?.name} gặp {m.b?.name}</label>
-                      <select id={`ref-${m.id}`} value={m.referee?.id ?? ""} disabled={busy || ["finished", "walkover", "cancelled"].includes(m.status)}
-                        onChange={(e) => act(() => api(`/matches/${m.id}/referee`, { method: "PUT", body: { refereeUserId: e.target.value || null } }), "Đã phân công trọng tài")}
+                      <select id={`ref-${m.id}`} value={m.referee?.id ?? ""} disabled={saving.has(m.id) || ["finished", "walkover", "cancelled"].includes(m.status)}
+                        aria-busy={saving.has(m.id)} onChange={(e) => void assignReferee(m, e.target.value)}
                         className={`${textInputClass} min-w-40 cursor-pointer`}>
                         <option value="">— Ai cũng được —</option>
                         <RefereeOptions staff={staff.data ?? []} />
@@ -105,6 +127,7 @@ export default function MatchesPage() {
                       {["finished", "walkover"].includes(m.status) ? (
                         <Button variant="outline" className="px-3" disabled={busy}
                           onClick={() => act(() => api(`/matches/${m.id}/reopen`, { method: "POST" }), "Đã mở lại trận để sửa")}>
+                          {/* Mở lại vẫn tải lại toàn bộ: trận sau trong nhánh và trạng thái nội dung cũng đổi. */}
                           <RotateCcw className="w-4 h-4" aria-hidden />Mở lại
                         </Button>
                       ) : m.a && m.b && m.status !== "cancelled" ? (
@@ -125,7 +148,7 @@ export default function MatchesPage() {
           </div>
         )}
       </Card>
-      <MoveMatchModal key={moving?.id ?? "none"} match={moving} courts={t.courts} busyCourts={busyCourts} onClose={() => setMoving(null)} />
+      <MoveMatchModal key={moving?.id ?? "none"} match={moving} courts={t.courts} busyCourts={busyCourts} onClose={() => setMoving(null)} onDone={replace} />
     </div>
   );
 }

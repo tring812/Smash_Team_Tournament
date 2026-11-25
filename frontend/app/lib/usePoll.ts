@@ -48,5 +48,16 @@ export function usePoll<T>(load: (signal: AbortSignal) => Promise<T>, deps: unkn
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, ms, refresh]);
 
-  return { data, error, refresh };
+  /**
+   * Sửa dữ liệu ngay trên máy (cập nhật lạc quan / thay bằng bản máy chủ trả về sau khi ghi), không tải lại cả danh sách.
+   * Huỷ lần tải đang dở: nó có thể bắt đầu TRƯỚC thao tác ghi và mang dữ liệu cũ về đè lên.
+   */
+  const mutate = useCallback((fn: (d: T) => T) => {
+    ctlRef.current?.abort();
+    ctlRef.current = null;
+    seqRef.current += 1;
+    setData((d) => (d === null ? d : fn(d)));
+  }, []);
+
+  return { data, error, refresh, mutate };
 }
