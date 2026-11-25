@@ -325,7 +325,9 @@ cd backend && TEST_PG_HOST=localhost TEST_PG_PORT=5433 TEST_PG_DB=tournament_tes
 
 `TEST_PG_DB` phải chứa chữ `test` (DB bị xoá sạch). Frontend: `npm run typecheck`, `npm run lint`, `npm run build`. CI (`.github/workflows/ci.yml`) chạy các bước trên cho cả hai phía cùng `npm audit`.
 
-Test quy tắc ghi điểm / xác nhận kết quả, thành phần Red Line, thống kê admin và cơ chế tải dữ liệu (dùng TypeScript đã cài, không thêm thư viện): chạy `node --test test/matchControls.test.mjs test/redLineUi.test.mjs test/adminOverview.test.mjs test/performance.test.mjs test/usePoll.test.mjs` từ thư mục `frontend`.
+Test quy tắc ghi điểm / xác nhận kết quả, thành phần Red Line, thống kê admin, cơ chế tải dữ liệu và ngân sách font (dùng TypeScript đã cài, không thêm thư viện): chạy `node --test test/matchControls.test.mjs test/redLineUi.test.mjs test/adminOverview.test.mjs test/performance.test.mjs test/usePoll.test.mjs test/fontLoading.test.mjs` từ thư mục `frontend`.
+
+Font Inter/Barlow được lưu cùng ứng dụng, không cần tải Google Fonts lúc build. Nguồn, giấy phép và công cụ tạo lại WOFF2: [frontend/app/fonts/README.md](frontend/app/fonts/README.md).
 
 <sub>[↑ Back to contents](#contents)</sub>
 
