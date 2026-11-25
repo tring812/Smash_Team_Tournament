@@ -6,6 +6,7 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 
 ### Fixed
 - **Biên bản cộng set cho người thắng game**: game đã xong có thêm cột **Set** cuối khối (số set mỗi bên đã thắng tới hết game đó, bên thắng được +1, tô xanh) và tiêu đề khối ghi "… thắng game"; đầu trang Biên bản ghi **Set 1–0** kèm điểm từng game thay vì chỉ điểm. Bỏ nhãn **G** / **N** cạnh tên VĐV (người giao / nhận đầu game vẫn thấy qua số 0 ở cột đầu).
+- CI chạy các bài kiểm thử frontend, gồm tương thích API bảng đấu, để tránh tái phát lỗi “API không tồn tại”.
 - Bảng đấu và tìm VĐV tự dùng API bảng xếp hạng từng nội dung khi máy chủ chưa hỗ trợ API tổng hợp, thay vì hiện “API không tồn tại”. Vẫn ưu tiên một request trên máy chủ mới; không che lỗi quyền hoặc lỗi dữ liệu.
 - Tạm hoàn tác bản tối ưu font khi điều tra lỗi bảng đấu; phần font được áp dụng lại sau khi bổ sung tương thích API bảng xếp hạng, không thay đổi API hoặc dữ liệu.
 - Khi chọn người giao đầu tiên tự chuyển giải sang đang diễn ra, các màn hình khác cập nhật trạng thái giải ngay qua kênh trực tiếp; các điểm tiếp theo vẫn chỉ tải lại trận bị đổi.
