@@ -309,6 +309,7 @@ Trận bỏ cuộc tính thắng cho bên kia, không cộng game/điểm. Độ
 - **Vòng bảng** (theo quy chế BWF): **mọi** trận vòng bảng của đội bị huỷ (kể cả đã đánh) → trạng thái "Đã huỷ", bảng xếp hạng tính như đội chưa từng tham gia.
 - **Loại trực tiếp**: trận đang chờ của đội → đối thủ thắng **W.O** và đi tiếp; nếu chưa biết đối thủ, hệ thống tự xử W.O khi đối thủ tới.
 - **Huỷ truất quyền**: chỉ khi chưa tạo nhánh; khôi phục đúng trạng thái, tỉ số, sân, giờ cũ của các trận (trừ trận gặp đội khác cũng bị truất quyền).
+- Nếu trận phục hồi đang đánh hoặc đã gọi vào sân, phải kiểm tra sân/VĐV còn rảnh, kể cả VĐV ở nội dung khác và xung đột giữa các trận cùng đợt phục hồi. Xung đột → `409 COURT_BUSY` / `PLAYER_BUSY`, hoàn tác toàn bộ thao tác (đội vẫn bị truất quyền, các trận vẫn bị huỷ, không thêm nhật ký). Trận đã kết thúc hoặc chỉ có sân dự kiến không nhận sân nên không bị chặn bởi kiểm tra này.
 - Không truất quyền khi chưa bốc thăm (khi đó dùng **Xoá đội**).
 
 ### 7.5 Xếp lịch sân
@@ -335,6 +336,7 @@ Bộ xếp lịch tham lam, tất định:
 
 ### 7.7 Mở lại trận
 - BTC mở lại trận đã kết thúc / bỏ cuộc để sửa tỉ số.
+- Mở lại đưa trận về `live`, giữ điểm và sân cũ nên phải kiểm tra sân/VĐV còn rảnh, dùng cùng khoá theo giải với gọi sân / bắt đầu trận. Xung đột → `409 COURT_BUSY` / `PLAYER_BUSY`; không thay đổi kết quả, nhánh vòng sau hay nhật ký. BTC giải phóng sân/VĐV rồi thử lại. Trận cũ không có sân vẫn kiểm tra VĐV.
 - Trận vòng bảng: chỉ khi **chưa tạo nhánh**. Trận loại trực tiếp: chỉ khi trận vòng sau **chưa bắt đầu** (đội thắng được rút khỏi vòng sau).
 
 ### 7.8 Vòng đời trận

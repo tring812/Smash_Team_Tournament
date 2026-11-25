@@ -1041,10 +1041,13 @@ async function recordScore(pool, viewer, matchId, input) {
  */
 async function reopenMatch(pool, viewer, matchId) {
   return withTx(pool, async (c) => {
+    const courts = require('./courtService');
     const m = (await c.query('SELECT * FROM matches WHERE id = $1 FOR UPDATE', [matchId])).rows[0];
     if (!m) throw notFound('Không tìm thấy trận');
     await requireOrganizer(c, m.tournament_id, viewer);
     if (m.status !== 'finished' && m.status !== 'walkover') throw conflict('NOT_FINISHED', 'Trận chưa kết thúc');
+    // Phục hồi cũng là nhận sân/VĐV: dùng cùng khoá với gọi sân và bắt đầu trận.
+    await c.query('SELECT id FROM tournaments WHERE id = $1 FOR UPDATE', [m.tournament_id]);
     if (m.stage === 'group') {
       const cat = await loadCategory(c, m.category_id, true);
       if (cat.stage !== 'groups') throw conflict('KNOCKOUT_STARTED', 'Đã tạo nhánh loại trực tiếp, không thể sửa vòng bảng');
@@ -1059,6 +1062,8 @@ async function reopenMatch(pool, viewer, matchId) {
     } else if (m.stage === 'knockout') {
       await c.query(`UPDATE categories SET stage = 'knockout' WHERE id = $1`, [m.category_id]);
     }
+    if (m.court !== null) await courts.assertCourtFree(c, m.tournament_id, m.court, m.id);
+    await courts.assertPlayersFree(c, await courts.lockMatch(c, m.id));
     const { rows } = await c.query(
       `UPDATE matches SET status = 'live', winner_entry_id = NULL, finished_at = NULL, version = version + 1, updated_at = now()
         WHERE id = $1 RETURNING *`, [matchId],
@@ -1154,12 +1159,14 @@ async function disqualifyEntry(pool, viewer, entryId, reason) {
  */
 async function reinstateEntry(pool, viewer, entryId) {
   return withTx(pool, async (c) => {
+    const courts = require('./courtService');
     const e = await loadEntryForUpdate(c, entryId);
     await requireOrganizer(c, e.tournament_id, viewer);
     if (!e.disqualified_at) throw conflict('NOT_DISQUALIFIED', 'Đội này không bị truất quyền');
     if (e.stage !== 'groups') throw conflict('KNOCKOUT_STARTED', 'Chỉ huỷ truất quyền được khi chưa tạo nhánh loại trực tiếp');
+    await c.query('SELECT id FROM tournaments WHERE id = $1 FOR UPDATE', [e.tournament_id]);
     await c.query('UPDATE entries SET disqualified_at = NULL, dq_reason = NULL WHERE id = $1', [entryId]);
-    const { rowCount } = await c.query(
+    const { rows, rowCount } = await c.query(
       `UPDATE matches m SET
           status = m.pre_cancel->>'status',
           winner_entry_id = (m.pre_cancel->>'winner')::uuid,
@@ -1169,9 +1176,18 @@ async function reinstateEntry(pool, viewer, entryId) {
           pre_cancel = NULL, version = version + 1, updated_at = now()
         WHERE m.category_id = $1 AND m.stage = 'group' AND m.status = 'cancelled' AND m.pre_cancel IS NOT NULL
           AND $2 IN (m.entry_a_id, m.entry_b_id)
-          AND NOT EXISTS (SELECT 1 FROM entries o WHERE o.id IN (m.entry_a_id, m.entry_b_id) AND o.disqualified_at IS NOT NULL)`,
+          AND NOT EXISTS (SELECT 1 FROM entries o WHERE o.id IN (m.entry_a_id, m.entry_b_id) AND o.disqualified_at IS NOT NULL)
+        RETURNING m.id, m.status, m.called_at`,
       [e.cat_id, entryId],
     );
+    // Kiểm tra sau phục hồi để thấy cả xung đột giữa các trận trong cùng đợt;
+    // lỗi sẽ hoàn tác toàn bộ giao dịch, gồm cả trạng thái truất quyền.
+    for (const restored of rows) {
+      if (restored.status !== 'live' && !(restored.called_at && ['pending', 'scheduled'].includes(restored.status))) continue;
+      const m = await courts.lockMatch(c, restored.id);
+      if (m.court !== null) await courts.assertCourtFree(c, m.tournament_id, m.court, m.id);
+      await courts.assertPlayersFree(c, m);
+    }
     await logEvent(c, e.tournament_id, e.cat_id, viewer.id, 'reinstate', { entryId, name: entryLabel(e), restoredMatches: rowCount ?? 0 });
     return { entryId, restoredMatches: rowCount ?? 0 };
   });
