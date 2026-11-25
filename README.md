@@ -97,7 +97,7 @@ flowchart LR
 |---|---|---|
 | `frontend/app` | Giao diện; toàn bộ đọc/ghi Excel–CSV (server không nhận file); bản nháp điểm của trọng tài trong `localStorage` | Không có token nào trong JS — chỉ cookie `httpOnly` |
 | `backend/src/app.js` + `routes/` | Định tuyến HTTP (route theo vùng trong `routes/`), CSRF, phiên, rate limit, lỗi `application/problem+json` | Mọi body / query qua schema zod (`schemas.js`) |
-| `backend/src/services/` | Nghiệp vụ: giải, nội dung, đội, trận (`tournamentService`), điều phối sân (`courtService`), hồ sơ VĐV (`athleteService`), tài khoản (`userService`) | Mỗi thao tác ghi = 1 transaction; khoá hàng `FOR UPDATE`; khoá lạc quan theo `version` cho tỉ số |
+| `backend/src/services/` | Nghiệp vụ: giải, BTC, bốc thăm, lịch (`tournamentService`), nội dung (`categoryService`), đội (`entryService`), trận (`matchService`), điều phối sân (`courtService`), hồ sơ VĐV (`athleteService`), tài khoản (`userService`) | Mỗi thao tác ghi = 1 transaction; khoá hàng `FOR UPDATE`; khoá lạc quan theo `version` cho tỉ số |
 | `backend/src/domain/` | Logic thuần, không I/O → test nhanh, tất định | Bốc thăm, vòng tròn, xếp lịch tham lam, BXH, nhánh, luật điểm, luật theo vòng |
 | `backend/src/liveBus.js` | Báo "giải X vừa đổi" tới các kết nối SSE, kèm phạm vi (`match` + id trận, hoặc `structure`) | Không mang dữ liệu trận — client gọi lại API, quyền xem không đổi |
 | PostgreSQL | Nguồn sự thật duy nhất | Nhật ký điểm và nhật ký BTC **append-only** (trigger chặn sửa/xoá) |
