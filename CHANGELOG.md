@@ -5,6 +5,7 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Gõ chữ trong hộp thoại không còn bị nhảy ô** (vd Tạo tài khoản, Tạo tài khoản trọng tài, Sửa VĐV, Sửa nội dung): trước đây mỗi phím gõ làm hộp thoại đặt lại focus về ô đầu tiên, nên chữ gõ ở ô Tên đăng nhập / Mật khẩu nhảy sang ô Họ tên và bộ gõ tiếng Việt bị ngắt giữa chừng. Nay focus chỉ đặt một lần khi mở hộp thoại.
 - **Bảng điểm không còn lùi về tỉ số cũ** khi có điểm liên tục: trước đây mỗi lần tải lại (do có thay đổi trực tiếp hoặc tới chu kỳ làm mới) chạy song song với lần trước, response về sau cùng thắng nên trang công khai / màn hình TV / điều phối sân đôi khi hiện tỉ số cũ trong giây lát. Nay lần tải mới huỷ lần tải còn dở và chỉ kết quả mới nhất được hiển thị.
 - **Phục hồi trận không còn nhận trùng sân/VĐV**: mở lại trận và huỷ truất quyền kiểm tra sân, VĐV đang bận (kể cả khác nội dung) trước khi chấp nhận trạng thái chiếm sân. Nếu có xung đột, toàn bộ thao tác bị huỷ với `409 COURT_BUSY` / `PLAYER_BUSY`; BTC giải phóng sân/VĐV rồi thử lại. Không đổi endpoint, không cần migration mới.
 - **Sửa đội không còn cho phép trùng VĐV trong cùng nội dung**: `PATCH /entries/:id` từ chối với `409 ATHLETE_ALREADY_ENTERED` nếu một trong hai VĐV đã thuộc đội khác, tránh sinh trận VĐV đấu với chính mình. Vẫn cho phép đảo thứ tự thành viên trong cùng đội và tham gia nhiều nội dung; thao tác bị từ chối không để lại thay đổi hồ sơ hoặc nhật ký.
