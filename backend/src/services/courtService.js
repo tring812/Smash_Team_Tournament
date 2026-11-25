@@ -326,4 +326,7 @@ async function setCourtReferee(pool, viewer, tid, court, userId) {
   });
 }
 
-module.exports = { REST_MINUTES, courtBoard, callMatch, uncallMatch, moveMatch, setCourtReferee };
+module.exports = {
+  REST_MINUTES, courtBoard, callMatch, uncallMatch, moveMatch, setCourtReferee,
+  lockMatch, checkCourt, assertCourtFree, assertPlayersFree,
+};
