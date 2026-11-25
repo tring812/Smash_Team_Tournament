@@ -37,17 +37,28 @@ export function useLive(tournamentId: string | undefined) {
   useEffect(() => {
     if (!tournamentId || typeof EventSource === "undefined") return;
     const es = new EventSource(`/api/tournaments/${tournamentId}/stream`);
+    let changedWhileHidden = false;
     const onChange = (e: MessageEvent) => {
+      if (document.visibilityState !== "visible") { changedWhileHidden = true; return; }
       setAnyTick((n) => n + 1);
       const ev = matchEventOf(e.data);
       if (!ev) { setTick((n) => n + 1); return; }
       setMatchEvent(ev);
       if (ev.categoryIds.length) setResultTick((n) => n + 1);
     };
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && changedWhileHidden) {
+        changedWhileHidden = false;
+        setTick((n) => n + 1);
+        setAnyTick((n) => n + 1);
+        setResultTick((n) => n + 1);
+      }
+    };
     es.addEventListener("changed", onChange);
+    document.addEventListener("visibilitychange", onVisible);
     es.onopen = () => setLive(true);
     es.onerror = () => setLive(false);
-    return () => { es.removeEventListener("changed", onChange); es.close(); setLive(false); };
+    return () => { document.removeEventListener("visibilitychange", onVisible); es.removeEventListener("changed", onChange); es.close(); setLive(false); };
   }, [tournamentId]);
   return { tick, anyTick, matchEvent, resultTick, live };
 }

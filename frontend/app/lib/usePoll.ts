@@ -51,8 +51,11 @@ export function usePoll<T>(load: (signal: AbortSignal) => Promise<T>, deps: unkn
   }, []);
 
   useEffect(() => {
-    void refresh();
+    const whenVisible = () => { if (document.visibilityState === "visible") void refresh(); };
+    whenVisible();
+    document.addEventListener("visibilitychange", whenVisible);
     return () => {
+      document.removeEventListener("visibilitychange", whenVisible);
       // Đổi deps / rời trang: huỷ request đang dở và bỏ mọi kết quả về muộn của nó.
       ctlRef.current?.abort();
       ctlRef.current = null;
