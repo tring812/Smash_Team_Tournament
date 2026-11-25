@@ -5,6 +5,7 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- Font Inter/Barlow được gộp Latin và tiếng Việt, tự phục vụ và preload từ HTML; tránh tải thêm bộ Latin mở rộng khi hiển thị một số chữ tiếng Việt. Giữ kiểu chữ Red Line, các độ đậm và chữ nghiêng; build không còn cần tải font từ Google.
 - Khi chọn người giao đầu tiên tự chuyển giải sang đang diễn ra, các màn hình khác cập nhật trạng thái giải ngay qua kênh trực tiếp; các điểm tiếp theo vẫn chỉ tải lại trận bị đổi.
 - **Tài khoản trọng tài tạo ở trang Tài khoản phân công được ngay**: trước đây tài khoản tạo ở đây chưa thuộc giải nào nên không hiện trong ô phân công trọng tài của trận / sân (máy chủ cũng từ chối). Nay hộp **Tạo tài khoản** có mục **Làm trọng tài giải** (chọn một hoặc nhiều giải chưa kết thúc) — tạo tài khoản và thêm vào giải trong cùng một giao dịch, ghi nhật ký giải. Ô phân công gom theo *Trọng tài* / *Ban tổ chức* và nhắc đường thêm trọng tài khi giải chưa có ai. `POST /admin/users` nhận thêm `refereeTournamentIds` (lỗi mới `422 TOURNAMENT_NOT_FOUND`), trả thêm `refereeTournamentIds`.
 - **Gõ chữ trong hộp thoại không còn bị nhảy ô** (vd Tạo tài khoản, Tạo tài khoản trọng tài, Sửa VĐV, Sửa nội dung): trước đây mỗi phím gõ làm hộp thoại đặt lại focus về ô đầu tiên, nên chữ gõ ở ô Tên đăng nhập / Mật khẩu nhảy sang ô Họ tên và bộ gõ tiếng Việt bị ngắt giữa chừng. Nay focus chỉ đặt một lần khi mở hộp thoại.
