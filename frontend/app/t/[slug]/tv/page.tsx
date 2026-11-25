@@ -6,6 +6,7 @@ import { Maximize, Megaphone } from "lucide-react";
 import { api, fmtTime } from "../../../lib/api";
 import { usePoll } from "../../../lib/usePoll";
 import { useLive } from "../../../lib/useLive";
+import { useMatchPatches } from "../../../lib/useMatchPatches";
 import type { Match, Tournament } from "../../../lib/types";
 import { matchTitle } from "../../../components/MatchViews";
 
@@ -20,7 +21,9 @@ const clockFmt = new Intl.DateTimeFormat("vi-VN", { timeZone: "Asia/Ho_Chi_Minh"
 export default function TvPage() {
   const { slug } = useParams<{ slug: string }>();
   const t = usePoll((s) => api<Tournament>(`/tournaments/${encodeURIComponent(slug)}`, { signal: s }), [slug], 300_000);
-  const { tick, live } = useLive(t.data?.id);
+  // Mỗi điểm chỉ tải riêng trận đó (patch); gọi sân / dời trận / kết quả mới tải lại cả danh sách.
+  const { tick, matchEvent, live } = useLive(t.data?.id);
+  const patch = useMatchPatches(matchEvent);
   const matches = usePoll(
     (s) => (t.data ? api<Match[]>(`/tournaments/${t.data.id}/matches`, { signal: s }) : Promise.resolve([])),
     [t.data?.id, tick], live ? 30_000 : 15_000,
@@ -29,13 +32,13 @@ export default function TvPage() {
   useEffect(() => { const i = setInterval(() => setNow(new Date()), 15_000); return () => clearInterval(i); }, []);
 
   const { courts, upcoming } = useMemo(() => {
-    const all = (matches.data ?? []).filter((m) => m.status !== "bye" && m.status !== "cancelled");
+    const all = (matches.data ?? []).map(patch).filter((m) => m.status !== "bye" && m.status !== "cancelled");
     const n = Math.max(t.data?.courts ?? 0, ...all.map((m) => m.court ?? 0));
     const onCourt = (c: number) => all.find((m) => m.court === c && (m.status === "live" || m.calledAt));
     const waiting = all.filter((m) => (m.status === "scheduled" || m.status === "pending") && !m.calledAt && m.a && m.b)
       .sort((a, b) => (a.scheduledAt ?? "~").localeCompare(b.scheduledAt ?? "~"));
     return { courts: Array.from({ length: n }, (_, i) => ({ court: i + 1, m: onCourt(i + 1) })), upcoming: waiting.slice(0, 8) };
-  }, [matches.data, t.data?.courts]);
+  }, [matches.data, t.data?.courts, patch]);
 
   if (t.error) return <div className="grid min-h-dvh place-items-center bg-neutral-950 text-xl text-white"><p role="alert">{t.error}</p></div>;
   const cols = courts.length <= 2 ? "lg:grid-cols-2" : courts.length <= 4 ? "lg:grid-cols-2" : courts.length <= 6 ? "lg:grid-cols-3" : "lg:grid-cols-4";

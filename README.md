@@ -99,7 +99,7 @@ flowchart LR
 | `backend/src/app.js` | Định tuyến HTTP, CSRF, phiên, rate limit, lỗi `application/problem+json` | Mọi body / query qua schema zod (`schemas.js`) |
 | `backend/src/services/` | Nghiệp vụ: giải, nội dung, đội, trận (`tournamentService`), điều phối sân (`courtService`), hồ sơ VĐV (`athleteService`), tài khoản (`userService`) | Mỗi thao tác ghi = 1 transaction; khoá hàng `FOR UPDATE`; khoá lạc quan theo `version` cho tỉ số |
 | `backend/src/domain/` | Logic thuần, không I/O → test nhanh, tất định | Bốc thăm, vòng tròn, xếp lịch tham lam, BXH, nhánh, luật điểm, luật theo vòng |
-| `backend/src/liveBus.js` | Báo "giải X vừa đổi" tới các kết nối SSE | Không mang dữ liệu — client gọi lại API, quyền xem không đổi |
+| `backend/src/liveBus.js` | Báo "giải X vừa đổi" tới các kết nối SSE, kèm phạm vi (`match` + id trận, hoặc `structure`) | Không mang dữ liệu trận — client gọi lại API, quyền xem không đổi |
 | PostgreSQL | Nguồn sự thật duy nhất | Nhật ký điểm và nhật ký BTC **append-only** (trigger chặn sửa/xoá) |
 
 <sub>[↑ Back to contents](#contents)</sub>
@@ -124,9 +124,9 @@ sequenceDiagram
   alt version khớp
     D-->>A: ghi tỉ số + nhật ký điểm (append-only), đội thắng lên vòng sau
     A-->>R: 200 (version mới) → đánh dấu nháp đã gửi
-    A->>B: publish(giải)
-    B-->>V: event: changed (≈0,5 s)
-    V->>A: GET /tournaments/:id/matches
+    A->>B: publish(giải, trận)
+    B-->>V: event: changed {"kind":"match","matchIds":[…]} (≈0,3 s)
+    V->>A: GET /matches/:id (chỉ trận đó; gọi sân / kết quả → tải lại cả lịch)
   else máy khác vừa sửa
     A-->>R: 409 VERSION_CONFLICT → tải lại tỉ số mới nhất, bỏ nháp
   else mất mạng

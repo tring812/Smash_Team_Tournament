@@ -220,6 +220,8 @@ describe('HTTP API (PGlite)', { skip: hasPglite ? false : 'chưa cài @electric-
     await waitFor(': connected');
     assert.equal((await call(`/api/tournaments/${t.id}`, { method: 'PATCH', cookie: admin, body: { venue: 'Nhà thi đấu UIT' } })).status, 200);
     await waitFor('event: changed');
+    await waitFor('\n\n');
+    assert.match(buf, /event: changed\ndata: \{"kind":"structure"\}\n\n/, 'sửa giải là thay đổi cấu trúc');
     ctl.abort();
   });
 

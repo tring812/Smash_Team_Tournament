@@ -66,11 +66,18 @@ function createApp({ pool, config }) {
   // Realtime: route ghi đặt res.locals.tid → sau khi trả 2xx, báo các màn hình đang xem giải đó tải lại.
   api.use((req, res, next) => {
     if (req.method !== 'GET') {
-      res.on('finish', () => { if (res.statusCode < 400 && res.locals.tid) live.publish(res.locals.tid); });
+      res.on('finish', () => { if (res.statusCode < 400 && res.locals.tid) live.publish(res.locals.tid, res.locals.liveScope); });
     }
     next();
   });
-  const touch = (res, tid) => { res.locals.tid = tid; };
+  /**
+   * @param {string} [matchId] chỉ tỉ số / biên bản / trọng tài của MỘT trận đổi → màn hình chỉ tải lại trận đó
+   *   thay vì cả lịch + bảng xếp hạng (xem liveBus). Bỏ trống = thay đổi cấu trúc, tải lại toàn bộ.
+   */
+  const touch = (res, tid, matchId) => {
+    res.locals.tid = tid;
+    res.locals.liveScope = matchId ? { kind: 'match', matchId } : { kind: 'structure' };
+  };
   const touchCategory = async (res, cid) => touch(res, await svc.tournamentOfCategory(pool, cid));
   const touchEntry = async (res, eid) => {
     const r = await pool.query('SELECT c.tournament_id FROM entries e JOIN categories c ON c.id = e.category_id WHERE e.id = $1', [eid]);
@@ -280,15 +287,17 @@ function createApp({ pool, config }) {
     res.json({ ...m, rallies: await rallies.listRallies(pool, m.id) });
   });
   // ── Biên bản diễn biến điểm ──
-  const withRallies = async (res, mid) => {
+  /** @param {boolean} [onlyThisMatch] true = chỉ tỉ số / biên bản trận này đổi (mỗi điểm); false = thay đổi cấu trúc */
+  const withRallies = async (res, mid, onlyThisMatch = true) => {
     const m = await svc.getMatch(pool, mid);
-    touch(res, m.tournamentId);
+    touch(res, m.tournamentId, onlyThisMatch ? mid : undefined);
     res.json({ ...m, rallies: await rallies.listRallies(pool, mid) });
   };
   api.post('/matches/:id/start', auth.requireAuth, async (req, res) => {
     const mid = id(req.params.id);
     await svc.startMatch(pool, me(req), mid, schemas.startMatch.parse(req.body));
-    await withRallies(res, mid);
+    // Bắt đầu trận (mỗi trận một lần) có thể chuyển giải sang "đang diễn ra" → tải lại toàn bộ.
+    await withRallies(res, mid, false);
   });
   api.post('/matches/:id/rallies', auth.requireAuth, async (req, res) => {
     const mid = id(req.params.id);
@@ -306,7 +315,8 @@ function createApp({ pool, config }) {
     await svc.recordScore(pool, me(req), mid, body);
     log('info', 'score_recorded', { request_id: req.id, match_id: mid, action: body.action, user_id: me(req).id });
     const m = await svc.getMatch(pool, mid);
-    touch(res, m.tournamentId);
+    // Lưu tạm chỉ đổi trận này; xác nhận / bỏ cuộc còn đưa đội thắng sang trận sau và đổi bảng xếp hạng.
+    touch(res, m.tournamentId, body.action === 'save' ? mid : undefined);
     res.json(m);
   });
   api.post('/matches/:id/reopen', auth.requireAuth, async (req, res) => {
@@ -320,7 +330,7 @@ function createApp({ pool, config }) {
     const mid = id(req.params.id);
     await svc.assignReferee(pool, me(req), mid, schemas.referee.parse(req.body).refereeUserId);
     const m = await svc.getMatch(pool, mid);
-    touch(res, m.tournamentId);
+    touch(res, m.tournamentId, mid);
     res.json(m);
   });
   // ── Điều phối sân ──

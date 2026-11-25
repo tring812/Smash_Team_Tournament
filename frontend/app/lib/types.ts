@@ -169,6 +169,12 @@ export interface Bracket {
   rounds: { round: number; label: string; matches: Match[] }[];
 }
 
+/**
+ * `data` của sự kiện SSE `changed` (`GET /tournaments/:id/stream`): chỉ là phạm vi thay đổi, không mang dữ liệu trận.
+ * `match`: chỉ tỉ số / biên bản / trọng tài của các trận này đổi; `structure`: tải lại toàn bộ.
+ */
+export type LiveChange = { kind: "match"; matchIds: string[] } | { kind: "structure" };
+
 export interface Entry {
   id: string;
   name: string;

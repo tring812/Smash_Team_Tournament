@@ -7,6 +7,7 @@ import { ArrowUpRight, CalendarClock, GitBranch, LayoutGrid, MapPin, MonitorPlay
 import { api, fmtTime } from "../../lib/api";
 import { usePoll } from "../../lib/usePoll";
 import { useLive } from "../../lib/useLive";
+import { useMatchPatches } from "../../lib/useMatchPatches";
 import type { Bracket, Category, GroupStanding, Match, StandingRow, Tournament } from "../../lib/types";
 import { MatchCard, StandingsTables } from "../../components/MatchViews";
 import { PlayerResults } from "../../components/PlayerResults";
@@ -62,8 +63,10 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
     ? (cat && !searching ? [cat] : cats.filter((c) => c.stage !== "setup")) : [];
   const standingKey = standingCats.map((c) => c.id).join(",");
 
-  // Có điểm / gọi sân / dời trận → tải lại ngay; polling 10s (30s khi đang nhận trực tiếp) chỉ là dự phòng.
-  const { tick, live: streaming } = useLive(t.data?.id);
+  // Gọi sân / dời trận / kết quả → tải lại ngay (`tick`); mỗi điểm chỉ tải riêng trận đó (`matchEvent` → patch).
+  // Polling 10s (30s khi đang nhận trực tiếp) chỉ là dự phòng.
+  const { tick, matchEvent, live: streaming } = useLive(t.data?.id);
+  const patch = useMatchPatches(matchEvent);
   const matches = usePoll(
     (s) => (t.data ? api<Match[]>(`/tournaments/${t.data.id}/matches${tab === "schedule" && cat && !searching ? `?categoryId=${cat.id}` : ""}`, { signal: s }) : Promise.resolve([])),
     [t.data?.id, cat?.id, tab, tick, searching], streaming ? 30_000 : 10_000,
@@ -82,9 +85,12 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
 
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- ghi lại thời điểm dữ liệu mới về (hiển thị "lần cuối")
-  useEffect(() => { if (matches.data) setUpdatedAt(new Date()); }, [matches.data]);
+  useEffect(() => { if (matches.data) setUpdatedAt(new Date()); }, [matches.data, patch]);
 
-  const all = useMemo(() => (matches.data ?? []).filter((m) => m.status !== "bye" && m.status !== "cancelled"), [matches.data]);
+  const all = useMemo(() => (matches.data ?? []).map(patch).filter((m) => m.status !== "bye" && m.status !== "cancelled"), [matches.data, patch]);
+  const bracketData = useMemo(() => (bracket.data
+    ? { rounds: bracket.data.rounds.map((r) => ({ ...r, matches: r.matches.map(patch) })) }
+    : null), [bracket.data, patch]);
   const days = useMemo(() => [...new Set(all.filter((m) => m.scheduledAt).map((m) => m.scheduledAt as string))]
     .reduce<{ key: string; iso: string }[]>((acc, iso) => (acc.some((d) => d.key === dayKey(iso)) ? acc : [...acc, { key: dayKey(iso), iso }]), [])
     .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)), [all]);
@@ -273,7 +279,7 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
           ))}
         </section>
       )}
-      {tab === "bracket" && (bracket.data ? <BracketExplorer bracket={bracket.data} view={bracketView} /> : <CardSkeleton rows={4} />)}
+      {tab === "bracket" && (bracketData ? <BracketExplorer bracket={bracketData} view={bracketView} /> : <CardSkeleton rows={4} />)}
     </div>
   );
 }

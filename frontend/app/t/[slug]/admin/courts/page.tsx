@@ -30,8 +30,8 @@ const scoreLine = (m: Match) => m.games.map((g) => `${g[0]}-${g[1]}`).join(", ")
  */
 export default function CourtsPage() {
   const { t, version, busy, act } = useAdmin();
-  // Trọng tài nhập điểm / BTC khác gọi trận → bảng cập nhật ngay qua SSE; polling chỉ dự phòng.
-  const { tick, live } = useLive(t.id);
+  // Trọng tài nhập điểm / BTC khác gọi trận → bảng cập nhật ngay qua SSE (mọi thay đổi, kể cả từng điểm); polling chỉ dự phòng.
+  const { anyTick: tick, live } = useLive(t.id);
   const board = usePoll((s) => api<CourtBoard>(`/tournaments/${t.id}/courts`, { signal: s }), [t.id, version, tick], live ? 20_000 : 5_000);
   const staff = usePoll((s) => api<Staff[]>(`/tournaments/${t.id}/staff`, { signal: s }), [t.id, version], 120_000);
   const [pickFor, setPickFor] = useState<number | null>(null);
