@@ -37,13 +37,13 @@ module.exports = function registerMatchesRoutes(api, { pool, id, me, touch }) {
   });
   api.post('/matches/:id/rallies', auth.requireAuth, async (req, res) => {
     const mid = id(req.params.id);
-    await rallies.addRally(pool, me(req), mid, schemas.rally.parse(req.body));
-    await withRallies(res, mid);
+    const out = await rallies.addRally(pool, me(req), mid, schemas.rally.parse(req.body));
+    await withRallies(res, mid, !out.tournament_started);
   });
   api.delete('/matches/:id/rallies/last', auth.requireAuth, async (req, res) => {
     const mid = id(req.params.id);
-    await rallies.undoRally(pool, me(req), mid, schemas.rallyUndo.parse(req.query).expectedSeq);
-    await withRallies(res, mid);
+    const out = await rallies.undoRally(pool, me(req), mid, schemas.rallyUndo.parse(req.query).expectedSeq);
+    await withRallies(res, mid, !out.tournament_started);
   });
   api.put('/matches/:id/score', auth.requireAuth, async (req, res) => {
     const body = schemas.score.parse(req.body);

@@ -57,12 +57,14 @@ describe('Bắt đầu và hoàn thành trận (PGlite)', { skip: hasPglite ? fa
     const { a } = await fixture();
     const m = await assign(a.id, 1);
     await rejectsWith(rallies.undoRally(pool, REF, m.id, 1), 'NOTHING_TO_UNDO');
-    await rallies.addRally(pool, REF, m.id, { type: 'start', server: 'a1', expectedSeq: 1 });
+    const first = await rallies.addRally(pool, REF, m.id, { type: 'start', server: 'a1', expectedSeq: 1 });
+    assert.equal(first.tournament_started, true, 'lần chọn giao đầu báo thay đổi trạng thái giải cho SSE');
     const fresh = await matchSvc.getMatch(pool, m.id);
     assert.equal(fresh.status, 'live');
     assert.equal(fresh.version, m.version + 1);
     assert.ok(fresh.courtSince);
-    await rallies.addRally(pool, REF, m.id, { type: 'point', side: 'a', expectedSeq: 2 });
+    const point = await rallies.addRally(pool, REF, m.id, { type: 'point', side: 'a', expectedSeq: 2 });
+    assert.equal(point.tournament_started, false, 'các điểm tiếp theo chỉ cập nhật trận');
     assert.deepEqual((await matchSvc.getMatch(pool, m.id)).games, [[1, 0]]);
   });
 
