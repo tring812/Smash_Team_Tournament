@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useParams, usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowUpRight, CalendarClock, GitBranch, LayoutGrid, MapPin, MonitorPlay, RefreshCw, Search, X } from "lucide-react";
 import { api, fmtTime } from "../../lib/api";
@@ -22,8 +22,7 @@ import { CardSkeleton, EmptyState, PageHeader, textInputClass } from "../../comp
 const BracketExplorer = dynamic(() => import("../../components/BracketExplorer").then((m) => m.BracketExplorer), { loading: () => <CardSkeleton rows={3} /> });
 const BracketViewToggle = dynamic(() => import("../../components/BracketExplorer").then((m) => m.BracketViewToggle));
 const PersonPicker = dynamic(() => import("../../components/PlayerResults").then((m) => m.PersonPicker), { loading: () => <CardSkeleton rows={2} /> });
-const PlayerBadge = dynamic(() => import("../../components/PlayerResults").then((m) => m.PlayerBadge));
-const PlayerSchedule = dynamic(() => import("../../components/PlayerResults").then((m) => m.PlayerSchedule), { loading: () => <CardSkeleton rows={2} /> });
+const PlayerProfile = dynamic(() => import("../../components/PlayerResults").then((m) => m.PlayerProfile), { loading: () => <CardSkeleton rows={3} /> });
 
 export type HubTab = "schedule" | "groups" | "bracket";
 
@@ -43,13 +42,15 @@ const clock = new Intl.DateTimeFormat("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", h
  * "Bảng đấu" (/t/<slug>/groups, bảng xếp hạng vòng bảng), "Loại trực tiếp" (/t/<slug>/bracket).
  * Ô tìm VĐV có ở Lịch + Bảng đấu và giữ nguyên khi chuyển giữa hai tab, theo 2 bước:
  *  1. Gõ tên → CHỈ hiện danh sách tên khớp (ẩn lịch / bảng chung) để VĐV bấm chọn đúng mình.
- *  2. Đã chọn (?p=khoá VĐV) → Lịch chỉ còn các trận của người đó; Bảng đấu chỉ còn bảng có người đó.
+ *  2. Bấm 1 lần vào tên (?p=khoá VĐV) → hồ sơ VĐV: MỌI trận của người đó (mọi nội dung) và bảng đấu của họ ngay bên cạnh
+ *     (cùng một khung ở cả hai tab). Xoá ô tìm (nút ✕ hoặc xoá hết chữ) → về lại lịch / bảng chung ngay.
+ * Tìm nhanh: dữ liệu để tìm (cả lịch + BXH) tải sẵn khi chạm vào ô tìm; URL đổi bằng history.replaceState (không gọi máy chủ
+ * Next mỗi lần gõ / bấm như router.replace) nên chọn tên là hiện hồ sơ ngay.
  * Bộ lọc nằm trên URL: ?cat=MS (mọi tab) · ?q=tên gõ · ?p=VĐV đã chọn · ?view=time|court|table&day=&court= (lịch)
  * · ?view=tree|table (loại trực tiếp).
  */
 export function TournamentHub({ tab }: { tab: HubTab }) {
   const { slug } = useParams<{ slug: string }>();
-  const router = useRouter();
   const pathname = usePathname();
   const search = useSearchParams();
   const catCode = search.get("cat") ?? "";
@@ -67,11 +68,14 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
   const cat = cats.find((c) => c.code === catCode);
   // Loại trực tiếp chỉ xem được từng nội dung → mặc định nội dung đã có nhánh.
   const focusCat = cat ?? cats.find((c) => c.stage === "knockout" || c.stage === "completed") ?? cats[0];
-  // Bảng xếp hạng: tab Bảng đấu, hoặc tab Lịch khi đang tìm VĐV (để báo "Bảng C · hạng 3").
-  // Nội dung đang chọn, hoặc mọi nội dung đã bốc thăm.
-  const searching = Boolean(qParam.trim()) || Boolean(pickKey);
-  // Khi tìm VĐV: lấy MỌI nội dung đã bốc thăm để thẻ VĐV liệt kê đủ các nội dung người đó đánh.
-  const needStandings = tab === "groups" || (tab === "schedule" && searching);
+  // Ô tìm VĐV: gõ ngay trên máy, URL (?q=) cập nhật sau 300 ms để chia sẻ / quay lại được.
+  const [q, setQ] = useState(qParam);
+  // Chạm / rê chuột vào ô tìm → tải sẵn dữ liệu tìm kiếm, gõ chữ đầu tiên là có danh sách tên ngay.
+  const [warm, setWarm] = useState(false);
+  // Đang (sắp) tìm VĐV: cần CẢ lịch (mọi nội dung) và BXH mọi nội dung đã bốc thăm để hồ sơ VĐV đủ trận + bảng.
+  // Dùng chữ đang gõ (không chờ ?q= trễ 300 ms) để bắt đầu tải ngay phím đầu tiên.
+  const searching = Boolean(q.trim()) || Boolean(pickKey) || warm;
+  const needStandings = tab === "groups" || (tab !== "bracket" && searching);
 
   // Bốc thăm / xếp lịch / sửa đội → tải lại toàn bộ (`tick`). Điểm, gọi sân, dời trận, kết quả → chỉ tải riêng các trận đó
   // (`matchEvent` → patch); có kết quả mới thì tải thêm bảng xếp hạng / nhánh (`resultTick`), không tải lại cả lịch.
@@ -83,7 +87,7 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
   const patch = useMatchPatches(matchEvent);
   // Cả lịch (request nặng nhất) chỉ cần ở tab Lịch, hoặc khi tìm VĐV (để gom trận của người đó). Tab Bảng đấu / Loại trực tiếp
   // khi xem chung không tải.
-  const matchesPath = t.data && (tab === "schedule" || searching)
+  const matchesPath = t.data && (tab === "schedule" || (tab !== "bracket" && searching))
     ? `/tournaments/${t.data.id}/matches${tab === "schedule" && cat && !searching ? `?categoryId=${cat.id}` : ""}` : null;
   const matches = usePoll(
     (s) => (matchesPath ? api<Match[]>(matchesPath, { signal: s }) : Promise.resolve([])),
@@ -107,8 +111,6 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
     return { data, error: standingsRaw.error };
   }, [standingsRaw.data, standingsRaw.error, cats, needStandings]);
 
-  // Ô tìm VĐV: gõ ngay trên máy, URL (?q=) cập nhật sau 300 ms để chia sẻ / quay lại được.
-  const [q, setQ] = useState(qParam);
   const bracketPath = tab === "bracket" && focusCat ? `/categories/${focusCat.id}/bracket` : null;
   const bracket = usePoll(
     (s) => (bracketPath ? api<Bracket>(bracketPath, { signal: s }) : Promise.resolve({ rounds: [] })),
@@ -154,12 +156,17 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
   // Dữ liệu đủ để biết VĐV đã chọn có còn trong giải không (tránh báo "không tìm thấy" khi còn đang tải).
   const pickedResolved = Boolean(matches.data && groups.data);
 
-  /** Đổi nhiều tham số URL một lần. Đọc URL HIỆN TẠI (không phải bản lúc render) — tránh lần cập nhật ?q= trễ 300 ms xoá mất ?p=. */
+  /**
+   * Đổi nhiều tham số URL một lần. Đọc URL HIỆN TẠI (không phải bản lúc render) — tránh lần cập nhật ?q= trễ 300 ms xoá mất ?p=.
+   * Dùng history.replaceState thay cho router.replace: router.replace tải lại RSC của trang động /t/[slug] từ máy chủ mỗi lần
+   * đổi ?q= / ?p= → bấm chọn tên phải chờ một vòng mạng mới hiện hồ sơ. Next đồng bộ replaceState vào useSearchParams, nhưng
+   * state PHẢI là null: truyền window.history.state (có cờ __NA của Next) thì Next bỏ qua và trang không đổi.
+   */
   const replaceParams = (updates: Record<string, string>) => {
     const p = new URLSearchParams(window.location.search);
     for (const [k, v] of Object.entries(updates)) { if (v) p.set(k, v); else p.delete(k); }
     const qs = p.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    window.history.replaceState(null, "", qs ? `${pathname}?${qs}` : pathname);
   };
   const setParam = (k: string, v: string) => replaceParams({ [k]: v });
   useEffect(() => {
@@ -170,7 +177,9 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
   }, [q]);
   const onType = (v: string) => {
     setQ(v);
-    if (pickKey) replaceParams({ p: "" }); // sửa chữ = tìm lại từ đầu → bỏ VĐV đã chọn, hiện danh sách tên
+    // Xoá hết chữ = về lịch / bảng chung NGAY (không chờ 300 ms).
+    if (!v.trim()) replaceParams({ q: "", p: "" });
+    else if (pickKey) replaceParams({ p: "" }); // sửa chữ = tìm lại từ đầu → bỏ VĐV đã chọn, hiện danh sách tên
   };
   const pick = (p: Person) => {
     setQ(p.name);
@@ -237,6 +246,7 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
             <label htmlFor="player-q" className="sr-only">Tìm VĐV theo tên hoặc CLB</label>
             <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" aria-hidden />
             <input id="player-q" type="search" value={q} onChange={(e) => onType(e.target.value)} autoComplete="off" enterKeyHint="search"
+              onFocus={() => setWarm(true)} onPointerEnter={() => setWarm(true)}
               placeholder="Tìm tên của bạn (vd: nguyen an, hoặc tên CLB / trường)"
               className={`${textInputClass} min-h-12 rounded-full pl-12 pr-12 text-base`} />
             {q && (
@@ -264,24 +274,11 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
         </search>
       )}
 
-      {/* Đang gõ tên (picking): chỉ hiện danh sách tên ở trên, ẩn lịch / bảng chung cho tới khi VĐV chọn đúng mình. */}
+      {/* Đang gõ tên (picking): chỉ hiện danh sách tên ở trên, ẩn lịch / bảng chung cho tới khi VĐV chọn đúng mình.
+          Đã chọn: cùng một hồ sơ ở cả hai tab — mọi trận bên trái, bảng đấu của VĐV bên phải. */}
       {mode === "picked" && tab !== "bracket" && (
         !pickedResolved ? <CardSkeleton rows={3} /> : picked && (
-          tab === "schedule" ? (
-            <PlayerSchedule p={picked} groupsHref={tabHref("groups")} onClear={clearSearch} />
-          ) : (
-            <section aria-label={`Bảng đấu của ${picked.name}`} className="space-y-6">
-              <PlayerBadge p={picked} onClear={clearSearch} />
-              {!standings.length ? (
-                <EmptyState title={`${picked.name} chưa có trong bảng nào`} desc="Bảng đấu có sau khi BTC bốc thăm; nội dung loại trực tiếp xem ở tab Loại trực tiếp." />
-              ) : standings.map(({ category, groups: gs }) => (
-                <div key={category.id} className="space-y-3">
-                  <h2 className="headline text-2xl">{category.code} · {category.name}</h2>
-                  <StandingsTables groups={gs} highlight={rowHit} />
-                </div>
-              ))}
-            </section>
-          )
+          <PlayerProfile p={picked} standings={standings} highlight={rowHit} onClear={clearSearch} />
         )
       )}
 
@@ -337,7 +334,7 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
         <p className="flex items-center gap-1.5 text-xs text-slate-500" aria-live="polite">
           <RefreshCw className="w-3.5 h-3.5" aria-hidden />
           {streaming ? <span className="font-semibold text-emerald-700">Trực tiếp</span> : "Tự cập nhật mỗi 10 giây"}{updatedAt && <> · lần cuối <span className="tabular">{clock.format(updatedAt)}</span></>}
-          {tab === "schedule" && <> · {mode === "picked" ? personMatches : shown.length} trận</>}
+          {(tab === "schedule" || mode === "picked") && <> · {mode === "picked" ? personMatches : shown.length} trận</>}
         </p>
       )}
 
