@@ -13,6 +13,9 @@ let hasPglite = true;
 try { require.resolve('@electric-sql/pglite'); } catch { hasPglite = false; }
 
 const svc = require('../src/services/tournamentService');
+const categorySvc = require('../src/services/categoryService');
+const entrySvc = require('../src/services/entryService');
+const matchSvc = require('../src/services/matchService');
 const courts = require('../src/services/courtService');
 
 const ADMIN = { id: '00000000-0000-4000-8000-0000000000e1', full_name: 'Admin', role: 'admin' };
@@ -50,8 +53,8 @@ describe('Sửa / xoá / khôi phục giải (PGlite)', { skip: hasPglite ? fals
     await svc.upsertStaff(pool, ADMIN, t.id, { userId: CREATOR.id, role: 'organizer' });
     await svc.upsertStaff(pool, ADMIN, t.id, { userId: ORG.id, role: 'organizer' });
     await svc.upsertStaff(pool, ADMIN, t.id, { userId: REF.id, role: 'referee' });
-    const ms = await svc.createCategory(pool, ADMIN, t.id, { code: 'MS', name: 'Đơn nam', isDoubles: false, groupCount: 1, advancePerGroup: 1 });
-    await svc.addEntries(pool, ADMIN, ms.id, [{ player1Name: 'An', player1StudentId: '22520001' }, { player1Name: 'Bình' }, { player1Name: 'Chi' }]);
+    const ms = await categorySvc.createCategory(pool, ADMIN, t.id, { code: 'MS', name: 'Đơn nam', isDoubles: false, groupCount: 1, advancePerGroup: 1 });
+    await entrySvc.addEntries(pool, ADMIN, ms.id, [{ player1Name: 'An', player1StudentId: '22520001' }, { player1Name: 'Bình' }, { player1Name: 'Chi' }]);
     await svc.drawGroups(pool, ADMIN, ms.id);
     await courts.setCourtReferee(pool, ADMIN, t.id, 1, REF.id);
     return { t, ms };
@@ -73,14 +76,14 @@ describe('Sửa / xoá / khôi phục giải (PGlite)', { skip: hasPglite ? fals
   test('giải đã xoá: biến khỏi danh sách / đường dẫn / hàng đợi trọng tài; không ai thao tác được', async () => {
     const { t, ms } = await fullTournament('da-xoa');
     await svc.updateTournament(pool, ADMIN, t.id, { status: 'published' });
-    assert.ok((await svc.refereeQueue(pool, REF)).some((m) => m.tournamentId === t.id));
+    assert.ok((await matchSvc.refereeQueue(pool, REF)).some((m) => m.tournamentId === t.id));
     await svc.deleteTournament(pool, ADMIN, t.id, 'da-xoa');
     await rejectsWith(svc.getTournament(pool, 'da-xoa', ADMIN), 404);
     assert.ok(!(await svc.listTournaments(pool, ADMIN)).some((x) => x.id === t.id));
     assert.ok(!(await svc.listTournaments(pool, null)).some((x) => x.id === t.id));
     await rejectsWith(svc.assertVisible(pool, t.id, ADMIN), 404);
-    assert.ok(!(await svc.refereeQueue(pool, REF)).some((m) => m.tournamentId === t.id));
-    await rejectsWith(svc.createCategory(pool, ADMIN, t.id, { code: 'WS', name: 'Đơn nữ', isDoubles: false }), 403);
+    assert.ok(!(await matchSvc.refereeQueue(pool, REF)).some((m) => m.tournamentId === t.id));
+    await rejectsWith(categorySvc.createCategory(pool, ADMIN, t.id, { code: 'WS', name: 'Đơn nữ', isDoubles: false }), 403);
     await rejectsWith(svc.updateTournament(pool, CREATOR, t.id, { name: 'Sửa sau khi xoá' }), 403);
     await rejectsWith(svc.drawGroups(pool, ADMIN, ms.id), 403);
   });

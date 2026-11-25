@@ -5,6 +5,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const svc = require('../src/services/tournamentService');
+const categorySvc = require('../src/services/categoryService');
+const entrySvc = require('../src/services/entryService');
+const matchSvc = require('../src/services/matchService');
 const courts = require('../src/services/courtService');
 const rallies = require('../src/services/rallyService');
 
@@ -31,40 +34,40 @@ describe('Bắt đầu và hoàn thành trận (PGlite)', { skip: hasPglite ? fa
   async function fixture() {
     const t = await svc.createTournament(pool, ADMIN, { slug: `start-${++sequence}`, name: 'Giải thử bắt đầu trận', startsAt: new Date(Date.now() + 7 * 86_400_000).toISOString(), courts: 2 });
     await svc.upsertStaff(pool, ADMIN, t.id, { userId: REF.id, role: 'referee' });
-    const cat = await svc.createCategory(pool, ADMIN, t.id, { code: 'MS', name: 'Đơn nam', isDoubles: false, groupCount: 1 });
-    await svc.addEntries(pool, ADMIN, cat.id, ['An', 'Bình', 'Chi', 'Dũng'].map((player1Name) => ({ player1Name })));
+    const cat = await categorySvc.createCategory(pool, ADMIN, t.id, { code: 'MS', name: 'Đơn nam', isDoubles: false, groupCount: 1 });
+    await entrySvc.addEntries(pool, ADMIN, cat.id, ['An', 'Bình', 'Chi', 'Dũng'].map((player1Name) => ({ player1Name })));
     await svc.drawGroups(pool, ADMIN, cat.id);
     await svc.updateTournament(pool, ADMIN, t.id, { status: 'published' });
-    const matches = await svc.listMatches(pool, t.id);
+    const matches = await matchSvc.listMatches(pool, t.id);
     const a = matches[0];
     const b = matches.find((m) => ![a.a.id, a.b.id].includes(m.a.id) && ![a.a.id, a.b.id].includes(m.b.id));
     return { t, cat, a, b };
   }
   async function assign(mid, court) {
     await courts.moveMatch(pool, ADMIN, mid, { court });
-    return svc.getMatch(pool, mid);
+    return matchSvc.getMatch(pool, mid);
   }
   async function start(mid, viewer = REF) {
-    const m = await svc.getMatch(pool, mid);
-    await svc.startMatch(pool, viewer, mid, { version: m.version });
-    return svc.getMatch(pool, mid);
+    const m = await matchSvc.getMatch(pool, mid);
+    await matchSvc.startMatch(pool, viewer, mid, { version: m.version });
+    return matchSvc.getMatch(pool, mid);
   }
 
   test('chưa bắt đầu: chặn lưu điểm, biên bản, hoàn tác và xác nhận kết quả', async () => {
     const { a } = await fixture();
     const m = await assign(a.id, 1);
-    await rejectsWith(svc.recordScore(pool, REF, m.id, { action: 'save', version: m.version, games: [[1, 0]] }), 'MATCH_NOT_STARTED');
+    await rejectsWith(matchSvc.recordScore(pool, REF, m.id, { action: 'save', version: m.version, games: [[1, 0]] }), 'MATCH_NOT_STARTED');
     await rejectsWith(rallies.addRally(pool, REF, m.id, { type: 'start', server: 'a1', expectedSeq: 1 }), 'MATCH_NOT_STARTED');
     await rejectsWith(rallies.undoRally(pool, REF, m.id, 1), 'MATCH_NOT_STARTED');
-    await rejectsWith(svc.recordScore(pool, REF, m.id, { action: 'finish', version: m.version, games: [[21, 0], [21, 0]] }), 'MATCH_NOT_STARTED');
-    assert.deepEqual(await svc.getMatch(pool, m.id), m);
+    await rejectsWith(matchSvc.recordScore(pool, REF, m.id, { action: 'finish', version: m.version, games: [[21, 0], [21, 0]] }), 'MATCH_NOT_STARTED');
+    assert.deepEqual(await matchSvc.getMatch(pool, m.id), m);
     assert.deepEqual(await rallies.listRallies(pool, m.id), []);
   });
 
   test('không có sân: yêu cầu BTC gán sân trước', async () => {
     const { a } = await fixture();
     await rejectsWith(start(a.id), 'COURT_REQUIRED');
-    assert.equal((await svc.getMatch(pool, a.id)).status, 'pending');
+    assert.equal((await matchSvc.getMatch(pool, a.id)).status, 'pending');
   });
 
   test('sân rảnh: bắt đầu được dù chưa gọi; giữ giờ dự kiến và chưa tạo pha cầu', async () => {
@@ -85,7 +88,7 @@ describe('Bắt đầu và hoàn thành trận (PGlite)', { skip: hasPglite ? fa
   test('trận đã được BTC gọi vào sân có thể bắt đầu, giữ thời điểm gọi', async () => {
     const { a } = await fixture();
     await courts.callMatch(pool, ADMIN, a.id, { court: 1 });
-    const before = await svc.getMatch(pool, a.id);
+    const before = await matchSvc.getMatch(pool, a.id);
     const m = await start(a.id);
     assert.deepEqual(m.courtSince, before.courtSince);
   });
@@ -97,18 +100,18 @@ describe('Bắt đầu và hoàn thành trận (PGlite)', { skip: hasPglite ? fa
       await courts.callMatch(pool, ADMIN, a.id, { court: 1 });
       if (mode === 'live') await start(a.id);
       await rejectsWith(start(b.id), 'COURT_BUSY');
-      assert.equal((await svc.getMatch(pool, b.id)).status, 'pending');
+      assert.equal((await matchSvc.getMatch(pool, b.id)).status, 'pending');
     });
   }
 
   test('chặn VĐV đang ở nội dung khác dù sân mới trống', async () => {
     const { t, a } = await fixture();
-    const cat = await svc.createCategory(pool, ADMIN, t.id, { code: 'XD', name: 'Đôi nam nữ', isDoubles: true, groupCount: 1 });
-    await svc.addEntries(pool, ADMIN, cat.id, [
+    const cat = await categorySvc.createCategory(pool, ADMIN, t.id, { code: 'XD', name: 'Đôi nam nữ', isDoubles: true, groupCount: 1 });
+    await entrySvc.addEntries(pool, ADMIN, cat.id, [
       { player1Name: 'Hoa', player2Name: a.a.name }, { player1Name: 'Lan', player2Name: 'Mai' },
     ]);
     await svc.drawGroups(pool, ADMIN, cat.id);
-    const b = (await svc.listMatches(pool, t.id)).find((m) => m.category.id === cat.id);
+    const b = (await matchSvc.listMatches(pool, t.id)).find((m) => m.category.id === cat.id);
     await assign(a.id, 1);
     await assign(b.id, 2);
     await start(a.id);
@@ -120,11 +123,11 @@ describe('Bắt đầu và hoàn thành trận (PGlite)', { skip: hasPglite ? fa
     await assign(a.id, 1);
     await assign(b.id, 1);
     let m = await start(a.id);
-    await rejectsWith(svc.recordScore(pool, REF, m.id, { action: 'finish', version: m.version, games: [[1, 0]] }), 'VALIDATION_FAILED', 422);
-    await svc.recordScore(pool, REF, m.id, { action: 'save', version: m.version, games: [[21, 0], [21, 0]] });
+    await rejectsWith(matchSvc.recordScore(pool, REF, m.id, { action: 'finish', version: m.version, games: [[1, 0]] }), 'VALIDATION_FAILED', 422);
+    await matchSvc.recordScore(pool, REF, m.id, { action: 'save', version: m.version, games: [[21, 0], [21, 0]] });
     await rejectsWith(start(b.id), 'COURT_BUSY');
-    m = await svc.getMatch(pool, m.id);
-    await svc.recordScore(pool, REF, m.id, { action: 'finish', version: m.version, games: m.games });
+    m = await matchSvc.getMatch(pool, m.id);
+    await matchSvc.recordScore(pool, REF, m.id, { action: 'finish', version: m.version, games: m.games });
     assert.equal((await start(b.id)).status, 'live');
   });
 
@@ -142,7 +145,7 @@ describe('Bắt đầu và hoàn thành trận (PGlite)', { skip: hasPglite ? fa
     await assign(a.id, 1);
     await rejectsWith(start(a.id, OTHER), 'FORBIDDEN', 403);
     await svc.upsertStaff(pool, ADMIN, t.id, { userId: OTHER.id, role: 'referee' });
-    await svc.assignReferee(pool, ADMIN, a.id, OTHER.id);
+    await matchSvc.assignReferee(pool, ADMIN, a.id, OTHER.id);
     await rejectsWith(start(a.id), 'FORBIDDEN', 403);
     assert.equal((await start(a.id, OTHER)).status, 'live');
   });
@@ -150,14 +153,14 @@ describe('Bắt đầu và hoàn thành trận (PGlite)', { skip: hasPglite ? fa
   test('phiên bản cũ và giải đã kết thúc không được bắt đầu', async () => {
     const { t, a } = await fixture();
     const m = await assign(a.id, 1);
-    await rejectsWith(svc.startMatch(pool, REF, a.id, { version: m.version - 1 }), 'VERSION_CONFLICT');
+    await rejectsWith(matchSvc.startMatch(pool, REF, a.id, { version: m.version - 1 }), 'VERSION_CONFLICT');
     await svc.updateTournament(pool, ADMIN, t.id, { status: 'completed' });
     await rejectsWith(start(a.id), 'TOURNAMENT_CLOSED');
   });
 
   test('giữ luồng xử bỏ cuộc trước khi bắt đầu, không nhận sân', async () => {
     const { a } = await fixture();
-    await svc.recordScore(pool, REF, a.id, { action: 'walkover', version: a.version, walkoverWinner: 'a' });
-    assert.equal((await svc.getMatch(pool, a.id)).status, 'walkover');
+    await matchSvc.recordScore(pool, REF, a.id, { action: 'walkover', version: a.version, walkoverWinner: 'a' });
+    assert.equal((await matchSvc.getMatch(pool, a.id)).status, 'walkover');
   });
 });

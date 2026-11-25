@@ -1,7 +1,7 @@
 'use strict';
 /**
  * Nghiệp vụ ĐỘI / VĐV trong một nội dung: thêm, xoá, sửa đội; truất quyền / huỷ truất quyền; đổi bảng.
- * Tách từ tournamentService (không đổi hành vi); tournamentService vẫn re-export các hàm ở đây.
+ * Tách từ tournamentService; nơi gọi require thẳng tệp này.
  */
 
 const { notFound, conflict, unprocessable } = require('../errors');

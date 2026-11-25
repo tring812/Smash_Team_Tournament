@@ -2,7 +2,7 @@
 /**
  * Nghiệp vụ TRẬN ĐẤU: đọc / trình bày trận, nhánh, hàng chờ trọng tài; bắt đầu trận, nhập điểm,
  * mở lại, phân công trọng tài; đưa đội thắng đi tiếp & xử walkover.
- * Tách từ tournamentService (không đổi hành vi); tournamentService vẫn re-export các hàm ở đây.
+ * Tách từ tournamentService; nơi gọi require thẳng tệp này.
  */
 
 const { roundLabel } = require('../domain/bracket');
@@ -114,7 +114,7 @@ async function startMatch(pool, viewer, matchId, input) {
     if (t.status === 'completed') throw conflict('TOURNAMENT_CLOSED', 'Giải đã kết thúc');
     if (t.status === 'draft' && role === 'referee') throw forbidden('Giải chưa công bố');
     if (!m.court) throw conflict('COURT_REQUIRED', 'Trận chưa có sân — liên hệ BTC để gán sân');
-    // Nạp muộn vì courtService dùng các tiện ích giao dịch và quyền từ tournamentService (re-export tệp này).
+    // Nạp muộn vì courtService require tệp này (presentMatch, MATCH_SELECT) → tránh vòng require.
     const courts = require('./courtService');
     const occupancy = await courts.lockMatch(c, matchId);
     courts.checkCourt(m.court, occupancy.t_courts);

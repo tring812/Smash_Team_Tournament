@@ -4,6 +4,8 @@
  * Gắn thẳng vào router `/api` của app.js (cùng thứ tự, cùng middleware) — chỉ tách file, không đổi hành vi.
  */
 const svc = require('../services/tournamentService');
+const categorySvc = require('../services/categoryService');
+const matchSvc = require('../services/matchService');
 const athletes = require('../services/athleteService');
 const referees = require('../services/refereeService');
 const live = require('../liveBus');
@@ -71,7 +73,7 @@ module.exports = function registerTournamentsRoutes(api, { pool, id, me, touch }
     res.json(await referees.removeReferee(pool, me(req), id(req.params.id), id(req.params.userId)));
   });
   api.post('/tournaments/:id/categories', auth.requireAuth, async (req, res) => {
-    res.status(201).json(await svc.createCategory(pool, me(req), id(req.params.id), schemas.createCategory.parse(req.body)));
+    res.status(201).json(await categorySvc.createCategory(pool, me(req), id(req.params.id), schemas.createCategory.parse(req.body)));
   });
   api.post('/tournaments/:id/schedule', auth.requireAuth, async (req, res) => {
     touch(res, req.params.id);
@@ -99,6 +101,6 @@ module.exports = function registerTournamentsRoutes(api, { pool, id, me, touch }
   api.get('/tournaments/:id/matches', async (req, res) => {
     const tid = id(req.params.id);
     await svc.assertVisible(pool, tid, me(req));
-    res.json(await svc.listMatches(pool, tid, schemas.matchFilter.parse(req.query)));
+    res.json(await matchSvc.listMatches(pool, tid, schemas.matchFilter.parse(req.query)));
   });
 };

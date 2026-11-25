@@ -12,6 +12,9 @@ let hasPglite = true;
 try { require.resolve('@electric-sql/pglite'); } catch { hasPglite = false; }
 
 const svc = require('../src/services/tournamentService');
+const categorySvc = require('../src/services/categoryService');
+const entrySvc = require('../src/services/entryService');
+const matchSvc = require('../src/services/matchService');
 const { beginMatch } = require('./support/match');
 
 const ADMIN = { id: '00000000-0000-4000-8000-0000000000b1', full_name: 'Admin', role: 'admin' };
@@ -44,11 +47,11 @@ describe('CRUD nội dung thi đấu (PGlite)', { skip: hasPglite ? false : 'ch�
   });
   after(async () => { await pool?.end(); });
 
-  const addFour = (cid) => svc.addEntries(pool, ADMIN, cid, ['An', 'Bình', 'Chi', 'Dũng'].map((n) => ({ player1Name: n })));
+  const addFour = (cid) => entrySvc.addEntries(pool, ADMIN, cid, ['An', 'Bình', 'Chi', 'Dũng'].map((n) => ({ player1Name: n })));
 
   test('tạo + sửa tên/mã khi chưa bốc thăm; ghi nhật ký', async () => {
-    const cat = await svc.createCategory(pool, ADMIN, t.id, { code: 'MS', name: 'Đơn nam', isDoubles: false });
-    const upd = await svc.updateCategory(pool, ADMIN, cat.id, { code: 'MS1', name: 'Đơn nam A', groupCount: 1, isDoubles: true });
+    const cat = await categorySvc.createCategory(pool, ADMIN, t.id, { code: 'MS', name: 'Đơn nam', isDoubles: false });
+    const upd = await categorySvc.updateCategory(pool, ADMIN, cat.id, { code: 'MS1', name: 'Đơn nam A', groupCount: 1, isDoubles: true });
     assert.equal(upd.code, 'MS1');
     assert.equal(upd.is_doubles, true);
     const ev = await svc.listEvents(pool, ADMIN, t.id);
@@ -56,39 +59,39 @@ describe('CRUD nội dung thi đấu (PGlite)', { skip: hasPglite ? false : 'ch�
   });
 
   test('trùng mã → 409; trần điểm < điểm thắng → 422; người ngoài → 403', async () => {
-    const a = await svc.createCategory(pool, ADMIN, t.id, { code: 'WS', name: 'Đơn nữ', isDoubles: false });
-    await rejectsWith(svc.updateCategory(pool, ADMIN, a.id, { code: 'MS1' }), 409, 'CATEGORY_EXISTS');
-    await rejectsWith(svc.updateCategory(pool, ADMIN, a.id, { pointsToWin: 21, maxPoints: 15 }), 422);
-    await rejectsWith(svc.updateCategory(pool, OUTSIDER, a.id, { name: 'X' }), 403);
-    await rejectsWith(svc.deleteCategory(pool, OUTSIDER, a.id), 403);
+    const a = await categorySvc.createCategory(pool, ADMIN, t.id, { code: 'WS', name: 'Đơn nữ', isDoubles: false });
+    await rejectsWith(categorySvc.updateCategory(pool, ADMIN, a.id, { code: 'MS1' }), 409, 'CATEGORY_EXISTS');
+    await rejectsWith(categorySvc.updateCategory(pool, ADMIN, a.id, { pointsToWin: 21, maxPoints: 15 }), 422);
+    await rejectsWith(categorySvc.updateCategory(pool, OUTSIDER, a.id, { name: 'X' }), 403);
+    await rejectsWith(categorySvc.deleteCategory(pool, OUTSIDER, a.id), 403);
   });
 
   test('đã có đội → không đổi đơn/đôi; đã bốc thăm → không đổi số bảng, vẫn đổi được tên & luật điểm', async () => {
-    const cat = await svc.createCategory(pool, ADMIN, t.id, { code: 'XD', name: 'Đôi nam nữ', isDoubles: false, groupCount: 1 });
+    const cat = await categorySvc.createCategory(pool, ADMIN, t.id, { code: 'XD', name: 'Đôi nam nữ', isDoubles: false, groupCount: 1 });
     await addFour(cat.id);
-    await rejectsWith(svc.updateCategory(pool, ADMIN, cat.id, { isDoubles: true }), 409, 'CATEGORY_LOCKED');
+    await rejectsWith(categorySvc.updateCategory(pool, ADMIN, cat.id, { isDoubles: true }), 409, 'CATEGORY_LOCKED');
     await svc.drawGroups(pool, ADMIN, cat.id);
-    await rejectsWith(svc.updateCategory(pool, ADMIN, cat.id, { groupCount: 2 }), 409, 'CATEGORY_LOCKED');
-    const ok = await svc.updateCategory(pool, ADMIN, cat.id, { name: 'Đôi hỗn hợp', pointsToWin: 15, maxPoints: 21 });
+    await rejectsWith(categorySvc.updateCategory(pool, ADMIN, cat.id, { groupCount: 2 }), 409, 'CATEGORY_LOCKED');
+    const ok = await categorySvc.updateCategory(pool, ADMIN, cat.id, { name: 'Đôi hỗn hợp', pointsToWin: 15, maxPoints: 21 });
     assert.equal(ok.points_to_win, 15);
     // Gửi lại đúng giá trị cũ không bị coi là "thay đổi" → không bị khoá.
-    await svc.updateCategory(pool, ADMIN, cat.id, { groupCount: 1, name: 'Đôi hỗn hợp' });
+    await categorySvc.updateCategory(pool, ADMIN, cat.id, { groupCount: 1, name: 'Đôi hỗn hợp' });
   });
 
   test('có trận bắt đầu → khoá luật điểm & không xoá được; chưa đánh → xoá dây chuyền, nhật ký còn', async () => {
-    const played = await svc.createCategory(pool, ADMIN, t.id, { code: 'MD', name: 'Đôi nam', isDoubles: false, groupCount: 1 });
+    const played = await categorySvc.createCategory(pool, ADMIN, t.id, { code: 'MD', name: 'Đôi nam', isDoubles: false, groupCount: 1 });
     await addFour(played.id);
     await svc.drawGroups(pool, ADMIN, played.id);
-    const [pending] = await svc.listMatches(pool, t.id, { categoryId: played.id });
+    const [pending] = await matchSvc.listMatches(pool, t.id, { categoryId: played.id });
     const m = await beginMatch(pool, ADMIN, ADMIN, pending);
-    await svc.recordScore(pool, ADMIN, m.id, { action: 'save', version: m.version, games: [[3, 1]] });
-    await rejectsWith(svc.updateCategory(pool, ADMIN, played.id, { gamesToWin: 1 }), 409, 'CATEGORY_LOCKED');
-    await rejectsWith(svc.deleteCategory(pool, ADMIN, played.id), 409, 'CATEGORY_STARTED');
+    await matchSvc.recordScore(pool, ADMIN, m.id, { action: 'save', version: m.version, games: [[3, 1]] });
+    await rejectsWith(categorySvc.updateCategory(pool, ADMIN, played.id, { gamesToWin: 1 }), 409, 'CATEGORY_LOCKED');
+    await rejectsWith(categorySvc.deleteCategory(pool, ADMIN, played.id), 409, 'CATEGORY_STARTED');
 
-    const fresh = await svc.createCategory(pool, ADMIN, t.id, { code: 'WD', name: 'Đôi nữ', isDoubles: false, groupCount: 1 });
+    const fresh = await categorySvc.createCategory(pool, ADMIN, t.id, { code: 'WD', name: 'Đôi nữ', isDoubles: false, groupCount: 1 });
     await addFour(fresh.id);
     await svc.drawGroups(pool, ADMIN, fresh.id);
-    await svc.deleteCategory(pool, ADMIN, fresh.id);
+    await categorySvc.deleteCategory(pool, ADMIN, fresh.id);
     const left = await pool.query('SELECT (SELECT count(*)::int FROM entries WHERE category_id = $1) AS e, (SELECT count(*)::int FROM matches WHERE category_id = $1) AS m', [fresh.id]);
     assert.deepEqual(left.rows[0], { e: 0, m: 0 });
     const ev = await svc.listEvents(pool, ADMIN, t.id);

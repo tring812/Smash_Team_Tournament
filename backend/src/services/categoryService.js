@@ -1,7 +1,7 @@
 'use strict';
 /**
  * Nghiệp vụ NỘI DUNG THI ĐẤU: tạo / sửa / xoá nội dung, luật điểm theo vòng và các kiểm tra khoá luật.
- * Tách từ tournamentService (không đổi hành vi); tournamentService vẫn re-export các hàm ở đây.
+ * Tách từ tournamentService; nơi gọi require thẳng tệp này.
  */
 
 const { effectiveRules, buildRoundRules, sameRules, scopeKey, fromEndLabel } = require('../domain/roundRules');

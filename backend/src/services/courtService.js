@@ -12,8 +12,9 @@
  */
 const { notFound, conflict, unprocessable } = require('../errors');
 const {
-  withTx, requireOrganizer, logEvent, participantKey, presentMatch, MATCH_SELECT, FINAL_STATUSES,
+  withTx, requireOrganizer, logEvent, participantKey, FINAL_STATUSES,
 } = require('./tournamentService');
+const { presentMatch, MATCH_SELECT } = require('./matchService');
 
 /** @typedef {import('./tournamentService').Pool} Pool */
 /** @typedef {import('./tournamentService').Queryable} Queryable */
