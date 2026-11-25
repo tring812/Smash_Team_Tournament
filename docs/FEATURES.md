@@ -147,7 +147,9 @@ Cho biết **trận nào, đánh ở sân nào, lúc mấy giờ, tỉ số bao 
 
 - **Bàn trọng tài** `/ref`: danh sách trận mình được nhập — trận gán riêng cho mình, trận ở **sân mình phụ trách**, hoặc trận chưa có trọng tài thuộc giải mình làm trọng tài. Trận đang đánh / vừa được gọi vào sân lên đầu, ưu tiên sân của mình.
 - **Giải đã kết thúc** (`status = completed`): máy chủ từ chối nhập điểm (`409 TOURNAMENT_CLOSED`); Bàn điểm đọc `tournamentStatus` của trận, hiện banner "Giải đã kết thúc — khoá nhập điểm" và khoá mọi nút. Thao tác nào bị máy chủ từ chối (lỗi 4xx) thì Bàn điểm **trả điểm và bên giao về như trước** (tải lại tỉ số máy chủ, bỏ nháp trên máy).
-- **Nhập điểm** `/ref/<matchId>`: chạm nửa màn hình của đội thắng pha cầu; tự nhận biết hết game theo **luật điểm của vòng đó** (hiện ở đầu màn hình, vd "11 điểm, trần 15 · 1 game" — xem [7.6](#76-tính-điểm)); hoàn tác; **Xác nhận kết quả** khi đủ số game thắng; **Bỏ cuộc** (chọn bên thắng).
+- **Bắt đầu trận** `/ref/<matchId>`: trước khi bắt đầu, khoá ghi điểm và chọn người giao. BTC phải gán sân trước (qua xếp lịch, dời trận hoặc gọi sân); trọng tài không tự chọn sân. Nút gọi `POST /matches/:id/start {version}`; máy chủ kiểm tra quyền trọng tài hiệu lực, sân và toàn bộ VĐV không bị trận đang đánh / đã gọi khác chiếm (kể cả khác nội dung), rồi chuyển trận sang `live`. Không bắt buộc BTC gọi sân trước. Chỉ mở ghi điểm sau khi máy chủ xác nhận, không xếp hàng bắt đầu khi mất mạng.
+- **Nhập điểm** `/ref/<matchId>`: sau khi bắt đầu, chạm nửa màn hình của đội thắng pha cầu; tự nhận biết hết game theo **luật điểm của vòng đó** (hiện ở đầu màn hình, vd "11 điểm, trần 15 · 1 game" — xem [7.6](#76-tính-điểm)); hoàn tác; **Hoàn thành trận** chỉ bật khi toàn bộ tỉ số hợp lệ, đủ số game thắng và mọi pha đã lưu. Đủ điểm nhưng chưa xác nhận thì trận vẫn `live`, tiếp tục giữ sân / VĐV. Hoàn thành cập nhật bảng/nhánh, giải phóng sân và khoá ghi điểm. **Bỏ cuộc** giữ luồng riêng, được xử lý cả trước khi bắt đầu.
+- **Bảo vệ phía máy chủ**: lưu điểm, xác nhận kết quả thông thường, thêm / hoàn tác biên bản trước khi bắt đầu → `409 MATCH_NOT_STARTED`; chưa có sân → `409 COURT_REQUIRED`; bắt đầu lại trận `live` → `409 MATCH_ALREADY_STARTED`; phiên bản cũ → `409 VERSION_CONFLICT`. Bắt đầu và gọi / chuyển sân dùng cùng khoá theo giải để tránh nhận trùng. Trận `live` có sẵn vẫn được tiếp tục; không tự sửa trạng thái của dữ liệu cũ.
 - **Người giao & người nhận**: đầu mỗi game chọn **đội giao → ai giao → ai nhận** (đánh đôi; game sau mặc định đội thắng game trước giao). Đánh đơn chỉ chọn bên giao (game sau tự để bên thắng game trước giao). Sau đó máy tự tính theo luật BWF đánh đôi: đội giao thắng pha → **cùng người giao**, hai VĐV đội giao đổi ô; đội nhận thắng pha → được giao, **không đổi ô**, người giao = VĐV đang đứng ở ô theo điểm đội mình (**chẵn → PHẢI, lẻ → TRÁI**). Nhãn **"Giao · ô PHẢI/TRÁI · <tên>"** và **"Nhận · <tên>"** trên nửa màn hình mỗi đội. **Sửa người giao** chọn lại đúng VĐV đang giao (không chỉ đội).
 - **Biên bản diễn biến điểm** (dưới các nút Hoàn tác / Đổi sân / Bỏ cuộc, có nút thu gọn) theo mẫu biên bản giấy: hàng = từng VĐV (đôi 4 hàng, kẻ đậm giữa 2 đội; đơn 2 hàng), cột tên cố định bên trái với **G** (giao đầu game) / **N** (nhận đầu game); **cột 0** ghi "0" ở hàng người giao và người nhận; **mỗi pha cầu thêm 1 cột**, số điểm mới của đội thắng ghi ở **hàng VĐV sẽ giao pha kế tiếp**; mỗi game một khối "G1 · 19–21"; vạch nét đứt **"Nghỉ"** ở mốc nửa game (**"Đổi sân"** ở game quyết định); ✎ trên cột đã **sửa người giao** hoặc **BTC sửa tay tỉ số**; ô mới nhất tô nhạt, tự cuộn tới; pha chưa lưu được hiện mờ kèm ⏳. Thanh **chỉ để xem** — chạm ô không đổi điểm. **Hoàn tác** xoá cột cuối; **Đổi sân** chỉ đổi trái/phải trên màn hình.
 - **Xem biên bản ngoài Bàn điểm** `/bien-ban/<matchId>`: trang chỉ xem (công khai khi giải đã công bố, không có MSSV/SĐT), trận đang đánh tự làm mới; nút **In / Tải PDF** ra A4 ngang (tên giải, nội dung, sân, trọng tài, giờ bắt đầu / kết thúc, tỉ số, chỗ ký). Có nút **Biên bản** ở trang Trận đấu & trọng tài (BTC) và liên kết **Biên bản** trên thẻ trận đang đánh / đã xong ở trang công khai.
@@ -342,8 +344,8 @@ stateDiagram-v2
   [*] --> pending: bốc thăm / tạo nhánh
   pending --> scheduled: xếp lịch / dời trận
   scheduled --> pending: dời trận (bỏ giờ)
-  scheduled --> live: nhập điểm đầu tiên
-  pending --> live: nhập điểm khi chưa xếp lịch
+  scheduled --> live: Bắt đầu trận
+  pending --> live: Bắt đầu trận (BTC đã gán sân)
   live --> finished: xác nhận kết quả
   live --> walkover: bỏ cuộc / đối thủ bị truất quyền
   scheduled --> walkover: bỏ cuộc / đối thủ bị truất quyền
@@ -458,6 +460,7 @@ Tiền tố `/api`. Request ghi phải có header `X-Requested-With: fetch`. L�
 | PATCH · DELETE | `/entries/:id` | BTC | Sửa · xoá đội |
 | POST | `/entries/:id/disqualify` `{reason}` · `/entries/:id/reinstate` | BTC | Truất quyền · huỷ truất quyền |
 | GET | `/matches/:id` · `/referee/queue` | công khai · trọng tài | Chi tiết trận (kèm `rallies` — biên bản: ô VĐV a1/a2/b1/b2, không có người bấm) · hàng đợi trọng tài |
+| POST | `/matches/:id/start` `{version}` | Trọng tài / BTC | Bắt đầu trên sân đã gán; kiểm tra quyền, phiên bản, sân và VĐV rảnh; ghi nhật ký `start_match` (migration 012) |
 | PUT | `/matches/:id/score` `{action, version, games, walkoverWinner?}` | Trọng tài / BTC | Lưu điểm, xác nhận, bỏ cuộc. Trận có biên bản mà tỉ số khác biên bản → ghi mốc `override` (BTC sửa tay) |
 | POST | `/matches/:id/rallies` `{type: start\|point\|fix_server, side?, server?, receiver?, expectedSeq}` | Trọng tài / BTC | Thêm 1 sự kiện biên bản; máy chủ tự tính tỉ số + người giao, cập nhật `games` cùng giao dịch; lệch `expectedSeq` → `409 RALLY_CONFLICT` |
 | DELETE | `/matches/:id/rallies/last?expectedSeq=N` | Trọng tài / BTC | Hoàn tác sự kiện cuối (chỉ khi trận chưa xác nhận) |

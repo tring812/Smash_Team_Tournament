@@ -11,6 +11,7 @@ let hasPglite = true;
 try { require.resolve('@electric-sql/pglite'); } catch { hasPglite = false; }
 
 const svc = require('../src/services/tournamentService');
+const { beginMatch } = require('./support/match');
 const rr = require('../src/domain/roundRules');
 
 const ADMIN = { id: '00000000-0000-4000-8000-0000000000e1', full_name: 'Admin', role: 'admin' };
@@ -64,7 +65,8 @@ describe('Luật điểm theo vòng (PGlite)', { skip: hasPglite ? false : 'chư
       { stage: 'knockout', fromEnd: null, ...R(15, 21, 2) },
       { stage: 'knockout', fromEnd: 1, ...R(21, 30, 2) },
     ]);
-    const [m] = await groupMatches();
+    const [pending] = await groupMatches();
+    const m = await beginMatch(pool, ADMIN, ADMIN, pending);
     assert.deepEqual(m.rules, R(11, 15, 1));
     // 11-5 một game là đủ thắng — với luật mặc định 21 điểm 2 game thì không hợp lệ.
     await svc.recordScore(pool, ADMIN, m.id, { action: 'finish', version: m.version, games: [[11, 5]] });
@@ -89,11 +91,12 @@ describe('Luật điểm theo vòng (PGlite)', { skip: hasPglite ? false : 'chư
   test('nhánh: bán kết theo "mọi vòng loại", chung kết theo luật riêng; trận bán kết đã đánh khoá luật bán kết', async () => {
     for (const m of await groupMatches()) {
       if (m.status === 'finished') continue;
-      await svc.recordScore(pool, ADMIN, m.id, { action: 'finish', version: m.version, games: [[11, 3]] });
+      const started = await beginMatch(pool, ADMIN, ADMIN, m);
+      await svc.recordScore(pool, ADMIN, m.id, { action: 'finish', version: started.version, games: [[11, 3]] });
     }
     await svc.generateKnockout(pool, ADMIN, ms.id);
     const ko = (await svc.listMatches(pool, t.id)).filter((m) => m.stage === 'knockout');
-    const semi = ko.find((m) => m.roundLabel === 'Bán kết');
+    const semi = await beginMatch(pool, ADMIN, ADMIN, ko.find((m) => m.roundLabel === 'Bán kết'));
     const final = ko.find((m) => m.roundLabel === 'Chung kết');
     assert.deepEqual(semi.rules, R(15, 21, 1));
     assert.deepEqual(final.rules, R(21, 30, 2));

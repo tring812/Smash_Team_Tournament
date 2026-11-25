@@ -903,8 +903,9 @@ async function advanceWinner(c, m, winnerId, actorId) {
  * Khoá trận để NHẬP ĐIỂM (lưu tỉ số / biên bản) + kiểm tra quyền và trạng thái chung:
  * trọng tài được phân công (trận hoặc sân) hoặc BTC; giải chưa kết thúc; trận đủ 2 đội, chưa huỷ, chưa xong.
  * @param {Queryable} c @param {string} matchId @param {Viewer} viewer
+ * @param {{ requireStarted?: boolean }} [opts]
  */
-async function lockScorable(c, matchId, viewer) {
+async function lockScorable(c, matchId, viewer, opts = {}) {
   const { rows } = await c.query(
     `SELECT m.*, cat.points_to_win, cat.max_points, cat.games_to_win, cat.round_rules, cat.is_doubles, t.status AS tournament_status,
             (SELECT max(k.round) FROM matches k WHERE k.category_id = m.category_id AND k.stage = 'knockout') AS ko_rounds
@@ -930,7 +931,45 @@ async function lockScorable(c, matchId, viewer) {
   if (!m.entry_a_id || !m.entry_b_id) throw conflict('MISSING_ENTRY', 'Trận chưa đủ 2 đội');
   if (m.status === 'cancelled') throw conflict('MATCH_CANCELLED', 'Trận đã bị huỷ do có đội bị truất quyền');
   if (FINAL_STATUSES.has(m.status)) throw conflict('MATCH_CLOSED', 'Trận đã kết thúc');
+  if (opts.requireStarted !== false && m.status !== 'live') {
+    throw conflict('MATCH_NOT_STARTED', 'Bấm Bắt đầu trận trước khi nhập điểm');
+  }
   return { m, role, rules: effectiveRules(m, m.stage, m.round, m.ko_rounds) };
+}
+
+/**
+ * Nhận sân và bắt đầu trận; cùng khoá theo giải với gọi / chuyển sân để không nhận trùng.
+ * @param {Pool} pool @param {Viewer} viewer @param {string} matchId @param {{ version: number }} input
+ */
+async function startMatch(pool, viewer, matchId, input) {
+  return withTx(pool, async (c) => {
+    const { m, role } = await lockScorable(c, matchId, viewer, { requireStarted: false });
+    if (input.version !== m.version) {
+      throw conflict('VERSION_CONFLICT', 'Trận vừa được cập nhật — tải lại trước khi bắt đầu');
+    }
+    if (m.status === 'live') throw conflict('MATCH_ALREADY_STARTED', 'Trận đã bắt đầu');
+    const t = (await c.query('SELECT status FROM tournaments WHERE id = $1 FOR UPDATE', [m.tournament_id])).rows[0];
+    if (t.status === 'completed') throw conflict('TOURNAMENT_CLOSED', 'Giải đã kết thúc');
+    if (t.status === 'draft' && role === 'referee') throw forbidden('Giải chưa công bố');
+    if (!m.court) throw conflict('COURT_REQUIRED', 'Trận chưa có sân — liên hệ BTC để gán sân');
+    // Nạp muộn vì courtService dùng các tiện ích giao dịch và quyền từ tệp này.
+    const courts = require('./courtService');
+    const occupancy = await courts.lockMatch(c, matchId);
+    courts.checkCourt(m.court, occupancy.t_courts);
+    await courts.assertCourtFree(c, m.tournament_id, m.court, m.id);
+    await courts.assertPlayersFree(c, occupancy);
+    const { rows } = await c.query(
+      `UPDATE matches SET status = 'live', called_at = COALESCE(called_at, now()),
+              referee_user_id = COALESCE(referee_user_id, $2), version = version + 1, updated_at = now()
+        WHERE id = $1 RETURNING *`,
+      [m.id, role === 'referee' ? viewer.id : null],
+    );
+    await c.query('INSERT INTO match_score_events (match_id, actor_user_id, action, games) VALUES ($1, $2, $3, $4::jsonb)',
+      [m.id, viewer.id, 'start', JSON.stringify(m.games)]);
+    await logEvent(c, m.tournament_id, m.category_id, viewer.id, 'start_match', { matchId, court: m.court });
+    if (t.status === 'published') await c.query("UPDATE tournaments SET status = 'ongoing' WHERE id = $1", [m.tournament_id]);
+    return rows[0];
+  });
 }
 
 /**
@@ -943,7 +982,7 @@ async function lockScorable(c, matchId, viewer) {
  */
 async function recordScore(pool, viewer, matchId, input) {
   return withTx(pool, async (c) => {
-    const { m, role, rules } = await lockScorable(c, matchId, viewer);
+    const { m, role, rules } = await lockScorable(c, matchId, viewer, { requireStarted: input.action !== 'walkover' });
     if (input.version !== m.version) {
       throw conflict('VERSION_CONFLICT', 'Tỉ số vừa được cập nhật ở thiết bị khác — đã tải lại bản mới nhất',
         { current: { games: m.games, version: m.version, status: m.status } });
@@ -1479,7 +1518,7 @@ module.exports = {
   createTournament, updateTournament, deleteTournament, restoreTournament, listDeletedTournaments, purgeDeletedTournaments, upsertStaff, removeStaff, createCategory, updateCategory, deleteCategory,
   addEntries, removeEntry,
   drawGroups, scheduleTournament, groupStandings, generateKnockout,
-  recordScore, reopenMatch, assignReferee, setRoundRules,
+  startMatch, recordScore, reopenMatch, assignReferee, setRoundRules,
   getTournament, listTournaments, listMatches, getMatch, getBracket, refereeQueue,
 };
 

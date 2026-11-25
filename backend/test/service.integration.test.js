@@ -9,6 +9,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 
 const svc = require('../src/services/tournamentService');
+const { beginMatch } = require('./support/match');
 
 const fs = require('node:fs');
 
@@ -137,21 +138,22 @@ describe('tournament service (real Postgres)', { skip }, () => {
 
   test('referee scoring: authz, validation, optimistic locking', async () => {
     await svc.updateTournament(pool, ADMIN, t.id, { status: 'published' });
-    const [m] = await svc.listMatches(pool, t.id, { categoryId: ms.id });
+    const [pending] = await svc.listMatches(pool, t.id, { categoryId: ms.id });
+    const m = await beginMatch(pool, ADMIN, REF, pending);
     await rejectsWith(svc.recordScore(pool, NOBODY, m.id, { action: 'save', version: m.version, games: [[1, 0]] }), 403);
     await rejectsWith(svc.recordScore(pool, REF, m.id, { action: 'save', version: m.version, games: [[25, 3]] }), 422);
     await rejectsWith(svc.recordScore(pool, REF, m.id, { action: 'finish', version: m.version, games: [[21, 3]] }), 422);
 
     const saved = await svc.recordScore(pool, REF, m.id, { action: 'save', version: m.version, games: [[11, 9]] });
     assert.equal(saved.status, 'live');
-    assert.equal(saved.referee_user_id, REF.id, 'first referee to score claims the match');
+    assert.equal(saved.referee_user_id, REF.id, 'trọng tài đã nhận trận khi bấm bắt đầu');
     // Thiết bị thứ 2 còn giữ version cũ → 409 kèm bản mới.
     await rejectsWith(svc.recordScore(pool, REF, m.id, { action: 'save', version: m.version, games: [[12, 9]] }), 409, 'VERSION_CONFLICT');
     // Trọng tài khác không được ghi đè trận đã có người nhận.
     await rejectsWith(svc.recordScore(pool, REF2, m.id, { action: 'save', version: saved.version, games: [[12, 9]] }), 403);
 
     const t2 = await svc.getTournament(pool, 'smash-team-iv', null);
-    assert.equal(t2.status, 'ongoing', 'first score moves tournament to ongoing');
+    assert.equal(t2.status, 'ongoing', 'bắt đầu trận chuyển giải sang đang diễn ra');
     const q = await svc.refereeQueue(pool, REF);
     assert.equal(q[0].id, m.id, 'live match is first in the referee queue');
     assert.equal(q[0].status, 'live');
@@ -166,9 +168,10 @@ describe('tournament service (real Postgres)', { skip }, () => {
     const ratings = new Map();
     const { rows } = await pool.query('SELECT id, rating FROM entries WHERE category_id = $1', [ms.id]);
     for (const r of rows) ratings.set(r.id, r.rating);
-    for (const m of all) {
+    for (const m of [...all].sort((a, b) => Number(b.status === 'live') - Number(a.status === 'live'))) {
       const side = ratings.get(m.a.id) > ratings.get(m.b.id) ? 'a' : 'b';
-      await svc.recordScore(pool, ADMIN, m.id, { action: 'finish', version: m.version, games: twoNil(side) });
+      const started = await beginMatch(pool, ADMIN, ADMIN, m);
+      await svc.recordScore(pool, ADMIN, m.id, { action: 'finish', version: started.version, games: twoNil(side) });
     }
     const st = await svc.groupStandings(pool, ms.id);
     assert.deepEqual(st.map((g) => g.complete), [true, true]);
@@ -187,7 +190,8 @@ describe('tournament service (real Postgres)', { skip }, () => {
     assert.deepEqual(br.rounds[0].matches.map((m) => [m.a.name, m.b.name]), [['An', 'Cường'], ['Bình', 'Dũng']]);
 
     const [s1, s2] = br.rounds[0].matches;
-    await svc.recordScore(pool, REF, s1.id, { action: 'finish', version: s1.version, games: twoNil('a') });
+    const started = await beginMatch(pool, ADMIN, REF, s1);
+    await svc.recordScore(pool, REF, s1.id, { action: 'finish', version: started.version, games: twoNil('a') });
     await svc.recordScore(pool, REF, s2.id, { action: 'walkover', version: s2.version, walkoverWinner: 'b' });
     br = await svc.getBracket(pool, ms.id);
     const fin = br.rounds[1].matches[0];
@@ -200,7 +204,7 @@ describe('tournament service (real Postgres)', { skip }, () => {
     const s1b = (await svc.getMatch(pool, s1.id));
     await svc.recordScore(pool, ADMIN, s1.id, { action: 'finish', version: s1b.version, games: [[21, 19], [19, 21], [22, 20]] });
 
-    let f = await svc.getMatch(pool, fin.id);
+    let f = await beginMatch(pool, ADMIN, REF, fin);
     await svc.recordScore(pool, REF, f.id, { action: 'save', version: f.version, games: [[5, 3]] });
     await rejectsWith(svc.reopenMatch(pool, ADMIN, s1.id), 409, 'NEXT_STARTED');
     await rejectsWith(svc.reopenMatch(pool, ADMIN, (await svc.listMatches(pool, t.id, { categoryId: ms.id }))[0].id), 409, 'KNOCKOUT_STARTED');
@@ -216,7 +220,8 @@ describe('tournament service (real Postgres)', { skip }, () => {
     await svc.addEntries(pool, ADMIN, ws.id, Array.from({ length: 9 }, (_, i) => ({ player1Name: `Nữ ${i + 1}`, rating: 1500 - i * 10 })));
     await svc.drawGroups(pool, ADMIN, ws.id);
     for (const m of await svc.listMatches(pool, t.id, { categoryId: ws.id })) {
-      await svc.recordScore(pool, ADMIN, m.id, { action: 'finish', version: m.version, games: twoNil('a') });
+      const started = await beginMatch(pool, ADMIN, ADMIN, m);
+      await svc.recordScore(pool, ADMIN, m.id, { action: 'finish', version: started.version, games: twoNil('a') });
     }
     const k = await svc.generateKnockout(pool, ADMIN, ws.id);
     assert.equal(k.qualifiers, 6);

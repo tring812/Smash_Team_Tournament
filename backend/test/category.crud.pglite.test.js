@@ -12,6 +12,7 @@ let hasPglite = true;
 try { require.resolve('@electric-sql/pglite'); } catch { hasPglite = false; }
 
 const svc = require('../src/services/tournamentService');
+const { beginMatch } = require('./support/match');
 
 const ADMIN = { id: '00000000-0000-4000-8000-0000000000b1', full_name: 'Admin', role: 'admin' };
 const OUTSIDER = { id: '00000000-0000-4000-8000-0000000000b2', full_name: 'Khách', role: 'user' };
@@ -78,7 +79,8 @@ describe('CRUD nội dung thi đấu (PGlite)', { skip: hasPglite ? false : 'ch�
     const played = await svc.createCategory(pool, ADMIN, t.id, { code: 'MD', name: 'Đôi nam', isDoubles: false, groupCount: 1 });
     await addFour(played.id);
     await svc.drawGroups(pool, ADMIN, played.id);
-    const [m] = await svc.listMatches(pool, t.id, { categoryId: played.id });
+    const [pending] = await svc.listMatches(pool, t.id, { categoryId: played.id });
+    const m = await beginMatch(pool, ADMIN, ADMIN, pending);
     await svc.recordScore(pool, ADMIN, m.id, { action: 'save', version: m.version, games: [[3, 1]] });
     await rejectsWith(svc.updateCategory(pool, ADMIN, played.id, { gamesToWin: 1 }), 409, 'CATEGORY_LOCKED');
     await rejectsWith(svc.deleteCategory(pool, ADMIN, played.id), 409, 'CATEGORY_STARTED');

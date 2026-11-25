@@ -57,6 +57,51 @@ describe('HTTP API (PGlite)', { skip: hasPglite ? false : 'chưa cài @electric-
     return c.split(';')[0];
   }
 
+  test('API bắt đầu: xác thực, CSRF, schema, chặn sân bận và hoàn thành giải phóng sân', async () => {
+    const cookie = await login();
+    const viewer = (await (await call('/api/me', { cookie })).json()).user;
+    const svc = require('../src/services/tournamentService');
+    const courts = require('../src/services/courtService');
+    const t = await svc.createTournament(pool, viewer, { slug: 'http-start', name: 'Giải thử HTTP', startsAt: new Date(Date.now() + 7 * 86_400_000).toISOString() });
+    const cat = await svc.createCategory(pool, viewer, t.id, { code: 'MS', name: 'Đơn nam', isDoubles: false, groupCount: 1 });
+    await svc.addEntries(pool, viewer, cat.id, ['An', 'Bình', 'Chi', 'Dũng'].map((player1Name) => ({ player1Name })));
+    await svc.drawGroups(pool, viewer, cat.id);
+    const matches = await svc.listMatches(pool, t.id);
+    const a = matches[0];
+    const b = matches.find((m) => ![a.a.id, a.b.id].includes(m.a.id) && ![a.a.id, a.b.id].includes(m.b.id));
+    for (const m of [a, b]) await courts.moveMatch(pool, viewer, m.id, { court: 1 });
+    const before = await svc.getMatch(pool, a.id);
+    const route = `/api/matches/${a.id}/start`;
+    const body = { version: before.version };
+    assert.equal((await call(route, { method: 'POST', body })).status, 401);
+    assert.equal((await call(route, { method: 'POST', body, cookie, headers: { 'x-requested-with': '' } })).status, 403);
+    assert.equal((await call(route, { method: 'POST', body: {}, cookie })).status, 422);
+    const blocked = await call(`/api/matches/${a.id}/score`, { method: 'PUT', cookie, body: { action: 'save', version: before.version, games: [[1, 0]] } });
+    assert.equal(blocked.status, 409);
+    assert.equal((await blocked.json()).code, 'MATCH_NOT_STARTED');
+    const started = await call(route, { method: 'POST', body, cookie });
+    assert.equal(started.status, 200);
+    let m = await started.json();
+    assert.equal(m.status, 'live');
+    assert.deepEqual(m.rallies, []);
+    assert.equal(m.version, before.version + 1);
+    const startB = () => call(`/api/matches/${b.id}/start`, { method: 'POST', cookie, body: { version: b.version + 1 } });
+    const busy = await startB();
+    assert.equal(busy.status, 409);
+    assert.equal((await busy.json()).code, 'COURT_BUSY');
+    const invalid = await call(`/api/matches/${a.id}/score`, { method: 'PUT', cookie, body: { action: 'finish', version: m.version, games: [[1, 0]] } });
+    assert.equal(invalid.status, 422);
+    const saved = await call(`/api/matches/${a.id}/score`, { method: 'PUT', cookie, body: { action: 'save', version: m.version, games: [[21, 0], [21, 0]] } });
+    assert.equal(saved.status, 200);
+    m = await saved.json();
+    assert.equal(m.status, 'live');
+    assert.equal((await startB()).status, 409, 'đủ điểm vẫn giữ sân');
+    const done = await call(`/api/matches/${a.id}/score`, { method: 'PUT', cookie, body: { action: 'finish', version: m.version, games: m.games } });
+    assert.equal(done.status, 200);
+    assert.equal((await done.json()).status, 'finished');
+    assert.equal((await startB()).status, 200, 'xác nhận xong mới cho nhận sân');
+  });
+
   test('wrong username and wrong password give the same 401', async () => {
     for (const body of [{ username: 'boss', password: 'nope-nope' }, { username: 'ghost', password: 'nope-nope' }]) {
       const r = await call('/api/auth/login', { method: 'POST', body });

@@ -115,6 +115,7 @@ const schemas = {
     role: z.enum(['admin', 'user']).default('admin'),
   }),
 
+  startMatch: z.object({ version: z.number().int().min(1) }),
   score: z.object({
     action: z.enum(['save', 'finish', 'walkover']),
     version: z.number().int().min(1),
