@@ -115,6 +115,25 @@ body {
 
 .tabular { font-variant-numeric: tabular-nums; }
 
+/* Giữ metric Arial dự phòng của bản Google Fonts cũ khi chuyển sang font gộp tự phục vụ. */
+@font-face {
+  font-family: "Red Line Inter Fallback";
+  src: local("Arial");
+  ascent-override: 90.44%;
+  descent-override: 22.52%;
+  line-gap-override: 0%;
+  size-adjust: 107.12%;
+}
+
+@font-face {
+  font-family: "Red Line Barlow Fallback";
+  src: local("Arial");
+  ascent-override: 130.73%;
+  descent-override: 26.15%;
+  line-gap-override: 0%;
+  size-adjust: 76.49%;
+}
+
 /* Tiêu đề kiểu thể thao (hero, tên vòng đấu): Barlow Condensed nghiêng, in hoa. */
 .headline {
   font-family: var(--font-display);
