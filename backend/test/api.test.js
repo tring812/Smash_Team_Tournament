@@ -79,14 +79,13 @@ describe('HTTP API (PGlite)', { skip: hasPglite ? false : 'chưa cài @electric-
     assert.equal((await call(route, { method: 'POST', body })).status, 401);
     assert.equal((await call(route, { method: 'POST', body, cookie, headers: { 'x-requested-with': '' } })).status, 403);
     assert.equal((await call(route, { method: 'POST', body: {}, cookie })).status, 422);
-    const blocked = await call(`/api/matches/${a.id}/score`, { method: 'PUT', cookie, body: { action: 'save', version: before.version, games: [[1, 0]] } });
-    assert.equal(blocked.status, 409);
-    assert.equal((await blocked.json()).code, 'MATCH_NOT_STARTED');
-    const started = await call(route, { method: 'POST', body, cookie });
+    const blocked = await call(`/api/matches/${a.id}/score`, { method: 'PUT', cookie, body: { action: 'save', version: before.version, games: [[25, 0]] } });
+    assert.equal(blocked.status, 422, 'kiểm tra tỉ số trực tiếp, không yêu cầu bắt đầu riêng');
+    const started = await call(`/api/matches/${a.id}/score`, { method: 'PUT', cookie, body: { action: 'save', version: before.version, games: [[0, 0]] } });
     assert.equal(started.status, 200);
     let m = await started.json();
     assert.equal(m.status, 'live');
-    assert.deepEqual(m.rallies, []);
+    assert.deepEqual((await (await call(`/api/matches/${a.id}`, { cookie })).json()).rallies, []);
     assert.equal(m.version, before.version + 1);
     const startB = () => call(`/api/matches/${b.id}/start`, { method: 'POST', cookie, body: { version: b.version + 1 } });
     const busy = await startB();

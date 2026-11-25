@@ -26,13 +26,11 @@ export function matchControls(
 ) {
   const closed = ["finished", "walkover", "bye", "cancelled"].includes(match.status);
   const available = !closed && match.tournamentStatus !== "completed" && Boolean(match.a && match.b);
-  const started = available && match.status === "live";
   const complete = completeScore(games, match.rules);
   return {
     closed,
-    started,
-    canStart: available && !started && match.court !== null && !busy && pending === 0,
-    canScore: started && !complete && !busy,
-    canFinish: started && complete && pending === 0 && !busy && !["saving", "offline", "error"].includes(sync),
+    ready: available,
+    canScore: available && !complete && !busy,
+    canFinish: available && complete && pending === 0 && !busy && !["saving", "offline", "error"].includes(sync),
   };
 }

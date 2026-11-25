@@ -53,18 +53,72 @@ describe('Bắt đầu và hoàn thành trận (PGlite)', { skip: hasPglite ? fa
     return matchSvc.getMatch(pool, mid);
   }
 
-  test('chưa bắt đầu: chặn lưu điểm, biên bản, hoàn tác và xác nhận kết quả', async () => {
+  test('chọn người giao trực tiếp tự chuyển trận sang live, không cần API bắt đầu', async () => {
     const { a } = await fixture();
     const m = await assign(a.id, 1);
-    await rejectsWith(matchSvc.recordScore(pool, REF, m.id, { action: 'save', version: m.version, games: [[1, 0]] }), 'MATCH_NOT_STARTED');
-    await rejectsWith(rallies.addRally(pool, REF, m.id, { type: 'start', server: 'a1', expectedSeq: 1 }), 'MATCH_NOT_STARTED');
-    await rejectsWith(rallies.undoRally(pool, REF, m.id, 1), 'MATCH_NOT_STARTED');
-    await rejectsWith(matchSvc.recordScore(pool, REF, m.id, { action: 'finish', version: m.version, games: [[21, 0], [21, 0]] }), 'MATCH_NOT_STARTED');
-    assert.deepEqual(await matchSvc.getMatch(pool, m.id), m);
-    assert.deepEqual(await rallies.listRallies(pool, m.id), []);
+    await rejectsWith(rallies.undoRally(pool, REF, m.id, 1), 'NOTHING_TO_UNDO');
+    await rallies.addRally(pool, REF, m.id, { type: 'start', server: 'a1', expectedSeq: 1 });
+    const fresh = await matchSvc.getMatch(pool, m.id);
+    assert.equal(fresh.status, 'live');
+    assert.equal(fresh.version, m.version + 1);
+    assert.ok(fresh.courtSince);
+    await rallies.addRally(pool, REF, m.id, { type: 'point', side: 'a', expectedSeq: 2 });
+    assert.deepEqual((await matchSvc.getMatch(pool, m.id)).games, [[1, 0]]);
   });
 
-  test('không có sân: yêu cầu BTC gán sân trước', async () => {
+  test('nhập tỉ số trực tiếp không có sân vẫn được, giữ cách dùng cũ', async () => {
+    const { a } = await fixture();
+    await matchSvc.recordScore(pool, REF, a.id, { action: 'save', version: a.version, games: [[2, 1]] });
+    const m = await matchSvc.getMatch(pool, a.id);
+    assert.equal(m.status, 'live');
+    assert.equal(m.court, null);
+    assert.deepEqual(m.games, [[2, 1]]);
+  });
+
+  for (const mode of ['score', 'rally']) {
+    test(`tự nhận sân qua ${mode}: chặn sân bận, không lưu điểm/biên bản`, async () => {
+      const { a, b } = await fixture();
+      await assign(b.id, 1);
+      await courts.callMatch(pool, ADMIN, a.id, { court: 1 });
+      const before = await matchSvc.getMatch(pool, b.id);
+      await rejectsWith(mode === 'score'
+        ? matchSvc.recordScore(pool, REF, b.id, { action: 'save', version: before.version, games: [[1, 0]] })
+        : rallies.addRally(pool, REF, b.id, { type: 'start', server: 'a1', expectedSeq: 1 }), 'COURT_BUSY');
+      assert.deepEqual(await matchSvc.getMatch(pool, b.id), before);
+      assert.deepEqual(await rallies.listRallies(pool, b.id), []);
+    });
+  }
+
+  test('tự nhận sân kiểm tra VĐV khác nội dung cả khi chưa có sân', async () => {
+    const { t, a } = await fixture();
+    const cat = await categorySvc.createCategory(pool, ADMIN, t.id, { code: 'XD', name: 'Đôi nam nữ', isDoubles: true, groupCount: 1 });
+    await entrySvc.addEntries(pool, ADMIN, cat.id, [{ player1Name: 'Hoa', player2Name: a.a.name }, { player1Name: 'Lan', player2Name: 'Mai' }]);
+    await svc.drawGroups(pool, ADMIN, cat.id);
+    const b = (await matchSvc.listMatches(pool, t.id)).find((m) => m.category.id === cat.id);
+    await courts.callMatch(pool, ADMIN, a.id, { court: 1 });
+    await rejectsWith(matchSvc.recordScore(pool, REF, b.id, { action: 'save', version: b.version, games: [[1, 0]] }), 'PLAYER_BUSY');
+    await rejectsWith(rallies.addRally(pool, REF, b.id, { type: 'start', server: 'a1', receiver: 'b1', expectedSeq: 1 }), 'PLAYER_BUSY');
+    assert.equal((await matchSvc.getMatch(pool, b.id)).status, 'pending');
+  });
+
+  test('tỉ số sai hoặc phiên bản cũ không tự chuyển live hay giữ sân', async () => {
+    const { a } = await fixture();
+    const before = await assign(a.id, 1);
+    await rejectsWith(matchSvc.recordScore(pool, REF, a.id, { action: 'save', version: before.version - 1, games: [[1, 0]] }), 'VERSION_CONFLICT');
+    await rejectsWith(matchSvc.recordScore(pool, REF, a.id, { action: 'save', version: before.version, games: [[25, 0]] }), 'VALIDATION_FAILED', 422);
+    assert.deepEqual(await matchSvc.getMatch(pool, a.id), before);
+  });
+
+  test('hai lượt ghi điểm trực tiếp cùng sân chỉ một lượt được nhận sân', async () => {
+    const { a, b } = await fixture();
+    const first = await assign(a.id, 1);
+    const second = await assign(b.id, 1);
+    const results = await Promise.allSettled([first, second].map((m) => matchSvc.recordScore(pool, REF, m.id, { action: 'save', version: m.version, games: [[1, 0]] })));
+    assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
+    assert.equal(results.find((r) => r.status === 'rejected').reason.code, 'COURT_BUSY');
+  });
+
+  test('API bắt đầu cũ chỉ giữ tương thích: chưa có sân vẫn báo lỗi', async () => {
     const { a } = await fixture();
     await rejectsWith(start(a.id), 'COURT_REQUIRED');
     assert.equal((await matchSvc.getMatch(pool, a.id)).status, 'pending');
