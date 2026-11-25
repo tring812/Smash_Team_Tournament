@@ -5,6 +5,7 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Bảng điểm không còn lùi về tỉ số cũ** khi có điểm liên tục: trước đây mỗi lần tải lại (do có thay đổi trực tiếp hoặc tới chu kỳ làm mới) chạy song song với lần trước, response về sau cùng thắng nên trang công khai / màn hình TV / điều phối sân đôi khi hiện tỉ số cũ trong giây lát. Nay lần tải mới huỷ lần tải còn dở và chỉ kết quả mới nhất được hiển thị.
 - **Sửa đội không còn cho phép trùng VĐV trong cùng nội dung**: `PATCH /entries/:id` từ chối với `409 ATHLETE_ALREADY_ENTERED` nếu một trong hai VĐV đã thuộc đội khác, tránh sinh trận VĐV đấu với chính mình. Vẫn cho phép đảo thứ tự thành viên trong cùng đội và tham gia nhiều nội dung; thao tác bị từ chối không để lại thay đổi hồ sơ hoặc nhật ký.
 - **Bàn điểm sau khi xác nhận** hiện tỉ số cuối (vd 21–0) thay vì 0–0, và giữ biên bản để xem.
 - **Bàn điểm khoá khi giải "Đã kết thúc"**: trước đây máy chủ từ chối nhưng giao diện vẫn cho chọn bên giao và bấm điểm, số điểm hiện lên rồi giữ nguyên. Nay hiện banner "Giải đã kết thúc — khoá nhập điểm" và làm mờ mọi nút; thao tác bị máy chủ từ chối thì **trả điểm về như trước**. Mọi API trả trận có thêm `tournamentStatus`.
