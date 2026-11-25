@@ -325,7 +325,7 @@ cd backend && TEST_PG_HOST=localhost TEST_PG_PORT=5433 TEST_PG_DB=tournament_tes
 
 `TEST_PG_DB` phải chứa chữ `test` (DB bị xoá sạch). Frontend: `npm run typecheck`, `npm run lint`, `npm run build`. CI (`.github/workflows/ci.yml`) chạy các bước trên cho cả hai phía cùng `npm audit`.
 
-Test quy tắc hai nút Bắt đầu / Hoàn thành trên giao diện (dùng TypeScript đã cài, không thêm thư viện): chạy `node --test test/matchControls.test.mjs` từ thư mục `frontend`.
+Test quy tắc ghi điểm / xác nhận kết quả, thành phần Red Line, thống kê admin và cơ chế tải dữ liệu (dùng TypeScript đã cài, không thêm thư viện): chạy `node --test test/matchControls.test.mjs test/redLineUi.test.mjs test/adminOverview.test.mjs test/performance.test.mjs test/usePoll.test.mjs` từ thư mục `frontend`.
 
 <sub>[↑ Back to contents](#contents)</sub>
 

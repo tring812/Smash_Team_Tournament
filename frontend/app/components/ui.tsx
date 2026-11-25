@@ -3,17 +3,16 @@
 import { memo, useEffect, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from "react";
 import { X } from "lucide-react";
 
-/* ===== Bộ UI dùng chung — cùng cấu trúc với web CLB (smashteam-badminton/frontend/app/components/ui.tsx):
-   trắng/slate, bo tròn, nút đen dạng viên thuốc. Màu nhấn: đỏ Smash Open Cup. ===== */
+/* Bộ UI Red Line dùng chung: thẻ viền mảnh, nút góc gọn, tiêu đề thể thao. */
 
 export function Card({ children, className = "", title, actions, id }: {
   children: ReactNode; className?: string; title?: string; actions?: ReactNode; id?: string;
 }) {
   return (
-    <section id={id} className={`bg-white rounded-2xl border border-slate-100 shadow-sm ${title ? "p-5 sm:p-6" : ""} ${className}`}>
+    <section id={id} className={`redline-card bg-white rounded-xl border border-slate-200 shadow-sm ${title ? "p-5 sm:p-6" : ""} ${className}`}>
       {title && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-bold tracking-tight text-slate-900">{title}</h2>
+          <h2 className="headline text-2xl text-slate-900">{title}</h2>
           {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </div>
       )}
@@ -24,10 +23,10 @@ export function Card({ children, className = "", title, actions, id }: {
 
 export function PageHeader({ title, desc, actions, eyebrow }: { title: string; desc?: ReactNode; actions?: ReactNode; eyebrow?: string }) {
   return (
-    <div className="flex flex-wrap items-end justify-between gap-4 pb-6 border-b border-slate-100">
+    <div className="redline-page-header flex flex-wrap items-end justify-between gap-4 py-2">
       <div className="min-w-0">
-        {eyebrow && <p className="mb-1 text-xs font-bold uppercase tracking-widest text-primary">{eyebrow}</p>}
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900">{title}</h1>
+        {eyebrow && <p className="redline-kicker mb-2 text-primary">{eyebrow}</p>}
+        <h1 className="headline break-words text-4xl text-slate-900 sm:text-5xl">{title}</h1>
         {desc && <p className="text-slate-500 mt-1">{desc}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -44,12 +43,12 @@ const BTN: Record<BtnVariant, string> = {
   outline: "bg-white text-slate-800 border border-slate-200 hover:border-slate-400",
 };
 
-/** Nút viên thuốc (giống PillButton của web CLB). */
+/** Nút thao tác có vùng chạm tối thiểu 44px. */
 export function Button({ variant = "black", loading = false, className = "", children, disabled, ...p }:
   ButtonHTMLAttributes<HTMLButtonElement> & { variant?: BtnVariant; loading?: boolean }) {
   return (
     <button type="button" {...p} disabled={disabled || loading}
-      className={`inline-flex items-center justify-center gap-2 px-5 min-h-11 rounded-full text-sm font-bold transition-all active:scale-95 cursor-pointer disabled:opacity-50 disabled:pointer-events-none ${BTN[variant]} ${className}`}>
+      className={`inline-flex items-center justify-center gap-2 px-5 min-h-11 rounded-lg text-sm font-bold transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50 disabled:pointer-events-none ${BTN[variant]} ${className}`}>
       {loading ? "Đang xử lý..." : children}
     </button>
   );
@@ -58,11 +57,11 @@ export function Button({ variant = "black", loading = false, className = "", chi
 export function StatCard({ icon, label, value, tone = "slate" }: { icon: ReactNode; label: string; value: ReactNode; tone?: "red" | "slate" | "green" | "amber" }) {
   const tones = { red: "bg-red-100 text-red-700", slate: "bg-slate-900 text-white", green: "bg-emerald-100 text-emerald-700", amber: "bg-amber-100 text-amber-700" };
   return (
-    <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex items-center gap-4 hover:shadow-md transition-shadow">
+    <div className="redline-card bg-white rounded-xl p-5 shadow-sm border border-slate-200 flex items-center gap-4 hover:shadow-md transition-shadow">
       <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${tones[tone]}`} aria-hidden>{icon}</div>
       <div className="min-w-0">
         <p className="text-sm font-medium text-slate-500">{label}</p>
-        <p className="text-2xl font-bold tabular-nums tracking-tight text-slate-900">{value}</p>
+        <p className="font-display text-4xl font-bold tabular-nums tracking-tight text-slate-900">{value}</p>
       </div>
     </div>
   );
@@ -112,7 +111,7 @@ function ModalBase({ open, onClose, title, children, maxWidth = "max-w-md" }: {
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
       <div ref={box} role="dialog" aria-modal="true" aria-label={title}
-        className={`w-full ${maxWidth} bg-white rounded-3xl shadow-2xl p-6 max-h-[90vh] overflow-y-auto animate-fade-up`}
+        className={`w-full ${maxWidth} bg-white rounded-xl border-t-4 border-primary shadow-2xl p-6 max-h-[90vh] overflow-y-auto animate-fade-up`}
         onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-bold">{title}</h3>
@@ -129,7 +128,7 @@ function ModalBase({ open, onClose, title, children, maxWidth = "max-w-md" }: {
 export const Modal = memo(ModalBase);
 
 export const textInputClass =
-  "w-full min-h-11 px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:border-black focus:ring-2 focus:ring-black/10 outline-none transition-all text-slate-900";
+  "w-full min-h-11 px-4 py-2.5 rounded-lg border border-slate-300 bg-slate-50 focus:border-primary focus:ring-2 focus:ring-primary/15 outline-none transition-all text-slate-900";
 
 export function Field({ label, hint, ...p }: InputHTMLAttributes<HTMLInputElement> & { label: string; hint?: string }) {
   return (

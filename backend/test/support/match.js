@@ -2,7 +2,7 @@
 const matchSvc = require('../../src/services/matchService');
 const courts = require('../../src/services/courtService');
 
-/** Thực hiện đúng bước BTC gán sân → trọng tài bắt đầu trước khi test nghiệp vụ ghi điểm. */
+/** Chuẩn bị trận live cho test nghiệp vụ qua API bắt đầu tương thích cũ. */
 async function beginMatch(pool, organizer, viewer, match) {
   let fresh = await matchSvc.getMatch(pool, match.id);
   if (fresh.status === 'live') return fresh;

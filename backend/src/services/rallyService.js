@@ -42,7 +42,7 @@ async function slotName(c, m, slot) {
  */
 async function saveGames(c, m, games, role, viewer) {
   await c.query(
-    `UPDATE matches SET games = $2::jsonb, status = 'live', referee_user_id = COALESCE(referee_user_id, $3),
+    `UPDATE matches SET games = $2::jsonb, status = 'live', called_at = COALESCE(called_at, now()), referee_user_id = COALESCE(referee_user_id, $3),
             version = version + 1, updated_at = now()
       WHERE id = $1`,
     [m.id, JSON.stringify(games), role === 'referee' ? viewer.id : null],
@@ -86,7 +86,7 @@ async function addRally(pool, viewer, matchId, input) {
       await logEvent(c, m.tournament_id, m.category_id, viewer.id, 'rally_fix_server',
         { matchId, seq, server: input.server, name: await slotName(c, m, input.server), score: g });
     }
-    return { seq };
+    return { seq, tournament_started: m.tournament_status === 'published' };
   });
 }
 
@@ -108,7 +108,7 @@ async function undoRally(pool, viewer, matchId, expectedSeq) {
     await saveGames(c, m, st.games, role, viewer);
     await logEvent(c, m.tournament_id, m.category_id, viewer.id, 'rally_undo',
       { matchId, seq: last.seq, type: last.type, side: last.side ?? null, score: last.score ?? null });
-    return { seq: last.seq };
+    return { seq: last.seq, tournament_started: m.tournament_status === 'published' };
   });
 }
 

@@ -3,7 +3,7 @@ import type { GroupStanding, Match, MatchStatus, StandingRow } from "../lib/type
 import { fmtTime } from "../lib/api";
 import { DqBadge, EmptyState } from "./ui";
 
-/* Huy hiệu trạng thái dạng viên thuốc nền nhạt (giống web CLB). Không chỉ dựa vào màu: luôn có chữ. */
+/* Huy hiệu trạng thái luôn có chữ, không chỉ dựa vào màu. */
 const STATUS: Record<MatchStatus, { label: string; cls: string }> = {
   pending: { label: "Chờ xếp", cls: "bg-slate-100 text-slate-600" },
   scheduled: { label: "Sắp đánh", cls: "bg-slate-900 text-white" },
@@ -48,10 +48,10 @@ export function MatchCard({ m, compact = false }: { m: Match; compact?: boolean 
   };
   return (
     <article aria-label={`${matchTitle(m)}: ${m.a?.name ?? "?"} gặp ${m.b?.name ?? "?"}`}
-      className={`bg-white rounded-2xl border p-4 shadow-sm transition-shadow hover:shadow-md ${m.status === "live" ? "border-red-300 ring-2 ring-red-100" : m.calledAt ? "border-amber-300 ring-2 ring-amber-100" : "border-slate-100"} ${m.status === "cancelled" ? "opacity-60" : ""}`}>
+      className={`redline-card bg-white rounded-xl border p-4 shadow-sm transition-shadow hover:shadow-md ${m.status === "live" ? "border-red-300 border-t-primary ring-2 ring-red-100" : m.calledAt ? "border-amber-300 border-t-amber-500 ring-2 ring-amber-100" : "border-slate-200"} ${m.status === "cancelled" ? "opacity-60" : ""}`}>
       {!compact && (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-          <span className="font-medium">{matchTitle(m)}</span>
+            <span className="font-bold uppercase tracking-wide">{matchTitle(m)}</span>
           <span className="flex items-center gap-2">
             {m.court && <span className="whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 font-semibold text-slate-700">Sân {m.court}</span>}
             <span className="tabular">{fmtTime(m.scheduledAt)}</span>
@@ -74,13 +74,13 @@ export function StandingsTables({ groups, highlight }: { groups: GroupStanding[]
   return (
     <div className="grid gap-4 md:grid-cols-2">
       {groups.map((g) => (
-        <section key={g.groupId} id={`g-${g.groupId}`} className="scroll-mt-28 overflow-hidden bg-white rounded-2xl border border-slate-100 shadow-sm">
-          <h3 className="flex items-center justify-between bg-black px-4 py-3 text-white">
+        <section key={g.groupId} id={`g-${g.groupId}`} className="scroll-mt-28 overflow-hidden bg-white rounded-xl border border-slate-200 shadow-sm">
+          <h3 className="theme-fixed flex items-center justify-between border-l-4 border-primary bg-black px-4 py-3 text-white">
             <span className="headline text-xl">Bảng <span className="text-red-500">{g.name}</span></span>
             {g.complete && <span className="rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-bold">Đã xong</span>}
           </h3>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="redline-table w-full text-sm">
               <caption className="sr-only">Bảng xếp hạng bảng {g.name}</caption>
               <thead className="text-xs text-slate-500">
                 <tr>

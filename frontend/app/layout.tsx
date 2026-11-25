@@ -3,13 +3,13 @@ import { Barlow_Condensed, Inter } from "next/font/google";
 import "./globals.css";
 import SiteShell from "./components/SiteShell";
 
-// Cùng bộ font với web CLB: Inter cho nội dung, Barlow Condensed cho tiêu đề thể thao (đều có tiếng Việt).
+// Red Line: Inter cho dữ liệu, Barlow Condensed cho tiêu đề thể thao (đều hỗ trợ tiếng Việt).
 const inter = Inter({ variable: "--font-inter", subsets: ["latin", "vietnamese"], display: "swap" });
 const barlow = Barlow_Condensed({ variable: "--font-barlow", subsets: ["latin", "vietnamese"], weight: ["700", "800"], style: ["italic", "normal"], display: "swap" });
 
 export const metadata: Metadata = {
-  title: { default: "Smash Open Cup", template: "%s · Smash Open Cup" },
-  description: "Giải cầu lông mở rộng Smash Team: lịch thi đấu theo sân, bảng đấu, nhánh loại trực tiếp và nhập điểm trọng tài.",
+  title: { default: "Red Line · Smash Team", template: "%s · Red Line" },
+  description: "Red Line — giải cầu lông Smash Team. Từ vạch xuất phát đến điểm quyết định: lịch thi đấu, bảng đấu, nhánh loại trực tiếp và bàn trọng tài.",
 };
 
 export const viewport: Viewport = {

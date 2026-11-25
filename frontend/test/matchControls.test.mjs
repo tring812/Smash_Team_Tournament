@@ -16,14 +16,15 @@ const match = { status: 'pending', tournamentStatus: 'published', a: { id: 'a' }
 const win = [[21, 10], [21, 15]];
 const controls = (patch = {}, games = [], pending = 0, busy = false, sync = 'saved') => matchControls({ ...match, ...patch }, games, pending, busy, sync);
 
-test('trước khi bắt đầu chỉ bật nút bắt đầu, khoá ghi điểm và hoàn thành', () => {
-  assert.equal(controls().canStart, true);
-  assert.equal(controls().canScore, false);
-  assert.equal(controls({}, win).canFinish, false);
+test('trận đang chờ mở chọn giao/ghi điểm trực tiếp, không có cổng bắt đầu riêng', () => {
+  assert.equal(controls().ready, true);
+  assert.equal(controls().canScore, true);
+  assert.equal(controls().canFinish, false);
+  assert.equal('canStart' in controls(), false);
 });
-test('chưa có sân hoặc thiếu đội thì không thể bắt đầu', () => {
-  assert.equal(controls({ court: null }).canStart, false);
-  assert.equal(controls({ b: null }).canStart, false);
+test('ghi điểm không yêu cầu gán sân; thiếu đội vẫn khoá thao tác', () => {
+  assert.equal(controls({ court: null }).canScore, true);
+  assert.equal(controls({ b: null }).canScore, false);
 });
 test('trận đang đánh mở ghi điểm; đủ điểm thì chỉ mở hoàn thành', () => {
   assert.equal(controls({ status: 'live' }).canScore, true);
@@ -34,18 +35,18 @@ test('điểm chưa gửi, đang gửi, mất mạng hoặc lỗi thì khoá ho�
   assert.equal(controls({ status: 'live' }, win, 1).canFinish, false);
   for (const sync of ['saving', 'offline', 'error']) assert.equal(controls({ status: 'live' }, win, 0, false, sync).canFinish, false);
 });
-test('đang gửi thao tác bắt đầu/hoàn thành thì không cho bấm lặp hoặc cộng điểm', () => {
-  assert.equal(controls({}, [], 0, true).canStart, false);
+test('đang gửi xác nhận thì không cho bấm lặp hoặc cộng điểm', () => {
+  assert.equal(controls({}, [], 0, true).canScore, false);
   assert.equal(controls({ status: 'live' }, [], 0, true).canScore, false);
   assert.equal(controls({ status: 'live' }, win, 0, true).canFinish, false);
 });
 test('đã huỷ, đã xong hoặc giải đóng thì mọi thao tác bị khoá', () => {
   for (const status of ['finished', 'walkover', 'bye', 'cancelled']) {
     const result = controls({ status }, win);
-    assert.equal(result.canStart || result.canScore || result.canFinish, false);
+    assert.equal(result.ready || result.canScore || result.canFinish, false);
   }
   const result = controls({ status: 'live', tournamentStatus: 'completed' }, win);
-  assert.equal(result.canStart || result.canScore || result.canFinish, false);
+  assert.equal(result.ready || result.canScore || result.canFinish, false);
 });
 test('chỉ công nhận tỉ số hợp lệ, đủ game thắng, không có game dư', () => {
   assert.equal(completeScore(win, rules), true);
