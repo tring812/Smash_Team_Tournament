@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { memo, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import {
   CalendarClock, Check, ChevronDown, ClipboardList, Home, KeyRound, LogIn, LogOut, Plus, Settings2, UsersRound,
 } from "lucide-react";
 import { api, loginUrl } from "../lib/api";
+import { desktopNavHighlight, type DesktopNavItem } from "../lib/desktopNav";
 import { NAV_LIST_TTL_MS, navList, sortTournaments } from "../lib/tournamentOrder";
 import type { TournamentSummary, Viewer } from "../lib/types";
 import { RedLineBrand } from "./RedLineBrand";
@@ -44,9 +45,40 @@ function useDismiss(open: boolean, close: () => void, inside: RefObject<HTMLElem
   }, [open, close, inside, returnFocus]);
 }
 
+/** Một nền chạy dưới các nút, đo lại khi font, chiều rộng hoặc mục hiển thị thay đổi. */
+function useDesktopIndicator(item: DesktopNavItem | null) {
+  const list = useRef<HTMLUListElement>(null);
+  const indicator = useRef<HTMLLIElement>(null);
+  useLayoutEffect(() => {
+    const root = list.current;
+    const bar = indicator.current;
+    if (!root || !bar) return;
+    const target = item ? root.querySelector<HTMLElement>(`[data-desktop-tab="${item}"]`) : null;
+    const measure = () => {
+      const box = target?.getBoundingClientRect();
+      if (!box?.width) {
+        bar.style.opacity = "0";
+        return;
+      }
+      const x = box.left - root.getBoundingClientRect().left;
+      bar.style.width = `${box.width}px`;
+      bar.style.transform = `translateX(${x}px)`;
+      bar.style.opacity = "1";
+      root.dataset.indicatorReady = "true";
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(root);
+    if (target) observer.observe(target);
+    return () => observer.disconnect();
+  }, [item]);
+  return { list, indicator };
+}
+
 /**
  * Điều hướng chính.
  * - Thanh trên (md+): logo · "Lịch thi đấu ▾" (chọn giải) · "Trọng tài" (chỉ tài khoản có nhiệm vụ trọng tài) · tài khoản.
+ *   Máy tính rộng có thêm lối về trang chủ cạnh lịch thi đấu.
  *   Quản lý giải, tạo giải, tài khoản, giao diện nằm trong menu tài khoản.
  * - Điện thoại: thanh trên còn logo + tài khoản; Trang chủ / Lịch đấu / Trọng tài ở THANH TAB ĐÁY.
  */
@@ -55,6 +87,8 @@ function SiteNav() {
   const [viewer, setViewer] = useState<Viewer | null | undefined>(undefined);
   const [devLogin, setDevLogin] = useState(false);
   const [tournaments, setTournaments] = useState<TournamentSummary[] | null>(null);
+  const [desktopScheduleOpen, setDesktopScheduleOpen] = useState(false);
+  const [preview, setPreview] = useState<{ item: DesktopNavItem; pathname: string } | null>(null);
 
   // Mỗi lần chuyển trang: hỏi lại /me (đăng nhập / đăng xuất / bị khoá). Danh sách giải kèm vai trò người xem tải SONG SONG
   // với /me (cùng cookie nên đúng người xem) và chỉ khi đã cũ (> 30 s, hoặc vừa tạo giải) hoặc đổi tài khoản — trước đây
@@ -99,39 +133,66 @@ function SiteNav() {
   }
 
   const isReferee = Boolean(viewer) && (tournaments ?? []).some((t) => t.is_referee);
+  const home = pathname === "/";
   const currentSlug = pathname.match(/^\/t\/([^/]+)/)?.[1] ?? null;
   const onSchedule = currentSlug !== null;
   const onRef = pathname.startsWith("/ref");
   // Màn nhập điểm (/ref/<id>) cần toàn màn hình và tránh bấm nhầm → không có thanh tab đáy.
   const showTabBar = !/^\/ref\/[^/]+/.test(pathname);
 
-  const pill = (active: boolean) =>
-    `flex min-h-11 items-center gap-1.5 rounded-lg px-4 text-sm transition-colors ${
-      active ? "bg-black font-semibold text-white" : "font-medium text-slate-600 hover:bg-slate-100 hover:text-black"}`;
+  const current = onSchedule ? "schedule" : onRef && isReferee ? "ref" : home ? "home" : null;
+  const highlight = desktopNavHighlight(pathname, current, desktopScheduleOpen, preview, isReferee);
+  const { list: desktopList, indicator } = useDesktopIndicator(highlight);
+  const itemProps = (item: DesktopNavItem) => ({
+    "data-desktop-tab": item,
+    "data-current": item === current,
+    "data-highlighted": item === highlight,
+    className: "site-nav-item flex min-h-11 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-sm font-semibold transition-colors",
+    onPointerEnter: (event: ReactPointerEvent<HTMLElement>) => {
+      if (event.pointerType === "mouse") setPreview({ item, pathname });
+    },
+  });
 
   return (
     <>
-      <div className="fixed top-0 left-0 z-50 flex w-full justify-center px-4 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-[max(1rem,env(safe-area-inset-top))]">
+      <header className={`fixed inset-x-0 top-0 z-50 ${home ? "bg-secondary pt-safe" : "flex justify-center px-4 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-[max(1rem,env(safe-area-inset-top))]"}`}>
+        {home && (
+          <p className="theme-fixed flex min-h-8 items-center justify-center gap-2 px-3 py-1 text-center text-[10px] font-bold uppercase tracking-[.12em] text-white">
+            <span aria-hidden className="size-1.5 shrink-0 bg-primary" /> Red Line · Giải cầu lông Smash Team
+          </p>
+        )}
+        <div className={home ? "border-b border-slate-200 bg-background/95 backdrop-blur-md" : "w-full max-w-[1232px]"}>
         <nav aria-label="Điều hướng chính"
-          className="flex w-full max-w-[1280px] items-center justify-between gap-2 rounded-xl border border-slate-200 border-t-[3px] border-t-primary bg-white/95 p-2 shadow-sm backdrop-blur-md sm:gap-4 sm:px-4">
+          className={`flex w-full items-center justify-between gap-2 sm:gap-3 ${home
+            ? "mx-auto min-h-[4.25rem] max-w-[1200px] px-4 py-2 sm:px-6 lg:px-8"
+            : "rounded-xl border border-slate-200 bg-white/95 p-2 shadow-sm backdrop-blur-md sm:px-3"}`}>
           <Link href="/" aria-label="Red Line — Trang chủ Smash Team" className="shrink-0 rounded-lg">
             <RedLineBrand />
           </Link>
 
-          <ul className="hidden items-center gap-1 md:flex">
+          <ul ref={desktopList} onPointerLeave={() => setPreview(null)} className="site-nav-desktop relative isolate hidden items-center gap-0.5 md:flex">
+            <li ref={indicator} aria-hidden className="site-nav-indicator pointer-events-none absolute inset-y-0 left-0 -z-10 rounded-lg bg-secondary opacity-0" />
+            <li className="hidden lg:block">
+              <Link href="/" aria-current={home ? "page" : undefined} {...itemProps("home")}>
+                Trang chủ
+              </Link>
+            </li>
+            {home && <li className="hidden xl:block"><Link href="/#features" {...itemProps("guide")}>Cách theo dõi</Link></li>}
+            {home && <li className="hidden xl:block"><Link href="/#faq" {...itemProps("faq")}>Hỏi đáp</Link></li>}
             <li>
-              <SchedulePicker tournaments={tournaments} currentSlug={currentSlug}
-                trigger={(p) => (
-                  <button {...p} type="button" className={`${pill(onSchedule || p["aria-expanded"])} cursor-pointer`}>
+              <SchedulePicker tournaments={tournaments} currentSlug={currentSlug} onOpenChange={setDesktopScheduleOpen}
+                trigger={(p) => {
+                  const { className, ...props } = itemProps("schedule");
+                  return <button {...p} {...props} type="button" className={`${className} cursor-pointer`}>
                     <CalendarClock className="h-4 w-4" aria-hidden />
                     Lịch thi đấu
                     <ChevronDown aria-hidden className={`h-4 w-4 transition-transform ${p["aria-expanded"] ? "rotate-180" : ""}`} />
-                  </button>
-                )} />
+                  </button>;
+                }} />
             </li>
             {isReferee && (
               <li>
-                <Link href="/ref" aria-current={onRef ? "page" : undefined} className={pill(onRef)}>
+                <Link href="/ref" aria-current={onRef ? "page" : undefined} {...itemProps("ref")}>
                   <ClipboardList className="h-4 w-4" aria-hidden />
                   Trọng tài
                 </Link>
@@ -154,9 +215,9 @@ function SiteNav() {
                       className="hidden min-h-11 cursor-pointer rounded-full border border-amber-300 bg-amber-50 px-3 text-xs font-bold text-amber-800 sm:block">Dev: Trọng tài</button>
                   </>
                 )}
-                {/* Khán giả không cần đăng nhập → nút viền, nhường điểm nhấn cho nút hành động của trang. */}
+                {/* Khán giả không cần đăng nhập; giữ nút này tách khỏi các liên kết xem giải. */}
                 <Link href={loginUrl(pathname)}
-                  className="flex min-h-11 items-center gap-2 whitespace-nowrap rounded-lg bg-black px-3 text-sm font-semibold text-white transition-colors hover:bg-primary sm:px-4">
+                  className="flex min-h-11 items-center gap-2 whitespace-nowrap rounded-md bg-secondary px-3 text-sm font-semibold text-white transition-colors hover:bg-primary-hover sm:px-4">
                   <LogIn className="h-4 w-4" aria-hidden />
                   Đăng nhập
                 </Link>
@@ -164,11 +225,12 @@ function SiteNav() {
             )}
           </div>
         </nav>
-      </div>
+        </div>
+      </header>
 
       {showTabBar && (
         <nav aria-label="Điều hướng nhanh" data-tabbar
-          className="fixed inset-x-0 bottom-0 z-50 border-t-2 border-primary bg-white/95 shadow-[0_-2px_16px_rgba(0,0,0,0.06)] backdrop-blur-md pb-safe md:hidden">
+          className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white/95 shadow-[0_-2px_16px_rgba(0,0,0,0.06)] backdrop-blur-md pb-safe md:hidden">
           <ul className="mx-auto flex max-w-md">
             <li className="flex-1">
               <Link href="/" aria-current={pathname === "/" ? "page" : undefined} className={tabCls(pathname === "/")}>
@@ -213,18 +275,23 @@ type TriggerProps = { "aria-expanded": boolean; "aria-controls": string; onClick
  * "Lịch thi đấu": bấm để chọn giải cần xem (khỏi phải cuộn trang chủ tìm giải).
  * Máy tính: bảng thả xuống dưới nút. Điện thoại (`sheet`): bảng trượt lên ngay trên thanh tab đáy.
  */
-function SchedulePicker({ tournaments, currentSlug, sheet = false, trigger }: {
+function SchedulePicker({ tournaments, currentSlug, sheet = false, trigger, onOpenChange }: {
   tournaments: TournamentSummary[] | null;
   currentSlug: string | null;
   sheet?: boolean;
   trigger: (p: TriggerProps) => ReactNode;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   const id = useId();
   const btnRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const inside = useMemo(() => [btnRef, panelRef], []);
-  const close = useCallback(() => setOpen(false), []);
+  const change = useCallback((next: boolean) => {
+    setOpen(next);
+    onOpenChange?.(next);
+  }, [onOpenChange]);
+  const close = useCallback(() => change(false), [change]);
   useDismiss(open, close, inside, btnRef);
 
   const list = (
@@ -267,7 +334,7 @@ function SchedulePicker({ tournaments, currentSlug, sheet = false, trigger }: {
 
   return (
     <div className={sheet ? "" : "relative"}>
-      {trigger({ "aria-expanded": open, "aria-controls": id, onClick: () => setOpen((o) => !o), ref: btnRef })}
+      {trigger({ "aria-expanded": open, "aria-controls": id, onClick: () => change(!open), ref: btnRef })}
       {open && !sheet && (
         <div ref={panelRef} id={id} role="region" aria-label="Chọn giải"
           className="absolute left-1/2 top-[calc(100%+12px)] w-[360px] -translate-x-1/2 animate-fade-up rounded-3xl border border-black/5 bg-white p-2 shadow-[0_12px_40px_rgba(0,0,0,0.14)]">

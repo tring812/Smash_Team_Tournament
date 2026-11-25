@@ -15,6 +15,17 @@ export function sortTournaments(ts: TournamentSummary[]): TournamentSummary[] {
   });
 }
 
+export type TournamentFilter = TournamentSummary["status"] | "all";
+
+/** Dữ liệu trang chủ đã xếp thứ tự; bộ lọc chỉ thay danh sách, không đổi giải nổi bật. */
+export function homeTournamentView(tournaments: readonly TournamentSummary[], filter: TournamentFilter) {
+  return {
+    featured: tournaments.find((t) => t.status === "ongoing") ?? tournaments.find((t) => t.status === "published"),
+    visible: filter === "all" ? tournaments : tournaments.filter((t) => t.status === filter),
+    showDraft: filter === "draft" || tournaments.some((t) => t.status === "draft"),
+  };
+}
+
 /**
  * Lần tải danh sách giải gần nhất của thanh điều hướng (dùng chung trong trang). Thanh điều hướng chỉ tải lại khi
  * danh sách đã cũ hơn NAV_LIST_TTL_MS hoặc đổi tài khoản — trước đây tải lại MỖI lần chuyển trang, nối tiếp sau /me.
