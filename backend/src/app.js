@@ -219,7 +219,7 @@ function createApp({ pool, config }) {
   // ── Nội dung ──
   const visibleCategory = async (req) => {
     const cid = id(req.params.id);
-    await svc.assertVisible(pool, await svc.tournamentOfCategory(pool, cid), me(req));
+    await svc.assertCategoryVisible(pool, cid, me(req));
     return cid;
   };
   api.patch('/categories/:id', auth.requireAuth, async (req, res) => {

@@ -1322,15 +1322,21 @@ function presentMatch(r) {
  * @param {Queryable} db @param {string} slug @param {Viewer|null} viewer
  */
 async function getTournament(db, slug, viewer) {
-  const t = (await db.query('SELECT * FROM tournaments WHERE slug = $1 AND deleted_at IS NULL', [slug])).rows[0];
+  // Một truy vấn lấy luôn vai trò của người xem (thay cho roleIn riêng).
+  const t = (await db.query(
+    `SELECT t.*, s.role AS staff_role FROM tournaments t
+       LEFT JOIN tournament_staff s ON s.tournament_id = t.id AND s.user_id = $2::uuid
+      WHERE t.slug = $1 AND t.deleted_at IS NULL`,
+    [slug, viewer?.id ?? null],
+  )).rows[0];
   if (!t) throw notFound('Không tìm thấy giải');
-  const role = await roleIn(db, t.id, viewer);
+  const role = viewerRole(viewer, t.staff_role);
   if (t.status === 'draft' && role !== 'admin' && role !== 'organizer') throw notFound('Không tìm thấy giải');
   const { rows: categories } = await db.query(
     `SELECT c.*, (SELECT count(*)::int FROM entries e WHERE e.category_id = c.id) AS entry_count
        FROM categories c WHERE tournament_id = $1 ORDER BY code`, [t.id],
   );
-  const { deleted_at: _deletedAt, deleted_by: _deletedBy, ...info } = t;
+  const { deleted_at: _deletedAt, deleted_by: _deletedBy, staff_role: _staffRole, ...info } = t;
   return { ...info, viewerRole: role, canDelete: canDelete(t, viewer), categories };
 }
 
@@ -1423,15 +1429,55 @@ async function refereeQueue(db, viewer) {
 }
 
 /**
- * Ném 404 nếu giải là draft và viewer không phải BTC/admin (không lộ sự tồn tại).
+ * Vai trò của người xem trong giải, từ vai trò hệ thống + dòng tournament_staff (giống roleIn nhưng không truy vấn).
+ * @param {Viewer|null} viewer @param {string|null|undefined} staffRole
+ */
+function viewerRole(viewer, staffRole) {
+  if (!viewer) return null;
+  if (viewer.role === 'admin') return 'admin';
+  return staffRole ?? null;
+}
+
+/**
+ * Ném 404 nếu giải không có / đã xoá, hoặc là draft mà người xem không phải BTC/admin (không lộ sự tồn tại).
+ * @param {{ status: string, deleted_at: unknown, staff_role: string|null }|undefined} t @param {Viewer|null} viewer
+ */
+function checkVisible(t, viewer) {
+  if (!t || t.deleted_at) throw notFound('Không tìm thấy giải');
+  if (t.status !== 'draft') return;
+  const role = viewerRole(viewer, t.staff_role);
+  if (role !== 'admin' && role !== 'organizer') throw notFound('Không tìm thấy giải');
+}
+
+/**
+ * Ném 404 nếu giải là draft và viewer không phải BTC/admin (không lộ sự tồn tại). Một truy vấn.
  * @param {Queryable} db @param {string} tid @param {Viewer|null} viewer
  */
 async function assertVisible(db, tid, viewer) {
-  const t = (await db.query('SELECT status FROM tournaments WHERE id = $1 AND deleted_at IS NULL', [tid])).rows[0];
-  if (!t) throw notFound('Không tìm thấy giải');
-  if (t.status !== 'draft') return;
-  const role = await roleIn(db, tid, viewer);
-  if (role !== 'admin' && role !== 'organizer') throw notFound('Không tìm thấy giải');
+  const { rows } = await db.query(
+    `SELECT t.status, t.deleted_at, s.role AS staff_role FROM tournaments t
+       LEFT JOIN tournament_staff s ON s.tournament_id = t.id AND s.user_id = $2::uuid
+      WHERE t.id = $1`,
+    [tid, viewer?.id ?? null],
+  );
+  checkVisible(rows[0], viewer);
+}
+
+/**
+ * Như assertVisible nhưng đi từ nội dung thi đấu; trả id giải. Một truy vấn thay cho loadCategory + assertVisible.
+ * @param {Queryable} db @param {string} categoryId @param {Viewer|null} viewer @returns {Promise<string>}
+ */
+async function assertCategoryVisible(db, categoryId, viewer) {
+  const { rows } = await db.query(
+    `SELECT c.tournament_id, t.status, t.deleted_at, s.role AS staff_role FROM categories c
+       JOIN tournaments t ON t.id = c.tournament_id
+       LEFT JOIN tournament_staff s ON s.tournament_id = t.id AND s.user_id = $2::uuid
+      WHERE c.id = $1`,
+    [categoryId, viewer?.id ?? null],
+  );
+  if (!rows[0]) throw notFound('Không tìm thấy nội dung thi đấu');
+  checkVisible(rows[0], viewer);
+  return rows[0].tournament_id;
 }
 
 /** @param {Queryable} db @param {string} categoryId @returns {Promise<string>} tournament id */
@@ -1483,7 +1529,7 @@ async function searchUsers(db, viewer, q) {
 }
 
 module.exports = {
-  assertVisible, tournamentOfCategory, listEntries, listStaff, searchUsers, listEvents,
+  assertVisible, assertCategoryVisible, tournamentOfCategory, listEntries, listStaff, searchUsers, listEvents,
   disqualifyEntry, reinstateEntry, swapEntries, updateEntry,
   withTx, roleIn, requireOrganizer, lockScorable, logEvent, nameKey, participantKey, entryLabel, presentMatch, MATCH_SELECT, FINAL_STATUSES,
   createTournament, updateTournament, deleteTournament, restoreTournament, listDeletedTournaments, purgeDeletedTournaments, upsertStaff, removeStaff, createCategory, updateCategory, deleteCategory,
