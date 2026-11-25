@@ -5,6 +5,7 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Phục hồi trận không còn nhận trùng sân/VĐV**: mở lại trận và huỷ truất quyền kiểm tra sân, VĐV đang bận (kể cả khác nội dung) trước khi chấp nhận trạng thái chiếm sân. Nếu có xung đột, toàn bộ thao tác bị huỷ với `409 COURT_BUSY` / `PLAYER_BUSY`; BTC giải phóng sân/VĐV rồi thử lại. Không đổi endpoint, không cần migration mới.
 - **Sửa đội không còn cho phép trùng VĐV trong cùng nội dung**: `PATCH /entries/:id` từ chối với `409 ATHLETE_ALREADY_ENTERED` nếu một trong hai VĐV đã thuộc đội khác, tránh sinh trận VĐV đấu với chính mình. Vẫn cho phép đảo thứ tự thành viên trong cùng đội và tham gia nhiều nội dung; thao tác bị từ chối không để lại thay đổi hồ sơ hoặc nhật ký.
 - **Không còn ghi điểm vượt qua bước nhận sân**: Bàn điểm có **Bắt đầu trận** (sân đã được BTC gán, sân và tất cả VĐV phải rảnh) và **Hoàn thành trận** (đủ tỉ số hợp lệ, đã lưu hết điểm). Máy chủ từ chối ghi điểm / biên bản khi chưa bắt đầu (`409 MATCH_NOT_STARTED`); đủ điểm chưa giải phóng sân cho tới khi xác nhận hoàn thành. API mới `POST /matches/:id/start {version}`, lỗi `COURT_REQUIRED`, `MATCH_ALREADY_STARTED`, dùng lại `COURT_BUSY`, `PLAYER_BUSY`, `VERSION_CONFLICT`. **Migration 012** bổ sung nhật ký bắt đầu trận; trận đang đánh sẵn tiếp tục được, xử bỏ cuộc vẫn riêng.
 - **Bàn điểm sau khi xác nhận** hiện tỉ số cuối (vd 21–0) thay vì 0–0, và giữ biên bản để xem.
