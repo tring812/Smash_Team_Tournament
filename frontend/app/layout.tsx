@@ -1,30 +1,11 @@
 import type { Metadata, Viewport } from "next";
-import localFont from "next/font/local";
+import { Barlow_Condensed, Inter } from "next/font/google";
 import "./globals.css";
 import SiteShell from "./components/SiteShell";
 
-// Gộp Latin/tiếng Việt trong từng WOFF2 để tránh tải thêm Latin mở rộng do dải ký tự chồng nhau.
-const inter = localFont({
-  src: [{ path: "./fonts/Inter-latin-vietnamese.woff2", weight: "100 900", style: "normal" }],
-  variable: "--font-inter",
-  display: "swap",
-  preload: true,
-  adjustFontFallback: false,
-  fallback: ["Red Line Inter Fallback", "Arial", "sans-serif"],
-});
-const barlow = localFont({
-  src: [
-    { path: "./fonts/BarlowCondensed-Bold-latin-vietnamese.woff2", weight: "700", style: "normal" },
-    { path: "./fonts/BarlowCondensed-ExtraBold-latin-vietnamese.woff2", weight: "800", style: "normal" },
-    { path: "./fonts/BarlowCondensed-BoldItalic-latin-vietnamese.woff2", weight: "700", style: "italic" },
-    { path: "./fonts/BarlowCondensed-ExtraBoldItalic-latin-vietnamese.woff2", weight: "800", style: "italic" },
-  ],
-  variable: "--font-barlow",
-  display: "swap",
-  preload: true,
-  adjustFontFallback: false,
-  fallback: ["Red Line Barlow Fallback", "Arial", "sans-serif"],
-});
+// Red Line: Inter cho dữ liệu, Barlow Condensed cho tiêu đề thể thao (đều hỗ trợ tiếng Việt).
+const inter = Inter({ variable: "--font-inter", subsets: ["latin", "vietnamese"], display: "swap" });
+const barlow = Barlow_Condensed({ variable: "--font-barlow", subsets: ["latin", "vietnamese"], weight: ["700", "800"], style: ["italic", "normal"], display: "swap" });
 
 export const metadata: Metadata = {
   title: { default: "Red Line · Smash Team", template: "%s · Red Line" },
