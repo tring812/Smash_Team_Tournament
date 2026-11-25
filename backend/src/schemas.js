@@ -37,6 +37,8 @@ const schemas = {
   }).refine((o) => Object.values(o).some((v) => v !== undefined), { message: 'Không có gì để cập nhật' }),
   changePassword: z.object({ currentPassword: z.string().min(1).max(128), newPassword: password }),
   uuidParam: z.uuid(),
+  // GET /matches/:id?rallies=0 — màn hình trực tiếp (lịch, TV) không cần biên bản: bỏ truy vấn + giảm payload mỗi điểm.
+  matchView: z.object({ rallies: z.enum(['0', '1']).optional() }),
 
   createTournament: z.object({
     slug: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/).max(80),

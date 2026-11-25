@@ -69,12 +69,14 @@ function createApp({ pool, config }) {
     next();
   });
   /**
-   * @param {string} [matchId] chỉ tỉ số / biên bản / trọng tài của MỘT trận đổi → màn hình chỉ tải lại trận đó
-   *   thay vì cả lịch + bảng xếp hạng (xem liveBus). Bỏ trống = thay đổi cấu trúc, tải lại toàn bộ.
+   * @param {string|string[]} [matchIds] chỉ vài trận đổi (tỉ số, trọng tài, gọi sân, dời trận…) → màn hình chỉ tải lại
+   *   các trận đó thay vì cả lịch + bảng xếp hạng (xem liveBus). Bỏ trống = thay đổi cấu trúc, tải lại toàn bộ.
+   * @param {string} [categoryId] kết quả của nội dung này đổi → màn hình tải lại bảng xếp hạng / nhánh của nó.
    */
-  const touch = (res, tid, matchId) => {
+  const touch = (res, tid, matchIds, categoryId) => {
+    const ids = (Array.isArray(matchIds) ? matchIds : [matchIds]).filter(Boolean);
     res.locals.tid = tid;
-    res.locals.liveScope = matchId ? { kind: 'match', matchId } : { kind: 'structure' };
+    res.locals.liveScope = ids.length ? { kind: 'match', matchIds: ids, ...(categoryId ? { categoryId } : {}) } : { kind: 'structure' };
   };
   const touchCategory = async (res, cid) => touch(res, await svc.tournamentOfCategory(pool, cid));
   const touchEntry = async (res, eid) => {

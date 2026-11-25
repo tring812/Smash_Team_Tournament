@@ -63,9 +63,10 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
     ? (cat && !searching ? [cat] : cats.filter((c) => c.stage !== "setup")) : [];
   const standingKey = standingCats.map((c) => c.id).join(",");
 
-  // Gọi sân / dời trận / kết quả → tải lại ngay (`tick`); mỗi điểm chỉ tải riêng trận đó (`matchEvent` → patch).
+  // Bốc thăm / xếp lịch / sửa đội → tải lại toàn bộ (`tick`). Điểm, gọi sân, dời trận, kết quả → chỉ tải riêng các trận đó
+  // (`matchEvent` → patch); có kết quả mới thì tải thêm bảng xếp hạng / nhánh (`resultTick`), không tải lại cả lịch.
   // Polling 10s (30s khi đang nhận trực tiếp) chỉ là dự phòng.
-  const { tick, matchEvent, live: streaming } = useLive(t.data?.id);
+  const { tick, matchEvent, resultTick, live: streaming } = useLive(t.data?.id);
   const patch = useMatchPatches(matchEvent);
   const matches = usePoll(
     (s) => (t.data ? api<Match[]>(`/tournaments/${t.data.id}/matches${tab === "schedule" && cat && !searching ? `?categoryId=${cat.id}` : ""}`, { signal: s }) : Promise.resolve([])),
@@ -73,14 +74,14 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
   );
   const groups = usePoll(
     (s) => Promise.all(standingCats.map(async (c) => ({ category: c, groups: await api<GroupStanding[]>(`/categories/${c.id}/standings`, { signal: s }) }))),
-    [standingKey, tick], streaming ? 30_000 : 10_000,
+    [standingKey, tick, resultTick], streaming ? 30_000 : 10_000,
   );
 
   // Ô tìm VĐV: gõ ngay trên máy, URL (?q=) cập nhật sau 300 ms để chia sẻ / quay lại được.
   const [q, setQ] = useState(qParam);
   const bracket = usePoll(
     (s) => (tab === "bracket" && focusCat ? api<Bracket>(`/categories/${focusCat.id}/bracket`, { signal: s }) : Promise.resolve({ rounds: [] })),
-    [tab, focusCat?.id, tick], streaming ? 30_000 : 10_000,
+    [tab, focusCat?.id, tick, resultTick], streaming ? 30_000 : 10_000,
   );
 
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);

@@ -17,9 +17,10 @@ const { log } = require('../log');
 module.exports = function registerMatchesRoutes(api, { pool, id, me, touch }) {
   // ── Trận & trọng tài ──
   api.get('/matches/:id', async (req, res) => {
+    const { rallies: withLog } = schemas.matchView.parse(req.query);
     const m = await matchSvc.getMatch(pool, id(req.params.id));
     await svc.assertVisible(pool, m.tournamentId, me(req));
-    res.json({ ...m, rallies: await rallies.listRallies(pool, m.id) });
+    res.json(withLog === '0' ? m : { ...m, rallies: await rallies.listRallies(pool, m.id) });
   });
   // ── Biên bản diễn biến điểm ──
   /** @param {boolean} [onlyThisMatch] true = chỉ tỉ số / biên bản trận này đổi (mỗi điểm); false = thay đổi cấu trúc */
@@ -30,9 +31,9 @@ module.exports = function registerMatchesRoutes(api, { pool, id, me, touch }) {
   };
   api.post('/matches/:id/start', auth.requireAuth, async (req, res) => {
     const mid = id(req.params.id);
-    await matchSvc.startMatch(pool, me(req), mid, schemas.startMatch.parse(req.body));
-    // Bắt đầu trận (mỗi trận một lần) có thể chuyển giải sang "đang diễn ra" → tải lại toàn bộ.
-    await withRallies(res, mid, false);
+    const started = await matchSvc.startMatch(pool, me(req), mid, schemas.startMatch.parse(req.body));
+    // Chỉ trận này đổi — trừ trận ĐẦU TIÊN của giải (giải chuyển sang "đang diễn ra") → tải lại toàn bộ.
+    await withRallies(res, mid, !started.tournament_started);
   });
   api.post('/matches/:id/rallies', auth.requireAuth, async (req, res) => {
     const mid = id(req.params.id);
@@ -47,11 +48,14 @@ module.exports = function registerMatchesRoutes(api, { pool, id, me, touch }) {
   api.put('/matches/:id/score', auth.requireAuth, async (req, res) => {
     const body = schemas.score.parse(req.body);
     const mid = id(req.params.id);
-    await matchSvc.recordScore(pool, me(req), mid, body);
+    const out = await matchSvc.recordScore(pool, me(req), mid, body);
     log('info', 'score_recorded', { request_id: req.id, match_id: mid, action: body.action, user_id: me(req).id });
     const m = await matchSvc.getMatch(pool, mid);
-    // Lưu tạm chỉ đổi trận này; xác nhận / bỏ cuộc còn đưa đội thắng sang trận sau và đổi bảng xếp hạng.
-    touch(res, m.tournamentId, body.action === 'save' ? mid : undefined);
+    // Lưu tạm: chỉ trận này. Xác nhận / bỏ cuộc: trận này + các trận được đưa đội thắng vào, và bảng xếp hạng / nhánh
+    // của nội dung → màn hình tải riêng các phần đó thay vì cả lịch. Giải vừa chuyển "đang diễn ra" → toàn bộ.
+    if (out.tournament_started) touch(res, m.tournamentId);
+    else if (body.action === 'save') touch(res, m.tournamentId, mid);
+    else touch(res, m.tournamentId, out.changed_match_ids, m.category.id);
     res.json(m);
   });
   api.post('/matches/:id/reopen', auth.requireAuth, async (req, res) => {
@@ -81,21 +85,21 @@ module.exports = function registerMatchesRoutes(api, { pool, id, me, touch }) {
     const mid = id(req.params.id);
     await courts.callMatch(pool, me(req), mid, schemas.callMatch.parse(req.body));
     const m = await matchSvc.getMatch(pool, mid);
-    touch(res, m.tournamentId);
+    touch(res, m.tournamentId, mid); // chỉ trận này đổi sân / trạng thái gọi
     res.json(m);
   });
   api.post('/matches/:id/uncall', auth.requireAuth, async (req, res) => {
     const mid = id(req.params.id);
     await courts.uncallMatch(pool, me(req), mid);
     const m = await matchSvc.getMatch(pool, mid);
-    touch(res, m.tournamentId);
+    touch(res, m.tournamentId, mid); // chỉ trận này đổi sân / trạng thái gọi
     res.json(m);
   });
   api.patch('/matches/:id', auth.requireAuth, async (req, res) => {
     const mid = id(req.params.id);
     await courts.moveMatch(pool, me(req), mid, schemas.moveMatch.parse(req.body));
     const m = await matchSvc.getMatch(pool, mid);
-    touch(res, m.tournamentId);
+    touch(res, m.tournamentId, mid); // chỉ trận này đổi giờ / sân
     res.json(m);
   });
   api.get('/referee/queue', auth.requireAuth, async (req, res) => res.json(await matchSvc.refereeQueue(pool, me(req))));

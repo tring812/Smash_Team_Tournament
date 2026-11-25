@@ -130,7 +130,8 @@ async function startMatch(pool, viewer, matchId, input) {
       [m.id, viewer.id, 'start', JSON.stringify(m.games)]);
     await logEvent(c, m.tournament_id, m.category_id, viewer.id, 'start_match', { matchId, court: m.court });
     if (t.status === 'published') await c.query("UPDATE tournaments SET status = 'ongoing' WHERE id = $1", [m.tournament_id]);
-    return rows[0];
+    // tournament_started: giải vừa chuyển sang "đang diễn ra" → kênh trực tiếp báo thay đổi toàn bộ (xem routes/matches).
+    return { ...rows[0], tournament_started: t.status === 'published' };
   });
 }
 
@@ -188,12 +189,19 @@ async function recordScore(pool, viewer, matchId, input) {
     if (m.tournament_status === 'published') {
       await c.query(`UPDATE tournaments SET status = 'ongoing' WHERE id = $1`, [m.tournament_id]);
     }
+    /** @type {string[]} */ let changed = [matchId];
     if (winnerId) {
       await logEvent(c, m.tournament_id, m.category_id, viewer.id, 'score_confirm',
         { matchId, games: input.action === 'walkover' ? null : games, walkover: input.action === 'walkover', winner: winnerId === m.entry_a_id ? 'a' : 'b' });
       await advanceWinner(c, m, winnerId, viewer.id);
+      // Mọi trận giao dịch này đã ghi (đưa đội thắng sang trận sau, walkover dây chuyền khi đối thủ bị truất quyền…)
+      // đều mang updated_at = now() của giao dịch → kênh trực tiếp chỉ báo đúng các trận đó.
+      const { rows: touched } = await c.query(
+        'SELECT id FROM matches WHERE category_id = $1 AND updated_at = now()', [m.category_id],
+      );
+      changed = [...new Set([matchId, ...touched.map((r) => r.id)])];
     }
-    return upd[0];
+    return { ...upd[0], changed_match_ids: changed, tournament_started: m.tournament_status === 'published' };
   });
 }
 

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
- * Tải dữ liệu và tự làm mới mỗi `ms` khi tab đang hiển thị (bảng điểm "gần realtime").
+ * Tải dữ liệu và tự làm mới mỗi `ms` khi tab đang hiển thị (bảng điểm "gần realtime"). `ms <= 0` = chỉ tải khi đổi deps.
  * Mỗi lần tải mới huỷ lần tải trước còn dở, và chỉ kết quả của lần tải MỚI NHẤT được ghi vào state —
  * tránh trường hợp có điểm liên tục (useLive đổi `tick`) mà response cũ về sau đè lên tỉ số mới.
  */
@@ -35,11 +35,11 @@ export function usePoll<T>(load: (signal: AbortSignal) => Promise<T>, deps: unkn
 
   useEffect(() => {
     void refresh();
-    const t = setInterval(() => {
+    const t = ms > 0 ? setInterval(() => {
       if (document.visibilityState === "visible") void refresh();
-    }, ms);
+    }, ms) : undefined;
     return () => {
-      clearInterval(t);
+      if (t) clearInterval(t);
       // Đổi deps / rời trang: huỷ request đang dở và bỏ mọi kết quả về muộn của nó.
       ctlRef.current?.abort();
       ctlRef.current = null;
