@@ -41,7 +41,7 @@ async function slotName(c, m, slot) {
  */
 async function saveGames(c, m, games, role, viewer) {
   await c.query(
-    `UPDATE matches SET games = $2::jsonb, status = 'live', referee_user_id = COALESCE(referee_user_id, $3),
+    `UPDATE matches SET games = $2::jsonb, status = 'live', called_at = COALESCE(called_at, now()), referee_user_id = COALESCE(referee_user_id, $3),
             version = version + 1, updated_at = now()
       WHERE id = $1`,
     [m.id, JSON.stringify(games), role === 'referee' ? viewer.id : null],

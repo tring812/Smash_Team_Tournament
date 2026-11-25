@@ -903,7 +903,7 @@ async function advanceWinner(c, m, winnerId, actorId) {
  * Khoá trận để NHẬP ĐIỂM (lưu tỉ số / biên bản) + kiểm tra quyền và trạng thái chung:
  * trọng tài được phân công (trận hoặc sân) hoặc BTC; giải chưa kết thúc; trận đủ 2 đội, chưa huỷ, chưa xong.
  * @param {Queryable} c @param {string} matchId @param {Viewer} viewer
- * @param {{ requireStarted?: boolean }} [opts]
+ * @param {{ claim?: boolean }} [opts]
  */
 async function lockScorable(c, matchId, viewer, opts = {}) {
   const { rows } = await c.query(
@@ -931,8 +931,19 @@ async function lockScorable(c, matchId, viewer, opts = {}) {
   if (!m.entry_a_id || !m.entry_b_id) throw conflict('MISSING_ENTRY', 'Trận chưa đủ 2 đội');
   if (m.status === 'cancelled') throw conflict('MATCH_CANCELLED', 'Trận đã bị huỷ do có đội bị truất quyền');
   if (FINAL_STATUSES.has(m.status)) throw conflict('MATCH_CLOSED', 'Trận đã kết thúc');
-  if (opts.requireStarted !== false && m.status !== 'live') {
-    throw conflict('MATCH_NOT_STARTED', 'Bấm Bắt đầu trận trước khi nhập điểm');
+  if (opts.claim !== false && m.status !== 'live') {
+    // Chọn người giao/ghi điểm lần đầu tự nhận sân; không cần một request bắt đầu riêng.
+    const t = (await c.query('SELECT status FROM tournaments WHERE id = $1 FOR UPDATE', [m.tournament_id])).rows[0];
+    if (t.status === 'completed') throw conflict('TOURNAMENT_CLOSED', 'Giải đã kết thúc');
+    if (t.status === 'draft' && role === 'referee') throw forbidden('Giải chưa công bố');
+    m.tournament_status = t.status;
+    const courts = require('./courtService');
+    const occupancy = await courts.lockMatch(c, m.id);
+    if (m.court !== null) {
+      courts.checkCourt(m.court, occupancy.t_courts);
+      await courts.assertCourtFree(c, m.tournament_id, m.court, m.id);
+    }
+    await courts.assertPlayersFree(c, occupancy);
   }
   return { m, role, rules: effectiveRules(m, m.stage, m.round, m.ko_rounds) };
 }
@@ -943,7 +954,7 @@ async function lockScorable(c, matchId, viewer, opts = {}) {
  */
 async function startMatch(pool, viewer, matchId, input) {
   return withTx(pool, async (c) => {
-    const { m, role } = await lockScorable(c, matchId, viewer, { requireStarted: false });
+    const { m, role } = await lockScorable(c, matchId, viewer, { claim: false });
     if (input.version !== m.version) {
       throw conflict('VERSION_CONFLICT', 'Trận vừa được cập nhật — tải lại trước khi bắt đầu');
     }
@@ -982,7 +993,7 @@ async function startMatch(pool, viewer, matchId, input) {
  */
 async function recordScore(pool, viewer, matchId, input) {
   return withTx(pool, async (c) => {
-    const { m, role, rules } = await lockScorable(c, matchId, viewer, { requireStarted: input.action !== 'walkover' });
+    const { m, role, rules } = await lockScorable(c, matchId, viewer, { claim: input.action !== 'walkover' });
     if (input.version !== m.version) {
       throw conflict('VERSION_CONFLICT', 'Tỉ số vừa được cập nhật ở thiết bị khác — đã tải lại bản mới nhất',
         { current: { games: m.games, version: m.version, status: m.status } });
@@ -1013,6 +1024,7 @@ async function recordScore(pool, viewer, matchId, input) {
     }
     const { rows: upd } = await c.query(
       `UPDATE matches SET games = $2::jsonb, status = $3, winner_entry_id = $4,
+               called_at = CASE WHEN $3 = 'live' THEN COALESCE(called_at, now()) ELSE called_at END,
               referee_user_id = COALESCE(referee_user_id, $5),
               finished_at = CASE WHEN $4::uuid IS NULL THEN NULL ELSE now() END,
               version = version + 1, updated_at = now()

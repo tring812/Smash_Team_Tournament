@@ -2,7 +2,7 @@ export type Role = "admin" | "user";
 export type MatchStatus = "pending" | "scheduled" | "live" | "finished" | "walkover" | "bye" | "cancelled";
 export type Game = [number, number];
 
-/** Yêu cầu bắt đầu trận trên sân đã được BTC gán. */
+/** Tương thích API bắt đầu cũ; Bàn điểm hiện ghi điểm trực tiếp và không gửi yêu cầu này. */
 export interface StartMatchInput {
   version: number;
 }
