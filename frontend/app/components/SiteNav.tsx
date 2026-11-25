@@ -10,6 +10,7 @@ import {
 import { api, loginUrl } from "../lib/api";
 import { sortTournaments } from "../lib/tournamentOrder";
 import type { TournamentSummary, Viewer } from "../lib/types";
+import { RedLineBrand } from "./RedLineBrand";
 
 const STATUS: Record<TournamentSummary["status"], { label: string; cls: string }> = {
   ongoing: { label: "Đang diễn ra", cls: "bg-red-50 text-red-700" },
@@ -96,17 +97,16 @@ function SiteNav() {
   const showTabBar = !/^\/ref\/[^/]+/.test(pathname);
 
   const pill = (active: boolean) =>
-    `flex min-h-10 items-center gap-1.5 rounded-full px-4 text-[15px] transition-colors ${
-      active ? "bg-slate-100 font-semibold text-black" : "font-medium text-slate-600 hover:bg-slate-50 hover:text-black"}`;
+    `flex min-h-11 items-center gap-1.5 rounded-lg px-4 text-sm transition-colors ${
+      active ? "bg-black font-semibold text-white" : "font-medium text-slate-600 hover:bg-slate-100 hover:text-black"}`;
 
   return (
     <>
       <div className="fixed top-0 left-0 z-50 flex w-full justify-center px-4 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-[max(1rem,env(safe-area-inset-top))]">
         <nav aria-label="Điều hướng chính"
-          className="flex w-full max-w-[1120px] items-center justify-between gap-4 rounded-full border border-black/5 bg-white/85 py-1.5 pl-2 pr-1.5 shadow-[0_2px_16px_rgba(0,0,0,0.06)] backdrop-blur-md sm:pl-3">
-          <Link href="/" className="flex shrink-0 items-center gap-2 rounded-full pr-2">
-            <span aria-hidden className="headline grid h-9 w-9 place-items-center rounded-full bg-primary text-sm text-white">ST</span>
-            <span className="hidden font-bold text-[17px] tracking-tight min-[360px]:inline">Smash <span className="text-primary">Open Cup</span></span>
+          className="flex w-full max-w-[1280px] items-center justify-between gap-2 rounded-xl border border-slate-200 border-t-[3px] border-t-primary bg-white/95 p-2 shadow-sm backdrop-blur-md sm:gap-4 sm:px-4">
+          <Link href="/" aria-label="Red Line — Trang chủ Smash Team" className="shrink-0 rounded-lg">
+            <RedLineBrand />
           </Link>
 
           <ul className="hidden items-center gap-1 md:flex">
@@ -140,14 +140,14 @@ function SiteNav() {
                 {devLogin && (
                   <>
                     <button type="button" onClick={() => loginDev("admin", "Admin Dev")}
-                      className="min-h-11 cursor-pointer rounded-full border border-amber-300 bg-amber-50 px-3 text-xs font-bold text-amber-800">Dev: Admin</button>
+                      className="hidden min-h-11 cursor-pointer rounded-lg border border-amber-300 bg-amber-50 px-3 text-xs font-bold text-amber-800 sm:inline-flex sm:items-center">Dev: Admin</button>
                     <button type="button" onClick={() => loginDev("user", "Trọng tài Dev")}
                       className="hidden min-h-11 cursor-pointer rounded-full border border-amber-300 bg-amber-50 px-3 text-xs font-bold text-amber-800 sm:block">Dev: Trọng tài</button>
                   </>
                 )}
                 {/* Khán giả không cần đăng nhập → nút viền, nhường điểm nhấn cho nút hành động của trang. */}
                 <Link href={loginUrl(pathname)}
-                  className="flex min-h-11 items-center gap-2 whitespace-nowrap rounded-full border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition-colors hover:border-slate-300 hover:text-black">
+                  className="flex min-h-11 items-center gap-2 whitespace-nowrap rounded-lg bg-black px-3 text-sm font-semibold text-white transition-colors hover:bg-primary sm:px-4">
                   <LogIn className="h-4 w-4" aria-hidden />
                   Đăng nhập
                 </Link>
@@ -159,7 +159,7 @@ function SiteNav() {
 
       {showTabBar && (
         <nav aria-label="Điều hướng nhanh" data-tabbar
-          className="fixed inset-x-0 bottom-0 z-50 border-t border-black/5 bg-white/90 shadow-[0_-2px_16px_rgba(0,0,0,0.06)] backdrop-blur-md pb-safe md:hidden">
+          className="fixed inset-x-0 bottom-0 z-50 border-t-2 border-primary bg-white/95 shadow-[0_-2px_16px_rgba(0,0,0,0.06)] backdrop-blur-md pb-safe md:hidden">
           <ul className="mx-auto flex max-w-md">
             <li className="flex-1">
               <Link href="/" aria-current={pathname === "/" ? "page" : undefined} className={tabCls(pathname === "/")}>

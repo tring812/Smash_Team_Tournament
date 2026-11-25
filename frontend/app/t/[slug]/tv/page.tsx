@@ -42,9 +42,9 @@ export default function TvPage() {
 
   return (
     <div className="theme-fixed min-h-dvh bg-neutral-950 text-white" style={{ colorScheme: "dark" }}>
-      <header className="flex items-center justify-between gap-4 border-b-4 border-red-600 px-6 py-4">
-        <h1 className="headline truncate text-3xl lg:text-5xl">{t.data?.name ?? "…"}</h1>
-        <div className="flex items-center gap-4">
+      <header className="flex flex-wrap items-center justify-between gap-4 border-b-4 border-red-600 px-6 py-4">
+        <div className="min-w-0 flex-1"><p className="redline-kicker mb-2 text-neutral-400">Red Line · Smash Team</p><h1 className="headline truncate text-3xl lg:text-5xl">{t.data?.name ?? "…"}</h1></div>
+        <div className="flex flex-wrap items-center gap-4">
           <span className={`flex items-center gap-2 text-sm font-semibold ${live ? "text-emerald-400" : "text-neutral-400"}`}>
             <span aria-hidden className={`h-2.5 w-2.5 rounded-full ${live ? "animate-pulse bg-emerald-400" : "bg-neutral-500"}`} />
             {live ? "Trực tiếp" : "Đang kết nối…"}
@@ -63,7 +63,7 @@ export default function TvPage() {
           const last = m?.games[m.games.length - 1];
           return (
             <section key={court} aria-label={`Sân ${court}`}
-              className={`flex min-h-56 flex-col rounded-3xl border-2 p-5 ${!m ? "border-white/10 bg-white/[0.03]" : called ? "border-amber-400 bg-amber-400/10" : "border-red-500 bg-red-600/10"}`}>
+              className={`flex min-h-56 min-w-0 flex-col rounded-xl border-2 border-t-4 p-5 ${!m ? "border-white/10 bg-white/[0.03]" : called ? "border-amber-400 bg-amber-400/10" : "border-red-500 bg-red-600/10"}`}>
               <div className="mb-3 flex items-center justify-between">
                 <h2 className="headline text-4xl">Sân {court}</h2>
                 {m && (called
