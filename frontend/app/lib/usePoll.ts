@@ -52,18 +52,23 @@ export function usePoll<T>(load: (signal: AbortSignal) => Promise<T>, deps: unkn
 
   useEffect(() => {
     void refresh();
-    const t = ms > 0 ? setInterval(() => {
-      if (document.visibilityState === "visible") void refresh();
-    }, ms) : undefined;
     return () => {
-      if (t) clearInterval(t);
       // Đổi deps / rời trang: huỷ request đang dở và bỏ mọi kết quả về muộn của nó.
       ctlRef.current?.abort();
       ctlRef.current = null;
       seqRef.current += 1;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...deps, ms, refresh]);
+  }, [...deps, refresh]);
+  // Chu kỳ làm mới tách riêng: đổi `ms` (vd 10 s → 30 s khi kênh trực tiếp vừa nối) chỉ đặt lại đồng hồ, KHÔNG tải lại ngay
+  // — trước đây mỗi trang giải / TV tải cả lịch + bảng xếp hạng 2 lần khi vừa mở.
+  useEffect(() => {
+    if (ms <= 0) return;
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") void refresh();
+    }, ms);
+    return () => clearInterval(t);
+  }, [ms, refresh]);
 
   /**
    * Sửa dữ liệu ngay trên máy (cập nhật lạc quan / thay bằng bản máy chủ trả về sau khi ghi), không tải lại cả danh sách.
