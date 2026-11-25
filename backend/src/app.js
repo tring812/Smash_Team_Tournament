@@ -219,7 +219,7 @@ function createApp({ pool, config }) {
   // ── Nội dung ──
   const visibleCategory = async (req) => {
     const cid = id(req.params.id);
-    await svc.assertVisible(pool, await svc.tournamentOfCategory(pool, cid), me(req));
+    await svc.assertCategoryVisible(pool, cid, me(req));
     return cid;
   };
   api.patch('/categories/:id', auth.requireAuth, async (req, res) => {
@@ -285,6 +285,11 @@ function createApp({ pool, config }) {
     touch(res, m.tournamentId);
     res.json({ ...m, rallies: await rallies.listRallies(pool, mid) });
   };
+  api.post('/matches/:id/start', auth.requireAuth, async (req, res) => {
+    const mid = id(req.params.id);
+    await svc.startMatch(pool, me(req), mid, schemas.startMatch.parse(req.body));
+    await withRallies(res, mid);
+  });
   api.post('/matches/:id/rallies', auth.requireAuth, async (req, res) => {
     const mid = id(req.params.id);
     await rallies.addRally(pool, me(req), mid, schemas.rally.parse(req.body));

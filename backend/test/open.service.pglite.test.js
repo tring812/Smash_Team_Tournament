@@ -12,6 +12,7 @@ let hasPglite = true;
 try { require.resolve('@electric-sql/pglite'); } catch { hasPglite = false; }
 
 const svc = require('../src/services/tournamentService');
+const { beginMatch } = require('./support/match');
 
 const ADMIN = { id: '00000000-0000-4000-8000-0000000000a1', full_name: 'Admin', role: 'admin' };
 const REF = { id: '00000000-0000-4000-8000-0000000000a2', full_name: 'Trọng tài', role: 'user' };
@@ -102,7 +103,8 @@ describe('giải mở rộng (PGlite)', { skip: hasPglite ? false : 'chưa cài 
     const [ga] = await groupsOf();
     const ms = (await svc.listMatches(pool, t.id, { categoryId: cat.id })).filter((m) => m.groupName === 'A');
     const victim = ga[0];
-    const played = ms.find((m) => m.a.id === victim || m.b.id === victim);
+    const pending = ms.find((m) => m.a.id === victim || m.b.id === victim);
+    const played = await beginMatch(pool, ADMIN, REF, pending);
     await svc.recordScore(pool, REF, played.id, { action: 'finish', version: played.version, games: win('a') });
 
     const r =await svc.disqualifyEntry(pool, ADMIN, victim, 'Sai danh tính VĐV');
@@ -125,7 +127,8 @@ describe('giải mở rộng (PGlite)', { skip: hasPglite ? false : 'chưa cài 
   test('hết vòng bảng → nhánh; xếp cả nhánh 1 lần; truất quyền ở nhánh → walkover', async () => {
     for (const m of await svc.listMatches(pool, t.id, { categoryId: cat.id })) {
       if (!['scheduled', 'pending'].includes(m.status)) continue;
-      await svc.recordScore(pool, ADMIN, m.id, { action: 'finish', version: m.version, games: win('a') });
+      const started = await beginMatch(pool, ADMIN, ADMIN, m);
+      await svc.recordScore(pool, ADMIN, m.id, { action: 'finish', version: started.version, games: win('a') });
     }
     const ko = await svc.generateKnockout(pool, ADMIN, cat.id);
     assert.equal(ko.qualifiers, 4);
