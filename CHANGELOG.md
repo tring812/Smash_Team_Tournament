@@ -23,6 +23,7 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 
 ### Changed
 - Tiêu đề tab trình duyệt đổi thành “Smash Team Championship”; nhận diện Red Line trong giao diện không đổi.
+- Dependabot theo dõi cả gói npm của `backend/` và `frontend/` (trước chỉ GitHub Actions): mỗi tuần mở PR nâng bản minor/patch (gộp theo thư mục) và PR riêng cho bản major / bản vá lỗ hổng.
 - Giao diện Red Line dùng góc vuông cho khung, thẻ, nút, nhãn, avatar và hộp thoại trên toàn trang; giữ nguyên màu, bố cục và hiệu ứng chuyển mục.
 - Thanh điều hướng desktop có nền trượt giữa các mục như Lịch thi đấu và Trọng tài; tắt chuyển động khi thiết bị bật chế độ giảm chuyển động.
 - Trang tổng quan quản trị dùng banner Athlonix cho tiến độ, thẻ số liệu nền sáng và lối tắt điều hành. Giữ nguyên quyền và thao tác quản lý giải.
