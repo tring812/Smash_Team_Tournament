@@ -7,7 +7,7 @@
  */
 const { conflict, unprocessable } = require('../errors');
 const { withTx, logEvent } = require('./tournamentService');
-const { lockScorable } = require('./matchService');
+const { lockScorable, matchSelectFrom, presentMatch } = require('./matchService');
 const store = require('./rallyStore');
 const { replay, applyEvent, RallyError } = require('../domain/rally');
 
@@ -37,20 +37,36 @@ async function slotName(c, m, slot) {
 }
 
 /**
- * Ghi games mới vào trận (cache của biên bản) + đánh dấu đang đánh.
+ * Ghi games mới vào trận (cache của biên bản) + đánh dấu đang đánh + chuyển giải sang "đang diễn ra" (lần đầu),
+ * kèm thay đổi biên bản `change` (CTE thêm / xoá match_rallies, tham số từ $5) — TẤT CẢ trong 1 câu lệnh, và trả
+ * về luôn trận đã cập nhật (dạng MATCH_SELECT) để route khỏi phải đọc lại. Mỗi điểm trọng tài bấm đi qua đây.
  * @param {Queryable} c @param {any} m @param {[number, number][]} games @param {string} role @param {Viewer} viewer
+ * @param {{ cte: string, params: unknown[] }} change
  */
-async function saveGames(c, m, games, role, viewer) {
-  await c.query(
-    `UPDATE matches SET games = $2::jsonb, status = 'live', called_at = COALESCE(called_at, now()), referee_user_id = COALESCE(referee_user_id, $3),
-            version = version + 1, updated_at = now()
-      WHERE id = $1`,
-    [m.id, JSON.stringify(games), role === 'referee' ? viewer.id : null],
+async function saveGames(c, m, games, role, viewer, change) {
+  const { rows } = await c.query(
+    `WITH ${change.cte},
+     upd AS (
+       UPDATE matches SET games = $2::jsonb, status = 'live', called_at = COALESCE(called_at, now()),
+              referee_user_id = COALESCE(referee_user_id, $3::uuid), version = version + 1, updated_at = now()
+        WHERE id = $1 RETURNING *
+     ), tour AS (
+       UPDATE tournaments SET status = 'ongoing' WHERE id = $4 AND status = 'published'
+     )
+     ${matchSelectFrom('upd')}`,
+    [m.id, JSON.stringify(games), role === 'referee' ? viewer.id : null, m.tournament_id, ...change.params],
   );
-  if (m.tournament_status === 'published') {
-    await c.query(`UPDATE tournaments SET status = 'ongoing' WHERE id = $1`, [m.tournament_id]);
-  }
+  const row = rows[0];
+  // Câu SELECT chính đọc tournaments theo ảnh chụp TRƯỚC câu lệnh → tự phản ánh việc vừa chuyển "đang diễn ra".
+  if (m.tournament_status === 'published') row.tournament_status = 'ongoing';
+  return row;
 }
+
+/**
+ * Trận + biên bản để trả cho client sau khi thêm / hoàn tác (cùng dạng GET /matches/:id).
+ * @param {any} row hàng MATCH_SELECT @param {Awaited<ReturnType<typeof store.loadEvents>>} events
+ */
+const view = (row, events) => ({ ...presentMatch(row), rallies: events.map(present) });
 
 /**
  * Thêm một sự kiện: start (người giao + nhận) · point (đội thắng pha) · fix_server (sửa người giao).
@@ -75,18 +91,22 @@ async function addRally(pool, viewer, matchId, input) {
       throw err;
     }
     const g = st.games[st.games.length - 1] ?? [0, 0];
-    await c.query(
-      `INSERT INTO match_rallies (match_id, seq, game, type, side, server_slot, receiver_slot, score_a, score_b, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [matchId, seq, Math.min(Math.max(st.games.length, 1), 5), input.type, ev.side,
-        st.server, st.receiver, input.type === 'point' ? g[0] : null, input.type === 'point' ? g[1] : null, viewer.id],
-    );
-    await saveGames(c, m, st.games, role, viewer);
+    const game = Math.min(Math.max(st.games.length, 1), 5);
+    const score = input.type === 'point' ? /** @type {[number, number]} */ ([g[0], g[1]]) : null;
+    const row = await saveGames(c, m, st.games, role, viewer, {
+      cte: `ins AS (
+        INSERT INTO match_rallies (match_id, seq, game, type, side, server_slot, receiver_slot, score_a, score_b, created_by)
+        VALUES ($1, $5, $6, $7, $8, $9, $10, $11, $12, $13))`,
+      params: [seq, game, input.type, ev.side, st.server, st.receiver, score?.[0] ?? null, score?.[1] ?? null, viewer.id],
+    });
     if (input.type === 'fix_server') {
       await logEvent(c, m.tournament_id, m.category_id, viewer.id, 'rally_fix_server',
         { matchId, seq, server: input.server, name: await slotName(c, m, input.server), score: g });
     }
-    return { seq, tournament_started: m.tournament_status === 'published' };
+    // Biên bản sau khi thêm = đã đọc + sự kiện mới (đúng như loadEvents sẽ trả) → khỏi đọc lại.
+    // created_at mặc định now() = thời điểm giao dịch, trùng updated_at của trận vừa ghi.
+    const added = { seq, game, type: input.type, side: ev.side, server: st.server, receiver: st.receiver, score, games: null, at: row.updated_at };
+    return { seq, tournament_started: m.tournament_status === 'published', view: view(row, [...events, /** @type {any} */ (added)]) };
   });
 }
 
@@ -103,12 +123,15 @@ async function undoRally(pool, viewer, matchId, expectedSeq) {
     if (last.seq !== expectedSeq) {
       throw conflict('RALLY_CONFLICT', 'Biên bản vừa được cập nhật từ thiết bị khác — đã tải lại bản mới nhất', { nextSeq: last.seq + 1 });
     }
-    await c.query('DELETE FROM match_rallies WHERE match_id = $1 AND seq = $2', [matchId, last.seq]);
-    const st = replay(events.slice(0, -1), rules, Boolean(m.is_doubles));
-    await saveGames(c, m, st.games, role, viewer);
+    const rest = events.slice(0, -1);
+    const st = replay(rest, rules, Boolean(m.is_doubles));
+    const row = await saveGames(c, m, st.games, role, viewer, {
+      cte: 'del AS (DELETE FROM match_rallies WHERE match_id = $1 AND seq = $5)',
+      params: [last.seq],
+    });
     await logEvent(c, m.tournament_id, m.category_id, viewer.id, 'rally_undo',
       { matchId, seq: last.seq, type: last.type, side: last.side ?? null, score: last.score ?? null });
-    return { seq: last.seq, tournament_started: m.tournament_status === 'published' };
+    return { seq: last.seq, tournament_started: m.tournament_status === 'published', view: view(row, rest) };
   });
 }
 

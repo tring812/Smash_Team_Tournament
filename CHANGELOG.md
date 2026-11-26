@@ -5,6 +5,7 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Trọng tài bấm điểm lưu nhanh hơn** (trước ~2s mỗi điểm): mỗi điểm / hoàn tác trên Bàn điểm (`POST /matches/:id/rallies`, `DELETE /matches/:id/rallies/last`) chỉ còn ~6 lượt gọi DB thay vì ~11 — khoá trận đọc luôn vai trò và trọng tài sân, ghi biên bản + tỉ số + trạng thái giải trong một câu lệnh và trả luôn trận + biên bản, không đọc lại. Backend giữ kết nối DB rảnh 5 phút (trước là 10 giây) kèm TCP keep-alive nên không phải mở kết nối mới sau mỗi pha cầu. Đo với backend ở VN và DB Supabase Singapore: ~0,7–0,9s mỗi điểm thay vì ~2–3,5s. Không đổi API.
 - **Biên bản cộng set cho người thắng game**: game đã xong có thêm cột **Set** cuối khối (số set mỗi bên đã thắng tới hết game đó, bên thắng được +1, tô xanh) và tiêu đề khối ghi "… thắng game"; đầu trang Biên bản ghi **Set 1–0** kèm điểm từng game thay vì chỉ điểm. Bỏ nhãn **G** / **N** cạnh tên VĐV (người giao / nhận đầu game vẫn thấy qua số 0 ở cột đầu).
 - CI chạy các bài kiểm thử frontend, gồm tương thích API bảng đấu, để tránh tái phát lỗi “API không tồn tại”.
 - Bảng đấu và tìm VĐV tự dùng API bảng xếp hạng từng nội dung khi máy chủ chưa hỗ trợ API tổng hợp, thay vì hiện “API không tồn tại”. Vẫn ưu tiên một request trên máy chủ mới; không che lỗi quyền hoặc lỗi dữ liệu.

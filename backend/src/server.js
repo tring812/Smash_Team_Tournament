@@ -9,7 +9,11 @@ const { purgeDeletedTournaments } = require('./services/tournamentService');
 const config = loadConfig();
 const pool = createPool(config.databaseUrl, {
   max: 10,
-  idleTimeoutMillis: 10_000,
+  // Giữ kết nối rảnh 5 phút: trọng tài bấm điểm cách nhau > 10s, mở kết nối mới (TCP + TLS + xác thực tới
+  // DB ở xa) tốn 0,5–4s mỗi lần. keepAlive để NAT / pooler không cắt ngầm kết nối đang rảnh.
+  idleTimeoutMillis: 300_000,
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10_000,
   connectionTimeoutMillis: 5_000,
   statement_timeout: 10_000, // không để 1 query treo giữ connection
 });

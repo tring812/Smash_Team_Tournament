@@ -35,15 +35,19 @@ module.exports = function registerMatchesRoutes(api, { pool, id, me, touch }) {
     // Chỉ trận này đổi — trừ trận ĐẦU TIÊN của giải (giải chuyển sang "đang diễn ra") → tải lại toàn bộ.
     await withRallies(res, mid, !started.tournament_started);
   });
+  // Mỗi điểm: service trả sẵn trận + biên bản đã cập nhật (đọc trong cùng giao dịch) → không đọc lại DB.
+  /** @param {{ tournament_started: boolean, view: any }} out */
+  const sendRallyView = (res, mid, out) => {
+    touch(res, out.view.tournamentId, out.tournament_started ? undefined : mid);
+    res.json(out.view);
+  };
   api.post('/matches/:id/rallies', auth.requireAuth, async (req, res) => {
     const mid = id(req.params.id);
-    const out = await rallies.addRally(pool, me(req), mid, schemas.rally.parse(req.body));
-    await withRallies(res, mid, !out.tournament_started);
+    sendRallyView(res, mid, await rallies.addRally(pool, me(req), mid, schemas.rally.parse(req.body)));
   });
   api.delete('/matches/:id/rallies/last', auth.requireAuth, async (req, res) => {
     const mid = id(req.params.id);
-    const out = await rallies.undoRally(pool, me(req), mid, schemas.rallyUndo.parse(req.query).expectedSeq);
-    await withRallies(res, mid, !out.tournament_started);
+    sendRallyView(res, mid, await rallies.undoRally(pool, me(req), mid, schemas.rallyUndo.parse(req.query).expectedSeq));
   });
   api.put('/matches/:id/score', auth.requireAuth, async (req, res) => {
     const body = schemas.score.parse(req.body);

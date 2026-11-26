@@ -84,6 +84,31 @@ describe('Biên bản diễn biến điểm (PGlite)', { skip: hasPglite ? false
     assert.equal((await rallies.listRallies(pool, match.id)).length, 3);
   });
 
+  test('mỗi điểm / hoàn tác: ít lượt gọi DB, trả sẵn trận + biên bản giống hệt đọc lại', async () => {
+    /** Bọc pool để đếm số câu lệnh gửi tới DB (kể cả trong giao dịch). */
+    let n = 0;
+    const counted = {
+      query: (text, params) => { n += 1; return pool.query(text, params); },
+      connect: async () => {
+        const c = await pool.connect();
+        return { query: (text, params) => { n += 1; return c.query(text, params); }, release: () => c.release() };
+      },
+    };
+    const fresh = async () => ({ ...(await matchSvc.getMatch(pool, match.id)), rallies: await rallies.listRallies(pool, match.id) });
+
+    const added = await rallies.addRally(counted, REF, match.id, { type: 'point', side: 'b', expectedSeq: 4 });
+    // BEGIN · khoá trận (+ vai trò, trọng tài sân) · đọc biên bản · 1 câu ghi trả luôn trận · COMMIT.
+    assert.ok(n <= 5, `addRally should use ≤ 5 DB round trips, used ${n}`);
+    assert.deepEqual(added.view, await fresh(), 'view returned by addRally equals a fresh read');
+    assert.deepEqual(added.view.games, [[1, 2]]);
+
+    n = 0;
+    const undone = await rallies.undoRally(counted, REF, match.id, 4);
+    assert.ok(n <= 6, `undoRally should use ≤ 6 DB round trips (incl. audit log), used ${n}`);
+    assert.deepEqual(undone.view, await fresh(), 'view returned by undoRally equals a fresh read');
+    assert.equal(undone.view.rallies.length, 3);
+  });
+
   test('hoàn tác xoá sự kiện cuối (đúng seq), tính lại tỉ số; nhật ký ghi hoàn tác', async () => {
     await rejectsWith(rallies.undoRally(pool, REF, match.id, 2), 409, 'RALLY_CONFLICT');
     await rallies.undoRally(pool, REF, match.id, 3);
