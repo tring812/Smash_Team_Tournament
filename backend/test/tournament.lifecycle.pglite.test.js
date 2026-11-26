@@ -17,6 +17,7 @@ const categorySvc = require('../src/services/categoryService');
 const entrySvc = require('../src/services/entryService');
 const matchSvc = require('../src/services/matchService');
 const courts = require('../src/services/courtService');
+const rallies = require('../src/services/rallyService');
 
 const ADMIN = { id: '00000000-0000-4000-8000-0000000000e1', full_name: 'Admin', role: 'admin' };
 const CREATOR = { id: '00000000-0000-4000-8000-0000000000e2', full_name: 'Người tạo', role: 'user' };
@@ -77,6 +78,10 @@ describe('Sửa / xoá / khôi phục giải (PGlite)', { skip: hasPglite ? fals
     const { t, ms } = await fullTournament('da-xoa');
     await svc.updateTournament(pool, ADMIN, t.id, { status: 'published' });
     assert.ok((await matchSvc.refereeQueue(pool, REF)).some((m) => m.tournamentId === t.id));
+    // Trận đã gán sân 1 (REF phụ trách) → trước khi xoá, mọi đường nhập điểm đều mở được.
+    const [first] = await matchSvc.listMatches(pool, t.id);
+    await courts.moveMatch(pool, ADMIN, first.id, { court: 1 });
+    const m = await matchSvc.getMatch(pool, first.id);
     await svc.deleteTournament(pool, ADMIN, t.id, 'da-xoa');
     await rejectsWith(svc.getTournament(pool, 'da-xoa', ADMIN), 404);
     assert.ok(!(await svc.listTournaments(pool, ADMIN)).some((x) => x.id === t.id));
@@ -86,6 +91,14 @@ describe('Sửa / xoá / khôi phục giải (PGlite)', { skip: hasPglite ? fals
     await rejectsWith(categorySvc.createCategory(pool, ADMIN, t.id, { code: 'WS', name: 'Đơn nữ', isDoubles: false }), 403);
     await rejectsWith(svc.updateTournament(pool, CREATOR, t.id, { name: 'Sửa sau khi xoá' }), 403);
     await rejectsWith(svc.drawGroups(pool, ADMIN, ms.id), 403);
+    // Nhập điểm (lockScorable) cũng bị khoá — cả trọng tài sân lẫn quản trị viên; giải không bị đổi sang "đang diễn ra".
+    for (const who of [REF, ADMIN]) {
+      await rejectsWith(matchSvc.startMatch(pool, who, m.id, { version: m.version }), 403);
+      await rejectsWith(rallies.addRally(pool, who, m.id, { type: 'start', server: 'a1', receiver: 'b1', expectedSeq: 1 }), 403);
+      await rejectsWith(matchSvc.recordScore(pool, who, m.id, { action: 'save', version: m.version, games: [[1, 0]] }), 403);
+    }
+    const after = (await pool.query('SELECT status FROM tournaments WHERE id = $1', [t.id])).rows[0];
+    assert.equal(after.status, 'published', 'deleted tournament must not flip to ongoing');
   });
 
   test('khôi phục trong 7 ngày; danh sách giải đã xoá chỉ cho quản trị viên / người tạo', async () => {
