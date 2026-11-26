@@ -5,3 +5,17 @@ updates:
     schedule: { interval: weekly }
     groups:
       actions: { patterns: ["*"] }
+  # Gói npm ghim đúng phiên bản (AGENTS.md) → Dependabot mở PR khi có bản mới / bản vá lỗ hổng.
+  # Bản minor/patch gộp 1 PR mỗi thư mục; bản major tách riêng để đọc changelog trước khi nâng.
+  - package-ecosystem: npm
+    directory: /backend
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      backend-minor-patch: { update-types: ["minor", "patch"] }
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      frontend-minor-patch: { update-types: ["minor", "patch"] }
