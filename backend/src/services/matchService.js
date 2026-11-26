@@ -68,24 +68,25 @@ async function advanceWinner(c, m, winnerId, actorId) {
  * @param {{ claim?: boolean }} [opts]
  */
 async function lockScorable(c, matchId, viewer, opts = {}) {
+  // Chạy ở MỖI điểm trọng tài bấm → 1 lượt gọi DB: đọc luôn vai trò người xem và trọng tài phụ trách sân
+  // (trước là 3 câu: trận, roleIn, court_referees). DB ở xa thì mỗi lượt vài chục ms.
   const { rows } = await c.query(
     `SELECT m.*, cat.points_to_win, cat.max_points, cat.games_to_win, cat.round_rules, cat.is_doubles, t.status AS tournament_status,
-            (SELECT max(k.round) FROM matches k WHERE k.category_id = m.category_id AND k.stage = 'knockout') AS ko_rounds
+            (SELECT max(k.round) FROM matches k WHERE k.category_id = m.category_id AND k.stage = 'knockout') AS ko_rounds,
+            (SELECT s.role FROM tournament_staff s WHERE s.tournament_id = m.tournament_id AND s.user_id = $2::uuid) AS viewer_role,
+            (SELECT cr.user_id FROM court_referees cr WHERE cr.tournament_id = m.tournament_id AND cr.court = m.court) AS court_referee_id
        FROM matches m JOIN categories cat ON cat.id = m.category_id JOIN tournaments t ON t.id = m.tournament_id
       WHERE m.id = $1 FOR UPDATE OF m`,
-    [matchId],
+    [matchId, viewer?.id ?? null],
   );
   const m = rows[0];
   if (!m) throw notFound('Không tìm thấy trận');
-  const role = await roleIn(c, m.tournament_id, viewer);
+  // Cùng quy tắc với roleIn(), nhưng đã đọc sẵn trong câu SELECT trên.
+  const role = !viewer ? null : viewer.role === 'admin' ? 'admin' : m.viewer_role ?? null;
   if (!role) throw forbidden();
   if (role === 'referee') {
     // Trọng tài hiệu lực: gán riêng cho trận, nếu không thì trọng tài phụ trách sân của trận.
-    let assigned = m.referee_user_id;
-    if (!assigned && m.court) {
-      const cr = await c.query('SELECT user_id FROM court_referees WHERE tournament_id = $1 AND court = $2', [m.tournament_id, m.court]);
-      assigned = cr.rows[0]?.user_id ?? null;
-    }
+    const assigned = m.referee_user_id ?? (m.court ? m.court_referee_id : null) ?? null;
     if (assigned && assigned !== viewer.id) throw forbidden('Trận này đã phân công cho trọng tài khác');
   }
   if (m.tournament_status === 'completed') throw conflict('TOURNAMENT_CLOSED', 'Giải đã kết thúc');
@@ -287,7 +288,12 @@ async function assignReferee(pool, viewer, matchId, refereeUserId) {
 
 // ───────────────────────────── Đọc (công khai) ─────────────────────────────
 
-const MATCH_SELECT = `
+/**
+ * SELECT trận đầy đủ cho `presentMatch`, đọc từ `source` — bảng `matches` hoặc CTE `upd` có cùng cột
+ * (UPDATE matches … RETURNING *) để câu ghi trả luôn trận đã cập nhật. `source` là hằng trong code, không phải input.
+ * @param {'matches'|'upd'} source
+ */
+const matchSelectFrom = (source) => `
   SELECT m.id, m.tournament_id, m.category_id, cat.code AS category_code, cat.name AS category_name,
          m.stage, g.name AS group_name, m.round, m.position, m.status, m.games, m.court, m.scheduled_at, m.called_at,
          m.version, m.updated_at, m.referee_user_id, ru.full_name AS referee_name,
@@ -298,13 +304,14 @@ const MATCH_SELECT = `
          eb.player1_athlete_id AS b_p1_aid, eb.player2_athlete_id AS b_p2_aid,
          cat.points_to_win, cat.max_points, cat.games_to_win, cat.round_rules, mt.status AS tournament_status,
          (SELECT max(k.round) FROM matches k WHERE k.category_id = m.category_id AND k.stage = 'knockout') AS ko_rounds
-    FROM matches m
+    FROM ${source} m
     JOIN categories cat ON cat.id = m.category_id
     JOIN tournaments mt ON mt.id = m.tournament_id
     LEFT JOIN groups g ON g.id = m.group_id
     LEFT JOIN entries ea ON ea.id = m.entry_a_id
     LEFT JOIN entries eb ON eb.id = m.entry_b_id
     LEFT JOIN users ru ON ru.id = m.referee_user_id`;
+const MATCH_SELECT = matchSelectFrom('matches');
 
 /** Định dạng trận cho client. */
 function presentMatch(r) {
@@ -410,6 +417,6 @@ async function refereeQueue(db, viewer) {
 }
 
 module.exports = {
-  MATCH_SELECT, presentMatch, getMatch, listMatches, getBracket, refereeQueue,
+  MATCH_SELECT, matchSelectFrom, presentMatch, getMatch, listMatches, getBracket, refereeQueue,
   startMatch, recordScore, reopenMatch, assignReferee, lockScorable, advanceWinner, walkoverTo,
 };
