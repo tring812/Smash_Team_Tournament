@@ -81,4 +81,19 @@ describe('liveBus.subscribe', () => {
     assert.deepEqual(events(res), []);
     req.emit('close');
   });
+
+  test('tắt máy chủ: closeAll đóng mọi kết nối đang mở (server.close không bị treo), kết nối đã đóng không bị đóng lại', async () => {
+    const a = fakeStream();
+    const b = fakeStream();
+    for (const s of [a, b]) {
+      s.res.ended = 0;
+      s.res.end = function end() { this.ended += 1; s.req.emit('close'); };
+      assert.equal(live.subscribe(s.req, s.res, T), true);
+    }
+    b.req.emit('close'); // b tự ngắt trước
+    assert.equal(live.closeAll(), 1);
+    assert.equal(a.res.ended, 1);
+    assert.equal(b.res.ended, 0);
+    assert.equal(live.closeAll(), 0, 'không còn kết nối nào');
+  });
 });

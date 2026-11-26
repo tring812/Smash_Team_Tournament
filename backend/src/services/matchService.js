@@ -72,6 +72,7 @@ async function lockScorable(c, matchId, viewer, opts = {}) {
   // (trước là 3 câu: trận, roleIn, court_referees). DB ở xa thì mỗi lượt vài chục ms.
   const { rows } = await c.query(
     `SELECT m.*, cat.points_to_win, cat.max_points, cat.games_to_win, cat.round_rules, cat.is_doubles, t.status AS tournament_status,
+            t.deleted_at AS tournament_deleted_at,
             (SELECT max(k.round) FROM matches k WHERE k.category_id = m.category_id AND k.stage = 'knockout') AS ko_rounds,
             (SELECT s.role FROM tournament_staff s WHERE s.tournament_id = m.tournament_id AND s.user_id = $2::uuid) AS viewer_role,
             (SELECT cr.user_id FROM court_referees cr WHERE cr.tournament_id = m.tournament_id AND cr.court = m.court) AS court_referee_id
@@ -81,8 +82,9 @@ async function lockScorable(c, matchId, viewer, opts = {}) {
   );
   const m = rows[0];
   if (!m) throw notFound('Không tìm thấy trận');
-  // Cùng quy tắc với roleIn(), nhưng đã đọc sẵn trong câu SELECT trên.
-  const role = !viewer ? null : viewer.role === 'admin' ? 'admin' : m.viewer_role ?? null;
+  // Cùng quy tắc với roleIn(), nhưng đã đọc sẵn trong câu SELECT trên — kể cả quy tắc giải đã xoá (mềm):
+  // không ai (cả quản trị viên) nhập điểm / bắt đầu trận được nữa, chỉ khôi phục giải.
+  const role = !viewer || m.tournament_deleted_at ? null : viewer.role === 'admin' ? 'admin' : m.viewer_role ?? null;
   if (!role) throw forbidden();
   if (role === 'referee') {
     // Trọng tài hiệu lực: gán riêng cho trận, nếu không thì trọng tài phụ trách sân của trận.

@@ -4,6 +4,7 @@ const { createPool } = require('./db');
 const { loadConfig } = require('./config');
 const { createApp } = require('./app');
 const { log } = require('./log');
+const live = require('./liveBus');
 const { purgeDeletedTournaments } = require('./services/tournamentService');
 
 const config = loadConfig();
@@ -32,6 +33,10 @@ setInterval(purge, 6 * 3_600_000).unref();
 
 function shutdown(signal) {
   log('info', 'shutdown', { signal });
+  // Đóng luồng SSE TRƯỚC server.close: close chỉ cắt kết nối đang rảnh lúc được gọi, luồng SSE không bao giờ rảnh
+  // → nếu không, server.close chờ tới hạn 10s rồi thoát mã 1, bỏ qua đóng pool DB. Cùng một tick nên không lọt
+  // kết nối SSE mới vào giữa hai lệnh. Client tự kết nối lại (retry 5s) vào máy chủ mới.
+  log('info', 'live_streams_closed', { count: live.closeAll() });
   server.close(async () => {
     await pool.end().catch(() => {});
     process.exit(0);

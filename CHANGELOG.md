@@ -5,6 +5,8 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Giải đã xoá không còn nhập điểm được**: sau khi xoá (mềm) một giải, trọng tài / BTC / quản trị viên vẫn bắt đầu trận, bấm điểm và lưu tỉ số được, và giải bị chuyển sang "Đang diễn ra" dù đã xoá (lỗi từ bản lưu điểm nhanh hơn). Nay mọi thao tác nhập điểm trên giải đã xoá bị từ chối (`403`), như các thao tác khác — chỉ khôi phục được giải.
+- **Tắt / deploy backend không còn treo 10s**: khi có màn hình đang theo dõi trực tiếp (SSE), máy chủ chờ tới hạn rồi thoát lỗi (mã 1) và bỏ qua đóng kết nối DB. Nay đóng các luồng trực tiếp trước rồi mới tắt; màn hình tự kết nối lại sau 5s.
 - **Trọng tài bấm điểm lưu nhanh hơn** (trước ~2s mỗi điểm): mỗi điểm / hoàn tác trên Bàn điểm (`POST /matches/:id/rallies`, `DELETE /matches/:id/rallies/last`) chỉ còn ~6 lượt gọi DB thay vì ~11 — khoá trận đọc luôn vai trò và trọng tài sân, ghi biên bản + tỉ số + trạng thái giải trong một câu lệnh và trả luôn trận + biên bản, không đọc lại. Backend giữ kết nối DB rảnh 5 phút (trước là 10 giây) kèm TCP keep-alive nên không phải mở kết nối mới sau mỗi pha cầu. Đo với backend ở VN và DB Supabase Singapore: ~0,7–0,9s mỗi điểm thay vì ~2–3,5s. Không đổi API.
 - **Biên bản cộng set cho người thắng game**: game đã xong có thêm cột **Set** cuối khối (số set mỗi bên đã thắng tới hết game đó, bên thắng được +1, tô xanh) và tiêu đề khối ghi "… thắng game"; đầu trang Biên bản ghi **Set 1–0** kèm điểm từng game thay vì chỉ điểm. Bỏ nhãn **G** / **N** cạnh tên VĐV (người giao / nhận đầu game vẫn thấy qua số 0 ở cột đầu).
 - CI chạy các bài kiểm thử frontend, gồm tương thích API bảng đấu, để tránh tái phát lỗi “API không tồn tại”.
@@ -23,6 +25,7 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 
 ### Changed
 - Tiêu đề tab trình duyệt đổi thành “Smash Team Championship”; nhận diện Red Line trong giao diện không đổi.
+- Dependabot theo dõi cả gói npm của `backend/` và `frontend/` (trước chỉ GitHub Actions): mỗi tuần mở PR nâng bản minor/patch (gộp theo thư mục) và PR riêng cho bản major / bản vá lỗ hổng.
 - Giao diện Red Line dùng góc vuông cho khung, thẻ, nút, nhãn, avatar và hộp thoại trên toàn trang; giữ nguyên màu, bố cục và hiệu ứng chuyển mục.
 - Thanh điều hướng desktop có nền trượt giữa các mục như Lịch thi đấu và Trọng tài; tắt chuyển động khi thiết bị bật chế độ giảm chuyển động.
 - Trang tổng quan quản trị dùng banner Athlonix cho tiến độ, thẻ số liệu nền sáng và lối tắt điều hành. Giữ nguyên quyền và thao tác quản lý giải.
