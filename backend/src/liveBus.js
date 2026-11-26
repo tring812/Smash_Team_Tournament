@@ -16,6 +16,8 @@ const DEBOUNCE_MS = 250; // gộp nhiều thay đổi liên tiếp (vd xếp l�
 const bus = new EventEmitter();
 bus.setMaxListeners(MAX_SUBSCRIBERS + 10);
 let subscribers = 0;
+/** Kết nối SSE đang mở — để closeAll() đóng hết khi tắt máy chủ. @type {Set<import('express').Response>} */
+const open = new Set();
 
 /** Quá số trận này trong một lần gộp thì coi như "đổi nhiều" → client tải lại toàn bộ. */
 const MAX_MATCH_IDS = 20;
@@ -89,7 +91,9 @@ function subscribe(req, res, tid) {
   };
   const beat = setInterval(() => res.write(': ping\n\n'), HEARTBEAT_MS);
   bus.on(`t:${tid}`, onChange);
+  open.add(res);
   req.on('close', () => {
+    if (!open.delete(res)) return; // 'close' tới lần 2 → đã dọn rồi
     subscribers -= 1;
     clearInterval(beat);
     if (pending) clearTimeout(pending);
@@ -98,4 +102,15 @@ function subscribe(req, res, tid) {
   return true;
 }
 
-module.exports = { publish, subscribe, mergeScope, bus };
+/**
+ * Tắt máy chủ: đóng mọi kết nối SSE đang mở — gọi TRƯỚC `server.close()`. Không có bước này, `server.close()` chờ các
+ * luồng SSE (không bao giờ tự hết) → mỗi lần deploy treo tới hạn 10s rồi thoát mã 1, bỏ qua đóng pool DB. Client tự kết nối lại (`retry: 5000`)
+ * vào máy chủ mới. @returns {number} số kết nối đã đóng
+ */
+function closeAll() {
+  const list = [...open];
+  for (const res of list) res.end();
+  return list.length;
+}
+
+module.exports = { publish, subscribe, closeAll, mergeScope, bus };
