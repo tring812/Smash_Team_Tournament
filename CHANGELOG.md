@@ -22,6 +22,7 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 - **Gọi vào sân không còn ghi đè giờ / sân dự kiến**: trước đây bấm "Gọi vào sân" đổi giờ dự kiến thành giờ gọi (vd 18:00 → 17:27), rút về thì trận mang giờ mới và sân cũ nên bị đẩy lên đầu hàng chờ. Nay giờ gọi lưu riêng (`called_at`), sân dự kiến cất ở cột mới `planned_court`; **Rút về** trả lại đúng giờ và sân dự kiến. **Migration 009** thêm cột và sửa lại các trận đã bị ghi đè (lấy giờ / sân dự kiến từ nhật ký gọi trận).
 
 ### Changed
+- Tiêu đề tab trình duyệt đổi thành “Smash Team Championship”; nhận diện Red Line trong giao diện không đổi.
 - Giao diện Red Line dùng góc vuông cho khung, thẻ, nút, nhãn, avatar và hộp thoại trên toàn trang; giữ nguyên màu, bố cục và hiệu ứng chuyển mục.
 - Thanh điều hướng desktop có nền trượt giữa các mục như Lịch thi đấu và Trọng tài; tắt chuyển động khi thiết bị bật chế độ giảm chuyển động.
 - Trang tổng quan quản trị dùng banner Athlonix cho tiến độ, thẻ số liệu nền sáng và lối tắt điều hành. Giữ nguyên quyền và thao tác quản lý giải.

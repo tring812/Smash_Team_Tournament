@@ -27,7 +27,7 @@ const barlow = localFont({
 });
 
 export const metadata: Metadata = {
-  title: { default: "Red Line · Smash Team", template: "%s · Red Line" },
+  title: { default: "Smash Team Championship", template: "%s · Smash Team Championship" },
   description: "Red Line — giải cầu lông Smash Team. Từ vạch xuất phát đến điểm quyết định: lịch thi đấu, bảng đấu, nhánh loại trực tiếp và bàn trọng tài.",
 };
 
