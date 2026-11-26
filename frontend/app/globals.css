@@ -34,10 +34,6 @@
   --color-slate-700: #3b3b38;
   --color-slate-800: #262624;
   --color-slate-900: #171716;
-  --radius-xl: 0.5rem;
-  --radius-2xl: 0.75rem;
-  --radius-3xl: 1rem;
-
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-barlow), var(--font-inter), sans-serif;
 
@@ -58,6 +54,11 @@ body {
   background-color: var(--background);
   color: var(--foreground);
 }
+
+/* Đặt ngoài lớp tiện ích Tailwind để góc vuông áp dụng cả cho rounded-full và bán kính tuỳ chỉnh. */
+:where(body, body *),
+:where(body, body *)::before,
+:where(body, body *)::after { border-radius: 0; }
 
 ::selection { background: #dc2626; color: #fff; }
 
@@ -135,7 +136,7 @@ body {
 .admin-workspace .redline-card h2 { font-family: var(--font-sans); font-size: 0.9375rem; font-style: normal; text-transform: none; letter-spacing: -0.015em; }
 .admin-workspace summary::-webkit-details-marker { display: none; }
 
-:focus-visible { outline: 3px solid #dc2626; outline-offset: 2px; border-radius: 8px; }
+:focus-visible { outline: 3px solid #dc2626; outline-offset: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
@@ -173,7 +174,7 @@ body {
 
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #fca5a5; border-radius: 4px; }
+::-webkit-scrollbar-thumb { background: #fca5a5; border-radius: 0; }
 ::-webkit-scrollbar-thumb:hover { background: #dc2626; }
 
 /* iOS safe area (giống web CLB) */

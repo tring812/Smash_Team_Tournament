@@ -5,6 +5,7 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Trọng tài bấm điểm lưu nhanh hơn** (trước ~2s mỗi điểm): mỗi điểm / hoàn tác trên Bàn điểm (`POST /matches/:id/rallies`, `DELETE /matches/:id/rallies/last`) chỉ còn ~6 lượt gọi DB thay vì ~11 — khoá trận đọc luôn vai trò và trọng tài sân, ghi biên bản + tỉ số + trạng thái giải trong một câu lệnh và trả luôn trận + biên bản, không đọc lại. Backend giữ kết nối DB rảnh 5 phút (trước là 10 giây) kèm TCP keep-alive nên không phải mở kết nối mới sau mỗi pha cầu. Đo với backend ở VN và DB Supabase Singapore: ~0,7–0,9s mỗi điểm thay vì ~2–3,5s. Không đổi API.
 - **Biên bản cộng set cho người thắng game**: game đã xong có thêm cột **Set** cuối khối (số set mỗi bên đã thắng tới hết game đó, bên thắng được +1, tô xanh) và tiêu đề khối ghi "… thắng game"; đầu trang Biên bản ghi **Set 1–0** kèm điểm từng game thay vì chỉ điểm. Bỏ nhãn **G** / **N** cạnh tên VĐV (người giao / nhận đầu game vẫn thấy qua số 0 ở cột đầu).
 - CI chạy các bài kiểm thử frontend, gồm tương thích API bảng đấu, để tránh tái phát lỗi “API không tồn tại”.
 - Bảng đấu và tìm VĐV tự dùng API bảng xếp hạng từng nội dung khi máy chủ chưa hỗ trợ API tổng hợp, thay vì hiện “API không tồn tại”. Vẫn ưu tiên một request trên máy chủ mới; không che lỗi quyền hoặc lỗi dữ liệu.
@@ -21,6 +22,7 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 - **Gọi vào sân không còn ghi đè giờ / sân dự kiến**: trước đây bấm "Gọi vào sân" đổi giờ dự kiến thành giờ gọi (vd 18:00 → 17:27), rút về thì trận mang giờ mới và sân cũ nên bị đẩy lên đầu hàng chờ. Nay giờ gọi lưu riêng (`called_at`), sân dự kiến cất ở cột mới `planned_court`; **Rút về** trả lại đúng giờ và sân dự kiến. **Migration 009** thêm cột và sửa lại các trận đã bị ghi đè (lấy giờ / sân dự kiến từ nhật ký gọi trận).
 
 ### Changed
+- Giao diện Red Line dùng góc vuông cho khung, thẻ, nút, nhãn, avatar và hộp thoại trên toàn trang; giữ nguyên màu, bố cục và hiệu ứng chuyển mục.
 - Thanh điều hướng desktop có nền trượt giữa các mục như Lịch thi đấu và Trọng tài; tắt chuyển động khi thiết bị bật chế độ giảm chuyển động.
 - Trang tổng quan quản trị dùng banner Athlonix cho tiến độ, thẻ số liệu nền sáng và lối tắt điều hành. Giữ nguyên quyền và thao tác quản lý giải.
 - Làm mới trang chủ Red Line theo bố cục Athlonix: banner chia đôi, dải sáng/tối xen kẽ, giải nổi bật, bộ lọc trạng thái và mục hỏi đáp. Giữ nền sáng cho dữ liệu thi đấu và biểu mẫu.
