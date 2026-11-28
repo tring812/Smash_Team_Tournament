@@ -6,6 +6,7 @@
  *   vòng bảng      : round_rules.group                              → luật mặc định của nội dung
  *   loại trực tiếp : round_rules.knockout[<đếm ngược từ chung kết>] → round_rules.knockout["*"] → mặc định
  * Đếm ngược: 1 = Chung kết, 2 = Bán kết, 3 = Tứ kết, 4 = vòng 1/8, 5 = 1/16, 6 = 1/32.
+ * Tranh hạng Ba–Tư dùng cùng luật với bán kết.
  */
 const { assertRules } = require('./scoring');
 
@@ -21,23 +22,24 @@ const defaultRules = (cat) => ({ pointsToWin: cat.points_to_win, maxPoints: cat.
 /**
  * Khoá luật áp cho một trận: 'group' | 'ko:<n>' (n đếm ngược từ chung kết).
  * @param {'group'|'knockout'} stage @param {number} round @param {number|null|undefined} koRounds tổng số vòng của nhánh
+ * @param {boolean} [isThirdPlace]
  */
-function scopeKey(stage, round, koRounds) {
+function scopeKey(stage, round, koRounds, isThirdPlace = false) {
   if (stage === 'group') return 'group';
-  return `ko:${(koRounds ?? round) - round + 1}`;
+  return `ko:${isThirdPlace ? 2 : (koRounds ?? round) - round + 1}`;
 }
 
 /**
  * Luật hiệu lực cho một trận.
  * @param {any} cat hàng categories (có round_rules) @param {'group'|'knockout'} stage @param {number} round
- * @param {number|null|undefined} koRounds
+ * @param {number|null|undefined} koRounds @param {boolean} [isThirdPlace]
  * @returns {ScoringRules}
  */
-function effectiveRules(cat, stage, round, koRounds) {
+function effectiveRules(cat, stage, round, koRounds, isThirdPlace = false) {
   /** @type {RoundRules} */
   const rr = cat.round_rules ?? {};
   if (stage === 'group') return rr.group ?? defaultRules(cat);
-  const fromEnd = String((koRounds ?? round) - round + 1);
+  const fromEnd = scopeKey(stage, round, koRounds, isThirdPlace).slice(3);
   return rr.knockout?.[fromEnd] ?? rr.knockout?.['*'] ?? defaultRules(cat);
 }
 

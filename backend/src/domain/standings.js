@@ -66,10 +66,11 @@ function tally(ids, matches) {
  * @param {string[]} entryIds
  * @param {FinishedMatch[]} matches
  * @param {Record<string, number>} [rating]  dùng phá hoà cuối cùng (cao hơn xếp trên)
+ * @param {string[]} [unrankedIds]  đối thủ đã thi đấu nhưng không được xếp hạng
  * @returns {StandingRow[]}
  */
-function computeStandings(entryIds, matches, rating = {}) {
-  const all = tally(entryIds, matches);
+function computeStandings(entryIds, matches, rating = {}, unrankedIds = []) {
+  const all = tally([...entryIds, ...unrankedIds], matches);
 
   /** @param {string} x @param {string} y @returns {number} */
   const fallback = (x, y) => (rating[y] ?? 0) - (rating[x] ?? 0) || (x < y ? -1 : 1);

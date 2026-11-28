@@ -1,24 +1,25 @@
 "use client";
 
 import { useMemo, useState, type FormEvent } from "react";
-import { IdCard, Pencil, Phone, Search, UserRound } from "lucide-react";
+import { IdCard, Pencil, Phone, Search, UserRound, UserX } from "lucide-react";
 import { api } from "../../../../lib/api";
 import { usePoll } from "../../../../lib/usePoll";
-import type { Athlete } from "../../../../lib/types";
-import { Button, Card, CardSkeleton, DqBadge, EmptyState, Field, Modal, Notice, PageHeader } from "../../../../components/ui";
+import type { Athlete, AthleteDisqualification } from "../../../../lib/types";
+import { Button, Card, CardSkeleton, DqBadge, EmptyState, Field, Modal, Notice, PageHeader, Select } from "../../../../components/ui";
 import { useAdmin } from "../AdminContext";
 
 const fold = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/gi, "d").toLowerCase();
 
 /**
  * VẬN ĐỘNG VIÊN — hồ sơ theo giải (CHỈ BTC: có MSSV/SĐT/email).
- * Dùng khi: điểm danh / đối chiếu thẻ sinh viên, gọi điện VĐV vắng mặt, sửa tên/MSSV gõ sai (đổi tên cập nhật mọi đội).
+ * Dùng để đối chiếu thông tin, sửa hồ sơ hoặc xử lý truất quyền VĐV.
  */
 export default function AthletesPage() {
   const { t, version, busy, act } = useAdmin();
   const list = usePoll((s) => api<Athlete[]>(`/tournaments/${t.id}/athletes`, { signal: s }), [t.id, version], 60_000);
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState<Athlete | null>(null);
+  const [disqualifying, setDisqualifying] = useState<Athlete | null>(null);
 
   const rows = useMemo(() => {
     const k = fold(q.trim());
@@ -32,6 +33,19 @@ export default function AthletesPage() {
     for (const a of list.data ?? []) c.set(fold(a.full_name), (c.get(fold(a.full_name)) ?? 0) + 1);
     return c;
   }, [list.data]);
+
+  const controls = (a: Athlete) => (
+    <div className="flex flex-wrap justify-end gap-1">
+      <Button variant="ghost" className="px-3" disabled={busy} onClick={() => setEditing(a)} aria-label={`Sửa hồ sơ ${a.full_name}`}>
+        <Pencil className="h-4 w-4" aria-hidden />
+      </Button>
+      {a.entries.some((entry) => entry.canDisqualify) && (
+        <Button variant="outline" className="px-3" disabled={busy} onClick={() => setDisqualifying(a)} aria-label={`Truất quyền ${a.full_name}`}>
+          <UserX className="h-4 w-4" aria-hidden />Truất quyền
+        </Button>
+      )}
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -66,7 +80,7 @@ export default function AthletesPage() {
                     <th scope="col" className="py-3 pr-3">SĐT</th>
                     <th scope="col" className="py-3 pr-3">CLB</th>
                     <th scope="col" className="py-3 pr-3">Nội dung</th>
-                    <th scope="col" className="py-3 pr-5"><span className="sr-only">Sửa</span></th>
+                    <th scope="col" className="py-3 pr-5"><span className="sr-only">Thao tác</span></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -88,11 +102,7 @@ export default function AthletesPage() {
                           ))}
                         </span>
                       </td>
-                      <td className="py-3 pr-5 text-right">
-                        <Button variant="ghost" className="px-3" disabled={busy} onClick={() => setEditing(a)} aria-label={`Sửa hồ sơ ${a.full_name}`}>
-                          <Pencil className="h-4 w-4" aria-hidden />
-                        </Button>
-                      </td>
+                      <td className="py-3 pr-5 text-right">{controls(a)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -100,18 +110,18 @@ export default function AthletesPage() {
             </div>
             <ul className="space-y-3 md:hidden">
               {rows.map((a) => (
-                <li key={a.id} className="flex items-start gap-3 rounded-2xl border border-slate-100 p-3 text-sm">
+                <li key={a.id} className="flex flex-wrap items-start gap-3 rounded-2xl border border-slate-100 p-3 text-sm">
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-slate-900">{a.full_name}</p>
                     <p className="mt-1 flex flex-wrap gap-x-3 text-xs text-slate-600">
                       <span className="inline-flex items-center gap-1"><IdCard className="h-3.5 w-3.5" aria-hidden />{a.student_id ?? "—"}</span>
                       <span className="inline-flex items-center gap-1"><Phone className="h-3.5 w-3.5" aria-hidden />{a.phone ? <a href={`tel:${a.phone}`}>{a.phone}</a> : "—"}</span>
                     </p>
-                    <p className="mt-1 text-xs text-slate-500">{a.entries.map((e) => e.categoryCode).join(" · ") || "Chưa đăng ký nội dung"}</p>
+                    <p className="mt-1 flex flex-wrap gap-1 text-xs text-slate-500">
+                      {a.entries.length ? a.entries.map((e) => <span key={e.entryId}>{e.categoryCode} {e.disqualified && <DqBadge />}</span>) : "Chưa đăng ký nội dung"}
+                    </p>
                   </div>
-                  <Button variant="ghost" className="px-3" disabled={busy} onClick={() => setEditing(a)} aria-label={`Sửa hồ sơ ${a.full_name}`}>
-                    <Pencil className="h-4 w-4" aria-hidden />
-                  </Button>
+                  {controls(a)}
                 </li>
               ))}
             </ul>
@@ -121,7 +131,64 @@ export default function AthletesPage() {
 
       <EditAthlete key={editing?.id ?? "none"} athlete={editing} onClose={() => setEditing(null)}
         onSaved={(name) => act(async () => undefined, `Đã cập nhật hồ sơ ${name}`)} />
+      {disqualifying && <DisqualifyAthlete key={disqualifying.id} athlete={disqualifying} onClose={() => setDisqualifying(null)} />}
     </div>
+  );
+}
+
+function DisqualifyAthlete({ athlete, onClose }: { athlete: Athlete; onClose: () => void }) {
+  const { act } = useAdmin();
+  const eligible = athlete.entries.filter((entry) => entry.canDisqualify);
+  const [scope, setScope] = useState(eligible.length === 1 ? eligible[0]?.categoryId ?? "" : "");
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const affected = eligible.filter((entry) => scope === "tournament" || scope === entry.categoryId);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    const body: AthleteDisqualification = scope === "tournament"
+      ? { scope, reason: reason.trim() }
+      : { scope: "category", categoryId: scope, reason: reason.trim() };
+    setError(null);
+    setSaving(true);
+    try {
+      const out = await api<{ entries: { entryId: string }[] }>(`/athletes/${athlete.id}/disqualify`, { method: "POST", body });
+      await act(async () => undefined, `Đã truất quyền ${athlete.full_name} ở ${out.entries.length} nội dung`);
+      onClose();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`Truất quyền ${athlete.full_name}`}>
+      <form className="space-y-4" onSubmit={submit}>
+        {error && <Notice kind="error">{error}</Notice>}
+        <Select label="Phạm vi" required value={scope} onChange={(e) => setScope(e.target.value)}>
+          <option value="">— Chọn phạm vi —</option>
+          {eligible.map((entry) => <option key={entry.entryId} value={entry.categoryId}>{entry.categoryCode}</option>)}
+          <option value="tournament">Toàn giải (các nội dung còn thi đấu)</option>
+        </Select>
+        {affected.length > 0 && (
+          <div className="rounded-lg bg-slate-50 p-3 text-sm">
+            <p className="font-semibold">Đội bị ảnh hưởng</p>
+            <ul className="mt-1 list-disc space-y-1 pl-5">
+              {affected.map((entry) => <li key={entry.entryId}>{entry.categoryCode} · {entry.entryName}</li>)}
+            </ul>
+          </div>
+        )}
+        <p className="text-sm text-slate-600">Giữ nguyên kết quả đã chốt. Huỷ các trận vòng bảng chưa chốt; ở loại trực tiếp, đối thủ đủ điều kiện thắng W.O.</p>
+        <Field label="Lý do truất quyền" required minLength={3} maxLength={300} value={reason} onChange={(e) => setReason(e.target.value)}
+          hint="Chỉ lưu trong nhật ký BTC. Không ghi thông tin liên hệ hay mã số sinh viên." />
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose}>Huỷ</Button>
+          <Button type="submit" variant="danger" loading={saving} disabled={!affected.length || reason.trim().length < 3}>Xác nhận truất quyền</Button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

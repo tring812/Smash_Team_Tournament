@@ -6,9 +6,9 @@
 
 const { notFound, conflict, unprocessable } = require('../errors');
 const { withTx, requireOrganizer, logEvent, entryLabel } = require('./tournamentService');
-const { STARTED_SQL, insertRoundRobin } = require('./shared');
+const { STARTED_SQL, DISQUALIFIABLE_ENTRY_SQL, insertRoundRobin } = require('./shared');
 const { loadCategory } = require('./categoryService');
-const { walkoverTo } = require('./matchService');
+const { settleDisqualifiedMatch } = require('./matchService');
 
 /** @typedef {import('./tournamentService').Pool} Pool */
 /** @typedef {import('./tournamentService').Queryable} Queryable */
@@ -99,7 +99,7 @@ async function removeEntry(pool, viewer, entryId) {
 }
 
 /**
- * Huỷ (status 'cancelled') các trận vòng bảng chưa huỷ có đội bị truất quyền; lưu trạng thái cũ để khôi phục.
+ * Huỷ các trận vòng bảng chưa chốt kết quả có đội bị truất quyền; lưu trạng thái cũ để khôi phục.
  * @param {Queryable} c @param {string} categoryId @param {string|null} [entryId] null = mọi đội đang bị truất quyền
  * @returns {Promise<number>}
  */
@@ -110,7 +110,7 @@ async function cancelDisqualifiedGroupMatches(c, categoryId, entryId = null) {
                                         'scheduled_at', m.scheduled_at, 'finished_at', m.finished_at),
         status = 'cancelled', winner_entry_id = NULL, finished_at = NULL, court = NULL, scheduled_at = NULL,
         version = version + 1, updated_at = now()
-      WHERE m.category_id = $1 AND m.stage = 'group' AND m.status <> 'cancelled'
+      WHERE m.category_id = $1 AND m.stage = 'group' AND m.status IN ('pending', 'scheduled', 'live')
         AND EXISTS (SELECT 1 FROM entries e WHERE e.id IN (m.entry_a_id, m.entry_b_id) AND e.disqualified_at IS NOT NULL
                       AND ($2::uuid IS NULL OR e.id = $2::uuid))`,
     [categoryId, entryId],
@@ -133,7 +133,7 @@ async function loadEntryForUpdate(c, entryId) {
 
 /**
  * Truất quyền thi đấu.
- *  - Vòng bảng: huỷ MỌI trận vòng bảng của đội (kể cả đã đánh) — BXH tính như đội chưa từng tham gia (BWF).
+ *  - Vòng bảng: chỉ huỷ trận chưa chốt kết quả.
  *  - Loại trực tiếp: trận đang chờ của đội → xử walkover cho đối thủ; nếu chưa biết đối thủ, tự xử khi đối thủ tới.
  * @param {Pool} pool @param {Viewer} viewer @param {string} entryId @param {string} reason
  */
@@ -144,28 +144,66 @@ async function disqualifyEntry(pool, viewer, entryId, reason) {
     if (e.disqualified_at) throw conflict('ALREADY_DISQUALIFIED', 'Đội này đã bị truất quyền');
     if (e.stage === 'setup') throw conflict('NOT_DRAWN', 'Chưa bốc thăm — hãy xoá đội khỏi danh sách thay vì truất quyền');
     if (e.stage === 'completed') throw conflict('CATEGORY_COMPLETED', 'Nội dung đã kết thúc');
-    await c.query('UPDATE entries SET disqualified_at = now(), dq_reason = $2 WHERE id = $1', [entryId, reason]);
-    let cancelled = 0;
-    let walkover = null;
-    if (e.stage === 'groups') {
-      cancelled = await cancelDisqualifiedGroupMatches(c, e.cat_id, entryId);
-    } else {
-      const { rows } = await c.query(
-        `SELECT * FROM matches WHERE category_id = $1 AND stage = 'knockout' AND status IN ('pending', 'scheduled', 'live')
-            AND $2 IN (entry_a_id, entry_b_id) FOR UPDATE`, [e.cat_id, entryId],
-      );
-      const m = rows[0];
-      if (m && m.entry_a_id && m.entry_b_id) {
-        const other = m.entry_a_id === entryId ? m.entry_b_id : m.entry_a_id;
-        await walkoverTo(c, m, other, viewer.id);
-        walkover = m.id;
-      }
-    }
-    await logEvent(c, e.tournament_id, e.cat_id, viewer.id, 'disqualify', {
-      entryId, name: entryLabel(e), reason, cancelledMatches: cancelled, walkoverMatchId: walkover,
-    });
-    return { entryId, cancelledMatches: cancelled, walkoverMatchId: walkover };
+    return disqualifyRegistration(c, viewer, e, reason);
   });
+}
+
+/**
+ * Truất quyền theo hồ sơ VĐV: cập nhật các đội đủ điều kiện trong phạm vi đã chọn, trong một giao dịch.
+ * @param {Pool} pool @param {Viewer} viewer @param {string} athleteId
+ * @param {{scope: 'category', categoryId: string, reason: string} | {scope: 'tournament', reason: string}} input
+ */
+async function disqualifyAthlete(pool, viewer, athleteId, input) {
+  return withTx(pool, async (c) => {
+    const a = (await c.query('SELECT id, tournament_id, full_name FROM athletes WHERE id = $1', [athleteId])).rows[0];
+    if (!a) throw notFound('Không tìm thấy VĐV');
+    await requireOrganizer(c, a.tournament_id, viewer);
+    const { rows } = await c.query(
+      `SELECT e.*, c.stage, c.id AS cat_id, c.tournament_id
+         FROM entries e JOIN categories c ON c.id = e.category_id
+        WHERE c.tournament_id = $1 AND $2 IN (e.player1_athlete_id, e.player2_athlete_id)
+          AND ($3::uuid IS NULL OR c.id = $3)
+        ORDER BY c.id, e.id FOR UPDATE OF c, e`,
+      [a.tournament_id, athleteId, input.scope === 'category' ? input.categoryId : null],
+    );
+    const entries = [];
+    for (const e of rows) {
+      if (e.disqualified_at || e.stage === 'completed') continue;
+      // Đọc trạng thái trận sau khi đã khoá nội dung/đội để không áp quyết định lên vòng đã kết thúc.
+      const { rows: eligible } = await c.query(
+        `SELECT 1 FROM entries e JOIN categories c ON c.id = e.category_id
+          WHERE e.id = $1 AND ${DISQUALIFIABLE_ENTRY_SQL}`, [e.id],
+      );
+      if (eligible.length) entries.push(await disqualifyRegistration(c, viewer, e, input.reason, {
+        athleteId: a.id, athleteName: a.full_name, scope: input.scope,
+      }));
+    }
+    if (!entries.length) throw conflict('NO_DISQUALIFIABLE_ENTRY', 'VĐV không còn đội nào có thể truất quyền trong phạm vi này');
+    return { tournamentId: a.tournament_id, entries };
+  });
+}
+
+/** @param {Queryable} c @param {Viewer} viewer @param {any} e @param {string} reason
+ * @param {{athleteId: string, athleteName: string, scope: string}} [source] */
+async function disqualifyRegistration(c, viewer, e, reason, source) {
+  // Lý do về cá nhân chỉ ghi nhật ký BTC, không đưa vào bảng đấu công khai.
+  await c.query('UPDATE entries SET disqualified_at = now(), dq_reason = $2 WHERE id = $1', [e.id, source ? null : reason]);
+  let cancelled = 0;
+  let walkover = null;
+  if (e.stage === 'groups') {
+    cancelled = await cancelDisqualifiedGroupMatches(c, e.cat_id, e.id);
+  } else if (e.stage === 'knockout') {
+    const { rows } = await c.query(
+      `SELECT * FROM matches WHERE category_id = $1 AND stage = 'knockout' AND status IN ('pending', 'scheduled', 'live')
+          AND $2 IN (entry_a_id, entry_b_id) FOR UPDATE`, [e.cat_id, e.id],
+    );
+    const m = rows[0];
+    if (await settleDisqualifiedMatch(c, m, viewer.id)) walkover = m.id;
+  }
+  await logEvent(c, e.tournament_id, e.cat_id, viewer.id, 'disqualify', {
+    entryId: e.id, name: entryLabel(e), reason, cancelledMatches: cancelled, walkoverMatchId: walkover, ...source,
+  });
+  return { entryId: e.id, cancelledMatches: cancelled, walkoverMatchId: walkover };
 }
 
 /**
@@ -178,7 +216,11 @@ async function reinstateEntry(pool, viewer, entryId) {
     const e = await loadEntryForUpdate(c, entryId);
     await requireOrganizer(c, e.tournament_id, viewer);
     if (!e.disqualified_at) throw conflict('NOT_DISQUALIFIED', 'Đội này không bị truất quyền');
-    if (e.stage !== 'groups') throw conflict('KNOCKOUT_STARTED', 'Chỉ huỷ truất quyền được khi chưa tạo nhánh loại trực tiếp');
+    if (!['setup', 'groups'].includes(e.stage)) throw conflict('KNOCKOUT_STARTED', 'Chỉ huỷ truất quyền được khi chưa tạo nhánh loại trực tiếp');
+    if (e.stage === 'groups') {
+      const member = await c.query('SELECT 1 FROM group_members WHERE entry_id = $1', [entryId]);
+      if (!member.rows.length) throw conflict('ENTRY_NOT_DRAWN', 'Đội không có tên trong lần bốc thăm hiện tại, không thể khôi phục vào bảng');
+    }
     await c.query('SELECT id FROM tournaments WHERE id = $1 FOR UPDATE', [e.tournament_id]);
     await c.query('UPDATE entries SET disqualified_at = NULL, dq_reason = NULL WHERE id = $1', [entryId]);
     const { rows, rowCount } = await c.query(
@@ -265,12 +307,13 @@ async function updateEntry(pool, viewer, entryId, input) {
   return withTx(pool, async (c) => {
     const e = await loadEntryForUpdate(c, entryId);
     await requireOrganizer(c, e.tournament_id, viewer);
+    if (e.disqualified_at) throw conflict('ENTRY_DISQUALIFIED', 'Đội đã bị truất quyền, không thể thay VĐV');
     if (e.is_doubles !== Boolean(input.player2Name)) {
       throw unprocessable(`Nội dung ${e.is_doubles ? 'đôi cần 2' : 'đơn chỉ cần 1'} VĐV`);
     }
     if (e.stage !== 'setup') {
       const started = await c.query(
-        `SELECT 1 FROM matches WHERE $1 IN (entry_a_id, entry_b_id) AND status <> 'cancelled' AND ${STARTED_SQL} LIMIT 1`, [entryId],
+        `SELECT 1 FROM matches WHERE $1 IN (entry_a_id, entry_b_id) AND ${STARTED_SQL} LIMIT 1`, [entryId],
       );
       if (started.rows[0]) throw conflict('ENTRY_STARTED', 'Đội đã thi đấu, không thể thay VĐV');
     }
@@ -304,5 +347,5 @@ async function updateEntry(pool, viewer, entryId, input) {
 }
 
 module.exports = {
-  addEntries, removeEntry, updateEntry, disqualifyEntry, reinstateEntry, swapEntries, loadEntryForUpdate, pruneAthletes,
+  addEntries, removeEntry, updateEntry, disqualifyEntry, disqualifyAthlete, reinstateEntry, swapEntries, loadEntryForUpdate, pruneAthletes,
 };

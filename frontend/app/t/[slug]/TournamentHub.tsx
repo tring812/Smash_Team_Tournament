@@ -112,7 +112,7 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
   }, [standingsRaw.data, standingsRaw.error, cats, needStandings]);
 
   const bracketPath = tab === "bracket" && focusCat ? `/categories/${focusCat.id}/bracket` : null;
-  const bracket = usePoll(
+  const bracket = usePoll<Bracket>(
     (s) => (bracketPath ? api<Bracket>(bracketPath, { signal: s }) : Promise.resolve({ rounds: [] })),
     [bracketPath, tick, resultTick], streaming ? 30_000 : 10_000, bracketPath ? `hub:${bracketPath}` : undefined,
   );
@@ -123,7 +123,10 @@ export function TournamentHub({ tab }: { tab: HubTab }) {
 
   const all = useMemo(() => (matches.data ?? []).map(patch).filter((m) => m.status !== "bye" && m.status !== "cancelled"), [matches.data, patch]);
   const bracketData = useMemo(() => (bracket.data
-    ? { rounds: bracket.data.rounds.map((r) => ({ ...r, matches: r.matches.map(patch) })) }
+    ? {
+        rounds: bracket.data.rounds.map((r) => ({ ...r, matches: r.matches.map(patch) })),
+        thirdPlace: bracket.data.thirdPlace ? patch(bracket.data.thirdPlace) : null,
+      }
     : null), [bracket.data, patch]);
   const days = useMemo(() => [...new Set(all.filter((m) => m.scheduledAt).map((m) => m.scheduledAt as string))]
     .reduce<{ key: string; iso: string }[]>((acc, iso) => (acc.some((d) => d.key === dayKey(iso)) ? acc : [...acc, { key: dayKey(iso), iso }]), [])

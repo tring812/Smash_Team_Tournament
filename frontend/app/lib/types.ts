@@ -47,6 +47,7 @@ export interface Category {
   is_doubles: boolean;
   group_count: number;
   advance_per_group: number;
+  third_place?: boolean;
   points_to_win: number;
   max_points: number;
   games_to_win: number;
@@ -124,6 +125,7 @@ export interface Match {
   stage: "group" | "knockout";
   groupName: string | null;
   round: number;
+  isThirdPlace?: boolean;
   /** "Lượt 2" (vòng bảng) hoặc "Bán kết", "Chung kết"… (loại trực tiếp) */
   roundLabel: string;
   position: number;
@@ -172,6 +174,7 @@ export interface GroupStanding {
 
 export interface Bracket {
   rounds: { round: number; label: string; matches: Match[] }[];
+  thirdPlace?: Match | null;
 }
 
 /**
@@ -210,8 +213,16 @@ export interface Athlete {
   email: string | null;
   club: string;
   created_at: string;
-  entries: { entryId: string; categoryCode: string; entryName: string; disqualified: boolean }[];
+  entries: { entryId: string; categoryId: string; categoryCode: string; entryName: string; disqualified: boolean; canDisqualify: boolean }[];
 }
+
+export type ResultCorrection = { version: number; reason: string } & (
+  { action: "finish"; games: Game[] } | { action: "walkover"; walkoverWinner: "a" | "b" }
+);
+
+export type AthleteDisqualification = { reason: string } & (
+  { scope: "category"; categoryId: string } | { scope: "tournament" }
+);
 
 export interface TournamentEvent {
   id: string;
@@ -219,7 +230,7 @@ export interface TournamentEvent {
     | "category_create" | "category_update" | "category_delete"
     | "call_match" | "uncall_match" | "move_match" | "court_referee" | "athlete_update" | "rules_update"
     | "referee_create" | "referee_update" | "referee_remove"
-    | "rally_fix_server" | "rally_undo" | "score_confirm" | "start_match";
+    | "rally_fix_server" | "rally_undo" | "score_confirm" | "start_match" | "score_correct";
   details: Record<string, unknown>;
   created_at: string;
   actor: string;

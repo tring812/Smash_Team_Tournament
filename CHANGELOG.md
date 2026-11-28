@@ -4,9 +4,15 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Tranh hạng Ba–Tư:** BTC có thể bật theo từng nội dung trước khi tạo nhánh. Hai đội thua bán kết gặp nhau với cùng luật điểm bán kết; nội dung chỉ hoàn tất khi cả chung kết và tranh hạng đã có kết quả hoặc đã xử lý xong. Thêm migration `014_third_place.sql`, tuỳ chọn `thirdPlace` ở API tạo/sửa nội dung và trận `thirdPlace` trong API nhánh.
+- **Sửa kết quả đã chốt có lý do** trong Trận đấu & trọng tài: BTC sửa tỉ số hoặc kết quả W.O. mà không mở lại trận hay chiếm sân. Nhật ký giữ kết quả trước, sau và người sửa. Thêm `PUT /matches/:id/result` và migration `013_score_correction.sql`.
+- **Truất quyền theo VĐV** trong trang Vận động viên: BTC chọn một nội dung hoặc toàn giải, xem các đội bị ảnh hưởng và ghi lý do riêng trong nhật ký. Thêm `POST /athletes/:id/disqualify`.
+
 ### Fixed
 - **Giải đã xoá không còn nhập điểm được**: sau khi xoá (mềm) một giải, trọng tài / BTC / quản trị viên vẫn bắt đầu trận, bấm điểm và lưu tỉ số được, và giải bị chuyển sang "Đang diễn ra" dù đã xoá (lỗi từ bản lưu điểm nhanh hơn). Nay mọi thao tác nhập điểm trên giải đã xoá bị từ chối (`403`), như các thao tác khác — chỉ khôi phục được giải.
 - **Tắt / deploy backend không còn treo 10s**: khi có màn hình đang theo dõi trực tiếp (SSE), máy chủ chờ tới hạn rồi thoát lỗi (mã 1) và bỏ qua đóng kết nối DB. Nay đóng các luồng trực tiếp trước rồi mới tắt; màn hình tự kết nối lại sau 5s.
+- Không cho thay VĐV của đội đã thi đấu, kể cả khi kết quả cũ đang ở trạng thái huỷ chờ khôi phục. Không mở lại trận dẫn vào nếu trận vòng sau đã được gọi vào sân.
 - **Trọng tài bấm điểm lưu nhanh hơn** (trước ~2s mỗi điểm): mỗi điểm / hoàn tác trên Bàn điểm (`POST /matches/:id/rallies`, `DELETE /matches/:id/rallies/last`) chỉ còn ~6 lượt gọi DB thay vì ~11 — khoá trận đọc luôn vai trò và trọng tài sân, ghi biên bản + tỉ số + trạng thái giải trong một câu lệnh và trả luôn trận + biên bản, không đọc lại. Backend giữ kết nối DB rảnh 5 phút (trước là 10 giây) kèm TCP keep-alive nên không phải mở kết nối mới sau mỗi pha cầu. Đo với backend ở VN và DB Supabase Singapore: ~0,7–0,9s mỗi điểm thay vì ~2–3,5s. Không đổi API.
 - **Biên bản cộng set cho người thắng game**: game đã xong có thêm cột **Set** cuối khối (số set mỗi bên đã thắng tới hết game đó, bên thắng được +1, tô xanh) và tiêu đề khối ghi "… thắng game"; đầu trang Biên bản ghi **Set 1–0** kèm điểm từng game thay vì chỉ điểm. Bỏ nhãn **G** / **N** cạnh tên VĐV (người giao / nhận đầu game vẫn thấy qua số 0 ở cột đầu).
 - CI chạy các bài kiểm thử frontend, gồm tương thích API bảng đấu, để tránh tái phát lỗi “API không tồn tại”.
@@ -24,6 +30,7 @@ Theo [Keep a Changelog](https://keepachangelog.com/vi/1.1.0/).
 - **Gọi vào sân không còn ghi đè giờ / sân dự kiến**: trước đây bấm "Gọi vào sân" đổi giờ dự kiến thành giờ gọi (vd 18:00 → 17:27), rút về thì trận mang giờ mới và sân cũ nên bị đẩy lên đầu hàng chờ. Nay giờ gọi lưu riêng (`called_at`), sân dự kiến cất ở cột mới `planned_court`; **Rút về** trả lại đúng giờ và sân dự kiến. **Migration 009** thêm cột và sửa lại các trận đã bị ghi đè (lấy giờ / sân dự kiến từ nhật ký gọi trận).
 
 ### Changed
+- Truất quyền ở vòng bảng chỉ huỷ các trận chưa chốt. Kết quả đã chốt vẫn tính cho đối thủ; đội bị truất quyền không được xếp hạng hoặc đi tiếp.
 - Tiêu đề tab trình duyệt đổi thành “Smash Team Championship”; nhận diện Red Line trong giao diện không đổi.
 - Dependabot theo dõi cả gói npm của `backend/` và `frontend/` (trước chỉ GitHub Actions): mỗi tuần mở PR nâng bản minor/patch (gộp theo thư mục) và PR riêng cho bản major / bản vá lỗ hổng.
 - Giao diện Red Line dùng góc vuông cho khung, thẻ, nút, nhãn, avatar và hộp thoại trên toàn trang; giữ nguyên màu, bố cục và hiệu ứng chuyển mục.

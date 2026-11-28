@@ -16,6 +16,7 @@
  */
 const { notFound, conflict, unprocessable } = require('../errors');
 const { withTx, requireOrganizer, logEvent } = require('./tournamentService');
+const { DISQUALIFIABLE_ENTRY_SQL } = require('./shared');
 
 /** @typedef {import('./tournamentService').Pool} Pool */
 /** @typedef {import('./tournamentService').Queryable} Queryable */
@@ -120,9 +121,10 @@ async function listAthletes(db, viewer, tid) {
   await requireOrganizer(db, tid, viewer);
   const { rows } = await db.query(
     `SELECT a.id, a.full_name, a.student_id, a.phone, a.email, a.club, a.created_at,
-            COALESCE(json_agg(json_build_object('entryId', e.id, 'categoryCode', c.code, 'entryName',
+            COALESCE(json_agg(json_build_object('entryId', e.id, 'categoryId', c.id, 'categoryCode', c.code, 'entryName',
                        CASE WHEN e.player2_name IS NULL THEN e.player1_name ELSE e.player1_name || ' / ' || e.player2_name END,
-                       'disqualified', e.disqualified_at IS NOT NULL) ORDER BY c.code)
+                        'disqualified', e.disqualified_at IS NOT NULL,
+                        'canDisqualify', ${DISQUALIFIABLE_ENTRY_SQL}) ORDER BY c.code)
                      FILTER (WHERE e.id IS NOT NULL), '[]') AS entries
        FROM athletes a
        LEFT JOIN entries e ON a.id IN (e.player1_athlete_id, e.player2_athlete_id)

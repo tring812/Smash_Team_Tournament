@@ -26,7 +26,7 @@ async function loadCategory(db, categoryId, lock = false) {
 /**
  * Tạo nội dung thi đấu (ghi nhật ký).
  * @param {Pool} pool @param {Viewer} viewer @param {string} tid
- * @param {{ code: string, name: string, isDoubles: boolean, groupCount?: number, advancePerGroup?: number,
+ * @param {{ code: string, name: string, isDoubles: boolean, groupCount?: number, advancePerGroup?: number, thirdPlace?: boolean,
  *           pointsToWin?: number, maxPoints?: number, gamesToWin?: number }} input
  */
 async function createCategory(pool, viewer, tid, input) {
@@ -35,10 +35,10 @@ async function createCategory(pool, viewer, tid, input) {
     try {
       const { rows } = await c.query(
         `INSERT INTO categories (tournament_id, code, name, is_doubles, group_count, advance_per_group,
-                                 points_to_win, max_points, games_to_win)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+                                 points_to_win, max_points, games_to_win, third_place)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
         [tid, input.code, input.name, input.isDoubles, input.groupCount ?? 2, input.advancePerGroup ?? 2,
-          input.pointsToWin ?? 21, input.maxPoints ?? 30, input.gamesToWin ?? 2],
+           input.pointsToWin ?? 21, input.maxPoints ?? 30, input.gamesToWin ?? 2, input.thirdPlace ?? false],
       );
       await logEvent(c, tid, rows[0].id, viewer.id, 'category_create', { code: rows[0].code, name: rows[0].name });
       return rows[0];
@@ -56,13 +56,13 @@ async function createCategory(pool, viewer, tid, input) {
  */
 async function assertRulesChangeAllowed(c, before, after, code) {
   const { rows } = await c.query(
-    `SELECT m.stage, m.round, (SELECT max(k.round) FROM matches k WHERE k.category_id = m.category_id AND k.stage = 'knockout') AS ko_rounds
-       FROM matches m WHERE m.category_id = $1 AND m.status NOT IN ('bye', 'cancelled') AND ${STARTED_SQL.replace(/status|games/g, (w) => `m.${w}`)}`,
+    `SELECT m.stage, m.round, m.is_third_place, (SELECT max(k.round) FROM matches k WHERE k.category_id = m.category_id AND k.stage = 'knockout') AS ko_rounds
+       FROM matches m WHERE m.category_id = $1 AND m.status <> 'bye' AND ${STARTED_SQL}`,
     [before.id],
   );
   for (const m of rows) {
-    if (!sameRules(effectiveRules(before, m.stage, m.round, m.ko_rounds), effectiveRules(after, m.stage, m.round, m.ko_rounds))) {
-      const k = scopeKey(m.stage, m.round, m.ko_rounds);
+    if (!sameRules(effectiveRules(before, m.stage, m.round, m.ko_rounds, m.is_third_place), effectiveRules(after, m.stage, m.round, m.ko_rounds, m.is_third_place))) {
+      const k = scopeKey(m.stage, m.round, m.ko_rounds, m.is_third_place);
       const label = k === 'group' ? 'Vòng bảng' : fromEndLabel(Number(k.slice(3)));
       throw conflict(code, `${label} đã có trận bắt đầu — không đổi được luật điểm của vòng này`);
     }
@@ -99,10 +99,10 @@ function mapCategoryError(err) {
   return err;
 }
 
-/** Nội dung đã có trận bắt đầu (có điểm / đang đánh / đã có kết quả) chưa — không tính trận miễn đấu, trận đã huỷ. */
+/** Nội dung đã có trận bắt đầu, kể cả trận đang huỷ có lịch sử thi đấu; không tính miễn đấu. */
 async function categoryStarted(c, categoryId) {
   const { rows } = await c.query(
-    `SELECT 1 FROM matches WHERE category_id = $1 AND status NOT IN ('bye', 'cancelled') AND ${STARTED_SQL} LIMIT 1`,
+    `SELECT 1 FROM matches WHERE category_id = $1 AND status <> 'bye' AND ${STARTED_SQL} LIMIT 1`,
     [categoryId],
   );
   return Boolean(rows[0]);
@@ -115,7 +115,7 @@ async function categoryStarted(c, categoryId) {
  *  - số bảng, số đội đi tiếp: chỉ khi chưa bốc thăm;
  *  - luật điểm, số game thắng: chỉ khi chưa trận nào bắt đầu.
  * @param {Pool} pool @param {Viewer} viewer @param {string} categoryId
- * @param {{ code?: string, name?: string, isDoubles?: boolean, groupCount?: number, advancePerGroup?: number,
+ * @param {{ code?: string, name?: string, isDoubles?: boolean, groupCount?: number, advancePerGroup?: number, thirdPlace?: boolean,
  *           pointsToWin?: number, maxPoints?: number, gamesToWin?: number }} patch
  */
 async function updateCategory(pool, viewer, categoryId, patch) {
@@ -129,6 +129,9 @@ async function updateCategory(pool, viewer, categoryId, patch) {
     }
     if ((changed('groupCount', 'group_count') || changed('advancePerGroup', 'advance_per_group')) && cat.stage !== 'setup') {
       throw conflict('CATEGORY_LOCKED', 'Đã bốc thăm — không đổi được số bảng / số đội đi tiếp');
+    }
+    if (changed('thirdPlace', 'third_place') && !['setup', 'groups'].includes(cat.stage)) {
+      throw conflict('CATEGORY_LOCKED', 'Đã tạo nhánh — không đổi được lựa chọn tranh hạng Ba–Tư');
     }
     if (changed('pointsToWin', 'points_to_win') || changed('maxPoints', 'max_points') || changed('gamesToWin', 'games_to_win')) {
       // Luật mặc định chỉ khoá với trận ĐANG dùng nó (vòng có luật riêng không bị ảnh hưởng).
@@ -145,10 +148,10 @@ async function updateCategory(pool, viewer, categoryId, patch) {
         `UPDATE categories SET code = COALESCE($2, code), name = COALESCE($3, name), is_doubles = COALESCE($4, is_doubles),
                 group_count = COALESCE($5, group_count), advance_per_group = COALESCE($6, advance_per_group),
                 points_to_win = COALESCE($7, points_to_win), max_points = COALESCE($8, max_points),
-                games_to_win = COALESCE($9, games_to_win)
+                 games_to_win = COALESCE($9, games_to_win), third_place = COALESCE($10, third_place)
           WHERE id = $1 RETURNING *`,
         [categoryId, patch.code ?? null, patch.name ?? null, patch.isDoubles ?? null, patch.groupCount ?? null,
-          patch.advancePerGroup ?? null, patch.pointsToWin ?? null, patch.maxPoints ?? null, patch.gamesToWin ?? null],
+          patch.advancePerGroup ?? null, patch.pointsToWin ?? null, patch.maxPoints ?? null, patch.gamesToWin ?? null, patch.thirdPlace ?? null],
       ));
     } catch (err) {
       throw mapCategoryError(err);
