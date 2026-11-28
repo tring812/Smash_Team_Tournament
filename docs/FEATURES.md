@@ -64,7 +64,7 @@ Không có đăng ký công khai: mọi tài khoản do quản trị viên tạo
 | Xoá / khôi phục giải (chỉ **người tạo giải** trong số BTC) | — | — | người tạo | ✓ |
 | Thêm / sửa / xoá nội dung thi đấu | — | — | ✓ | ✓ |
 | Nhập đội, bốc thăm, đổi bảng, sửa đội, truất quyền | — | — | ✓ | ✓ |
-| Xếp lịch, phân công trọng tài, mở lại trận | — | — | ✓ | ✓ |
+| Xếp lịch, phân công trọng tài, sửa kết quả đã chốt | — | — | ✓ | ✓ |
 | Nhập / xuất danh sách VĐV bằng Excel | — | — | ✓ | ✓ |
 | Quản lý BTC & trọng tài, xem nhật ký thao tác | — | — | ✓ | ✓ |
 | Tạo / sửa / khoá tài khoản, đặt lại mật khẩu | — | — | — | ✓ |
@@ -197,8 +197,9 @@ Trường bị khoá hiện mờ kèm lý do; server kiểm tra lại (lỗi 409
 - **Sửa đội** (thay VĐV, đổi đồng đội, đổi CLB): khi đội chưa thi đấu trận nào. Kiểm tra cả hai hồ sơ VĐV: nếu đã thuộc đội khác trong cùng nội dung thì từ chối (`409 ATHLETE_ALREADY_ENTERED`), cả trước và sau bốc thăm. Vẫn cho phép đảo thứ tự hai thành viên trong chính đội đang sửa và một VĐV tham gia nhiều nội dung; thao tác bị từ chối không lưu thay đổi hồ sơ hoặc nhật ký.
 - **Bốc thăm** chia bảng (xem [7.1](#71-bốc-thăm-ngẫu-nhiên)) — hỏi xác nhận trước khi bốc (số đội, số bảng; sau khi bốc không thêm / xoá đội được) — và **Bốc thăm lại** (xác nhận trong hộp thoại; cảnh báo số trận vòng bảng đã xếp giờ / sân sẽ mất lịch).
 - **Đổi bảng**: đổi chỗ 2 đội ở 2 bảng khác nhau; lịch vòng tròn của 2 bảng đó được tạo lại. Chỉ khi 2 bảng chưa có trận bắt đầu.
-- **Truất quyền** (bắt buộc ghi lý do) và **Huỷ truất quyền** — xem [7.4](#74-truất-quyền-thi-đấu).
+- **Huỷ truất quyền** theo đội khi còn được phép. Quyết định truất quyền mới được thực hiện theo VĐV ở trang **Vận động viên** — xem [7.4](#74-truất-quyền-thi-đấu).
 - **Tạo nhánh loại trực tiếp** khi mọi bảng đã đánh xong.
+- Bật **Tranh hạng Ba–Tư** trong cài đặt nội dung trước khi tạo nhánh (mặc định tắt). Không thay đổi cách chia bảng hay số đội đi tiếp.
 - Cột **Thăm**: số bốc thăm phụ của đội (dùng phá hoà cuối cùng ở bảng xếp hạng).
 
 ### 6.3 Điều phối sân (ngày thi đấu)
@@ -227,7 +228,7 @@ Số sân / phút mỗi trận chỉ áp cho lần xếp đó, không đổi c�
 - Lọc theo trạng thái (Tất cả / **Mời ra sân** — đã gọi vào sân, chưa có điểm / Đang đánh / Sắp đánh / Kết thúc / Đã huỷ) và nội dung.
 - **Phân công trọng tài** từng trận (hoặc "Ai cũng được" — khi đó trọng tài phụ trách sân sẽ chấm).
 - **Dời** một trận: đổi giờ dự kiến và/hoặc sân mà không phải xếp lại cả giai đoạn. Chặn trùng sân hoặc trùng VĐV trong cùng khung giờ (± số phút mỗi trận). Trận đang ở sân chỉ **chuyển sân**.
-- **Nhập điểm** (mở bàn trọng tài) hoặc **Mở lại** trận đã kết thúc để sửa tỉ số — xem [7.7](#77-mở-lại-trận).
+- **Nhập điểm** (mở bàn trọng tài) hoặc **Sửa kết quả** đã chốt kèm lý do — xem [7.7](#77-sửa-kết-quả-và-mở-lại-trận).
 
 ### 6.6 Ban tổ chức & trọng tài
 - **Tài khoản trọng tài** — BTC tự quản lý, không cần nhờ quản trị viên:
@@ -275,6 +276,7 @@ Trang **Quản trị › Vận động viên** (chỉ BTC): mỗi người một
 - Tìm theo tên (không dấu cũng được), MSSV, SĐT (gõ có dấu cách cũng được), CLB.
 - Nhãn **trùng tên** khi có ≥ 2 hồ sơ cùng tên; cảnh báo số VĐV chưa có MSSV/SĐT.
 - **Sửa hồ sơ**: đổi họ tên (cập nhật tên ở mọi đội của người đó), MSSV, SĐT, email, CLB. MSSV/SĐT trùng với người khác → báo lỗi ngay trong hộp thoại.
+- **Truất quyền**: chọn VĐV, một nội dung hoặc toàn giải (các nội dung VĐV đã đăng ký và còn đủ điều kiện thi đấu). Hộp thoại hiện đội bị ảnh hưởng, gồm cả cặp đôi, và yêu cầu lý do. Lý do chỉ hiện trong nhật ký BTC.
 - Hồ sơ được tạo / dùng lại tự động khi nhập đội; xoá đội / nội dung thì hồ sơ không còn ở đội nào bị xoá theo.
 
 ### 6.10 Tài khoản `/accounts`
@@ -304,19 +306,22 @@ Giải **mở rộng** nên **không dùng ELO / hạt giống**:
 3. ≥ 3 đội bằng nhau → hiệu số game, rồi hiệu số điểm trong các trận giữa nhóm đó (tách còn 2 → đối đầu).
 4. Cuối cùng → **bốc thăm phụ** (số nhỏ xếp trên) — ổn định, không đổi thứ tự mỗi lần tải trang.
 
-Trận bỏ cuộc tính thắng cho bên kia, không cộng game/điểm. Đội bị truất quyền đứng cuối bảng, không xếp hạng.
+Thua một trận vòng bảng không loại đội khỏi các trận còn lại. Trận bỏ cuộc tính thắng cho bên kia, không cộng game/điểm. Đội bị truất quyền đứng cuối bảng, không xếp hạng; kết quả đã chốt với đội đó vẫn tính cho đối thủ.
 
 ### 7.3 Nhánh loại trực tiếp
 - Nhất bảng gặp nhì bảng khác; 2 đội cùng bảng nằm ở 2 nửa nhánh; thứ tự hạt giống chuẩn 1-8-4-5-2-7-3-6.
 - Số đội không phải luỹ thừa 2 → **miễn đấu (bye)** cho hạt giống cao, tự đi tiếp.
-- Đội thắng tự vào trận vòng sau; chung kết xong → nội dung "Đã xong", hiện nhà vô địch.
+- Đội thắng tự vào trận vòng sau; đội thua dừng ở nhánh tranh chức vô địch. Nhà vô địch hiển thị ngay khi chung kết có kết quả.
+- Nếu bật **Tranh hạng Ba–Tư**, nhánh cần đủ hai bán kết có đối thủ (ít nhất 4 đội vào nhánh). Khi tạo nhánh, hệ thống tạo thêm trận nhận đội thua của hai bán kết. Chỉ gọi sân khi đủ hai đội. Trận dùng chung luật điểm với bán kết; đội thắng xếp Ba, đội thua xếp Tư, không đồng hạng Ba.
+- Khi có tranh hạng, nội dung chỉ chuyển sang **Đã xong** sau khi cả chung kết và trận tranh hạng được xử lý. Nếu một đội tranh hạng bị truất quyền, đối thủ thắng W.O. và xếp Ba, đội bị truất quyền không được xếp hạng; nếu cả hai bị truất quyền trước khi trận có kết quả thì huỷ trận, không trao hạng Ba–Tư.
 
 ### 7.4 Truất quyền thi đấu
-- **Vòng bảng** (theo quy chế BWF): **mọi** trận vòng bảng của đội bị huỷ (kể cả đã đánh) → trạng thái "Đã huỷ", bảng xếp hạng tính như đội chưa từng tham gia.
+- **Phạm vi**: BTC chọn VĐV và lý do (ví dụ vi phạm luật hoặc bỏ thi); áp dụng cho đội đơn hoặc cặp đôi chứa VĐV đó trong phạm vi đã chọn. Vắng một trận có thể xử W.O. riêng, không tự truất quyền.
+- **Trước bốc thăm**: loại đội bị truất quyền khỏi danh sách chia bảng.
+- **Vòng bảng**: chỉ huỷ các trận chưa chốt; giữ nguyên kết quả đã chốt và biên bản. Đội bị truất quyền không được xếp hạng hoặc đi tiếp. Không thể thay VĐV của đội đã thi đấu, kể cả khi trận đang bị huỷ.
 - **Loại trực tiếp**: trận đang chờ của đội → đối thủ thắng **W.O** và đi tiếp; nếu chưa biết đối thủ, hệ thống tự xử W.O khi đối thủ tới.
-- **Huỷ truất quyền**: chỉ khi chưa tạo nhánh; khôi phục đúng trạng thái, tỉ số, sân, giờ cũ của các trận (trừ trận gặp đội khác cũng bị truất quyền).
+- **Huỷ truất quyền**: chỉ trước khi tạo nhánh; thực hiện trước bốc thăm hoặc khi đội vẫn có trong bảng đã bốc. Khôi phục đúng trạng thái, tỉ số, sân, giờ cũ của các trận (trừ trận gặp đội khác cũng bị truất quyền).
 - Nếu trận phục hồi đang đánh hoặc đã gọi vào sân, phải kiểm tra sân/VĐV còn rảnh, kể cả VĐV ở nội dung khác và xung đột giữa các trận cùng đợt phục hồi. Xung đột → `409 COURT_BUSY` / `PLAYER_BUSY`, hoàn tác toàn bộ thao tác (đội vẫn bị truất quyền, các trận vẫn bị huỷ, không thêm nhật ký). Trận đã kết thúc hoặc chỉ có sân dự kiến không nhận sân nên không bị chặn bởi kiểm tra này.
-- Không truất quyền khi chưa bốc thăm (khi đó dùng **Xoá đội**).
 
 ### 7.5 Xếp lịch sân
 Bộ xếp lịch tham lam, tất định:
@@ -324,6 +329,7 @@ Bộ xếp lịch tham lam, tất định:
 - **Ràng buộc mềm**: cố cho nghỉ 1 lượt giữa 2 trận liên tiếp.
 - Vòng bảng xen kẽ các nội dung / bảng theo lượt.
 - Loại trực tiếp: xếp **cả nhánh một lần**, kể cả trận chưa biết đội; trận vòng sau bắt đầu sau khi các trận dẫn vào xong **+ nghỉ 1 lượt**.
+- Khi xếp cả nhánh, chung kết và tranh hạng Ba–Tư cùng phụ thuộc vào hai trận bán kết, kể cả khi chưa biết các đội.
 - Không nhận giờ bắt đầu trong quá khứ; sân và VĐV đang có trận diễn ra bị chặn ở khung đầu.
 - Chỉ xếp/xếp lại trận chưa có điểm **và chưa được gọi vào sân**; trận đã gọi / đang đánh giữ nguyên, sân và VĐV của chúng bị chặn ở khung đầu.
 
@@ -337,13 +343,15 @@ Bộ xếp lịch tham lam, tất định:
 | Loại trực tiếp | Mọi vòng loại trực tiếp không đặt riêng | Luật mặc định |
 | Tứ kết / Bán kết / Chung kết / Vòng 1/8… | Đúng vòng đó (đếm ngược từ chung kết nên đặt được **trước khi có nhánh**) | Hàng Loại trực tiếp |
 
+- Trận tranh hạng Ba–Tư dùng hàng **Bán kết**, không có hàng cấu hình điểm riêng.
 - Mỗi hàng hiện ngay luật sẽ áp dụng (→ …). Vòng đã có trận bắt đầu bị khoá (biểu tượng ổ khoá); server kiểm tra lại theo **từng trận đã bắt đầu**: thay đổi nào làm đổi luật của trận đang đánh / đã có kết quả → từ chối (`RULES_LOCKED`, nêu tên vòng). Ghi nhật ký BTC.
 - Bàn trọng tài, kiểm tra tỉ số và màn hình công khai đều dùng luật của vòng; server kiểm tra lại toàn bộ tỉ số khi lưu / xác nhận.
 
-### 7.7 Mở lại trận
-- BTC mở lại trận đã kết thúc / bỏ cuộc để sửa tỉ số.
-- Mở lại đưa trận về `live`, giữ điểm và sân cũ nên phải kiểm tra sân/VĐV còn rảnh, dùng cùng khoá theo giải với gọi sân / bắt đầu trận. Xung đột → `409 COURT_BUSY` / `PLAYER_BUSY`; không thay đổi kết quả, nhánh vòng sau hay nhật ký. BTC giải phóng sân/VĐV rồi thử lại. Trận cũ không có sân vẫn kiểm tra VĐV.
-- Trận vòng bảng: chỉ khi **chưa tạo nhánh**. Trận loại trực tiếp: chỉ khi trận vòng sau **chưa bắt đầu** (đội thắng được rút khỏi vòng sau).
+### 7.7 Sửa kết quả và mở lại trận
+- **Sửa kết quả**: BTC đính chính tỉ số hoặc W.O. của trận đã chốt, kể cả khi giải đã kết thúc. Bắt buộc ghi lý do; nhật ký giữ người sửa, thời điểm và kết quả trước/sau. Trận không trở về `live`, không nhận sân, giữ thời điểm kết thúc và không xoá biên bản cũ.
+- Nếu sửa kết quả vòng bảng sau khi đã tạo nhánh, danh sách và thứ tự đội vào nhánh phải giữ nguyên (`409 QUALIFIERS_CHANGED` nếu đổi). Ở vòng loại trực tiếp, đổi đội thắng chỉ được nếu trận kế tiếp chưa gọi hoặc bắt đầu (`409 NEXT_STARTED`). Sửa tỉ số giữ nguyên đội thắng không thay đổi đội vòng sau.
+- Nếu bán kết cấp đội cho cả chung kết và tranh hạng Ba–Tư, sửa đội thắng phải cập nhật cả hai trận cùng lúc. Nếu một trong hai trận đã được gọi thì phải rút về trước; nếu đã bắt đầu hoặc kết thúc thì không đổi đội thắng.
+- **Mở lại** là API cũ để đưa trận về `live`, không dùng cho đính chính trên trang quản trị. Vòng bảng chỉ mở lại trước khi tạo nhánh; vòng sau không được đang được gọi hoặc đã bắt đầu. Không mở lại khi có đội bị truất quyền. Vẫn phải kiểm tra sân/VĐV rảnh (`409 COURT_BUSY` / `PLAYER_BUSY`).
 
 ### 7.8 Vòng đời trận
 
@@ -362,7 +370,6 @@ stateDiagram-v2
   pending --> cancelled: đội bị truất quyền (vòng bảng)
   scheduled --> cancelled: đội bị truất quyền (vòng bảng)
   live --> cancelled: đội bị truất quyền (vòng bảng)
-  finished --> cancelled: đội bị truất quyền (vòng bảng)
   cancelled --> scheduled: huỷ truất quyền (khôi phục)
   [*] --> bye: nhánh thiếu đội
 ```
@@ -410,7 +417,7 @@ Mỗi giải có danh sách **hồ sơ VĐV** riêng. Khi thêm đội (dán, Ex
 |---|---|---|
 | **Nhật ký thao tác BTC** (`tournament_events`) | Tạo / sửa / xoá nội dung, bốc thăm, bốc thăm lại, truất quyền, huỷ truất quyền, đổi bảng, sửa đội, xếp lịch — kèm người làm, thời gian, chi tiết | Append-only (trigger chặn sửa/xoá); xoá nội dung **không** xoá nhật ký của nó |
 | **Biên bản** (`match_rallies`) | Mỗi pha cầu, chọn người giao/nhận, sửa người giao, BTC sửa tay tỉ số (`seq` tăng dần, khoá chính `(match_id, seq)`) | Chỉ thêm vào cuối; Hoàn tác xoá sự kiện cuối. Nhật ký BTC chỉ ghi **sửa người giao**, **hoàn tác pha cầu**, **xác nhận kết quả** — không ghi từng điểm |
-| **Nhật ký điểm** (`match_score_events`) | Mỗi lần lưu điểm, xác nhận, bỏ cuộc, mở lại, phân công trọng tài | Append-only — dùng giải quyết tranh chấp tỉ số |
+| **Nhật ký điểm** (`match_score_events`) | Mỗi lần lưu điểm, xác nhận, bỏ cuộc, đính chính, mở lại, phân công trọng tài | Append-only — dùng giải quyết tranh chấp tỉ số; lý do đính chính nằm ở nhật ký BTC |
 
 <sub>[↑ Back to contents](#contents)</sub>
 
@@ -461,23 +468,25 @@ Tiền tố `/api`. Request ghi phải có header `X-Requested-With: fetch`. L�
 | GET · PUT · DELETE | `/tournaments/:id/staff[/:userId]` | BTC | BTC & trọng tài |
 | GET · POST | `/tournaments/:id/referees` `{username, fullName, password}` | BTC | Danh sách trọng tài kèm tài khoản (`can_manage`) · tạo tài khoản trọng tài + thêm vào giải |
 | PATCH · DELETE | `/tournaments/:id/referees/:userId` `{fullName?, password?, disabled?}` | BTC | Đổi tên / đặt lại mật khẩu / khoá – mở khoá · gỡ khỏi giải (khoá tài khoản nếu không còn làm giải nào) |
-| POST | `/tournaments/:id/categories` | BTC | **Tạo** nội dung |
-| PATCH · DELETE | `/categories/:id` | BTC | **Sửa · xoá** nội dung |
+| POST | `/tournaments/:id/categories` `{thirdPlace?, …}` | BTC | **Tạo** nội dung, tuỳ chọn tranh hạng Ba–Tư |
+| PATCH · DELETE | `/categories/:id` | BTC | **Sửa · xoá** nội dung; `thirdPlace` chỉ đổi trước khi tạo nhánh |
 | PUT | `/categories/:id/round-rules` `{rules: [{stage: group\|knockout, fromEnd?: 1..6\|null, pointsToWin, maxPoints, gamesToWin}]}` | BTC | Luật điểm theo vòng (thay toàn bộ; `[]` = bỏ hết). `fromEnd`: 1 = chung kết, 2 = bán kết, 3 = tứ kết; `null` = mọi vòng loại |
-| GET | `/categories/:id/entries` · `standings` · `bracket` | công khai | Đội · bảng xếp hạng · nhánh |
+| GET | `/categories/:id/entries` · `standings` · `bracket` | công khai | Đội · bảng xếp hạng · nhánh (`rounds` là nhánh vô địch, `thirdPlace` là trận tranh hạng hoặc `null`) |
 | GET | `/tournaments/:id/standings` | công khai (Nháp: BTC) | Bảng xếp hạng mọi nội dung đã bốc thăm trong một request: `[{categoryId, groups}]` (mỗi phần tử giống `/categories/:id/standings`) — trang giải dùng cho tab Bảng đấu / tìm VĐV |
 | POST | `/categories/:id/entries` `{entries: [{player1Name, player1StudentId?, player1Phone?, player1Email?, player2…, club}]}` | BTC | Thêm đội (≤ 256 / lần, cả lô một giao dịch); gắn hồ sơ VĐV theo [7.10](#710-nhận-diện-vđv) |
-| GET | `/tournaments/:id/athletes` | BTC | Hồ sơ VĐV (MSSV, SĐT, email, nội dung đăng ký) |
+| GET | `/tournaments/:id/athletes` | BTC | Hồ sơ VĐV (MSSV, SĐT, email, nội dung đăng ký, `categoryId` và `canDisqualify` cho từng đăng ký) |
 | PATCH | `/athletes/:id` `{fullName?, studentId?, phone?, email?, club?}` | BTC | Sửa hồ sơ VĐV |
+| POST | `/athletes/:id/disqualify` `{scope, categoryId?, reason}` | BTC | Truất quyền VĐV ở một nội dung (`scope: category`, bắt buộc `categoryId`) hoặc `scope: tournament`; trả danh sách đội bị ảnh hưởng |
 | GET | `/tournaments/:id/stream` | công khai (Nháp: BTC) | Server-Sent Events: `event: changed` mỗi khi giải đổi; `data`: `{"kind":"match","matchIds":[…],"categoryIds"?:[…]}` hoặc `{"kind":"structure"}` |
 | POST | `/categories/:id/draw` `{groups?: [{name, entryIds}]}` | BTC | Bốc thăm ngẫu nhiên / bốc lại; có `groups` = chia bảng có sẵn |
 | POST | `/categories/:id/swap` `{entryA, entryB}` | BTC | Đổi bảng 2 đội |
-| POST | `/categories/:id/knockout` | BTC | Tạo nhánh loại trực tiếp |
+| POST | `/categories/:id/knockout` | BTC | Tạo nhánh loại trực tiếp, trả `thirdPlaceId` nếu có tranh hạng; `409 THIRD_PLACE_NEEDS_SEMIFINALS` khi đã bật mà không đủ hai trận bán kết |
 | PATCH · DELETE | `/entries/:id` | BTC | Sửa · xoá đội; sửa trùng hồ sơ VĐV với đội khác cùng nội dung → `409 ATHLETE_ALREADY_ENTERED` |
-| POST | `/entries/:id/disqualify` `{reason}` · `/entries/:id/reinstate` | BTC | Truất quyền · huỷ truất quyền |
-| GET | `/matches/:id[?rallies=0]` · `/referee/queue` | công khai · trọng tài | Chi tiết trận (kèm `rallies` — biên bản: ô VĐV a1/a2/b1/b2, không có người bấm; `?rallies=0` bỏ biên bản cho màn hình trực tiếp) · hàng đợi trọng tài |
+| POST | `/entries/:id/disqualify` `{reason}` · `/entries/:id/reinstate` | BTC | Truất quyền theo đội (API cũ) · huỷ truất quyền theo đội |
+| GET | `/matches/:id[?rallies=0]` · `/referee/queue` | công khai · trọng tài | Chi tiết trận (`isThirdPlace` cho trận tranh hạng; `rallies` là biên bản, dùng `?rallies=0` bỏ biên bản) · hàng đợi trọng tài |
 | POST | `/matches/:id/start` `{version}` | Trọng tài / BTC | Chỉ giữ tương thích giao diện cũ; Bàn điểm mới không sử dụng. Bắt đầu trên sân đã gán, ghi nhật ký `start_match` (migration 012) |
 | PUT | `/matches/:id/score` `{action, version, games, walkoverWinner?}` | Trọng tài / BTC | Lưu điểm, xác nhận, bỏ cuộc. Trận có biên bản mà tỉ số khác biên bản → ghi mốc `override` (BTC sửa tay) |
+| PUT | `/matches/:id/result` `{action, version, reason, games?, walkoverWinner?}` | BTC | Đính chính kết quả đã chốt: `finish` cần `games`, `walkover` cần `walkoverWinner`; ghi `score_correct` (migration 013) |
 | POST | `/matches/:id/rallies` `{type: start\|point\|fix_server, side?, server?, receiver?, expectedSeq}` | Trọng tài / BTC | Thêm 1 sự kiện biên bản; máy chủ tự tính tỉ số + người giao, cập nhật `games` cùng giao dịch; lệch `expectedSeq` → `409 RALLY_CONFLICT` |
 | DELETE | `/matches/:id/rallies/last?expectedSeq=N` | Trọng tài / BTC | Hoàn tác sự kiện cuối (chỉ khi trận chưa xác nhận) |
 | POST · PUT | `/matches/:id/reopen` · `/matches/:id/referee` | BTC | Mở lại trận · phân công trọng tài |

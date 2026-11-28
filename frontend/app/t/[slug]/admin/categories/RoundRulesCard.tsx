@@ -15,6 +15,7 @@ interface Draft { mode: Mode; points: number; cap: number; games: number }
 
 const PRESET: Record<Exclude<Mode, "default" | "custom">, [number, number]> = { 21: [21, 30], 15: [15, 21], 11: [11, 15] };
 const fromEndLabel = (n: number) => (n === 1 ? "Chung kết" : n === 2 ? "Bán kết" : n === 3 ? "Tứ kết" : `Vòng 1/${2 ** (n - 1)}`);
+const fromEndOf = (m: Match, rounds: number) => (m.isThirdPlace ? 2 : rounds - m.round + 1);
 export const rulesText = (r: ScoringRules) => `${r.pointsToWin} điểm${r.maxPoints > r.pointsToWin ? `, trần ${r.maxPoints}` : ""} · ${r.gamesToWin === 1 ? "1 game" : `thắng ${r.gamesToWin}/${r.gamesToWin * 2 - 1} game`}`;
 
 function draftOf(r: ScoringRules | undefined): Draft {
@@ -39,9 +40,13 @@ export function RoundRulesCard({ cat, matches }: { cat: Category; matches: Match
     return [
       { scope: "group", label: "Vòng bảng", hint: "Mọi trận vòng bảng" },
       { scope: "ko:*", label: "Loại trực tiếp", hint: "Mọi vòng loại trực tiếp không đặt riêng bên dưới" },
-      ...ends.map((n) => ({ scope: `ko:${n}`, label: fromEndLabel(n), hint: koRounds ? `${ko.filter((m) => koRounds - m.round + 1 === n).length} trận` : "Áp dụng khi tạo nhánh" })),
+      ...ends.map((n) => ({
+        scope: `ko:${n}`, label: fromEndLabel(n),
+        hint: n === 2 && cat.third_place ? "Áp dụng cả trận tranh hạng Ba–Tư"
+          : koRounds ? `${ko.filter((m) => fromEndOf(m, koRounds) === n).length} trận` : "Áp dụng khi tạo nhánh",
+      })),
     ];
-  }, [koRounds, ko]);
+  }, [koRounds, ko, cat.third_place]);
 
   const saved = (scope: Scope): ScoringRules | undefined => {
     const rr = cat.round_rules ?? {};
@@ -55,8 +60,8 @@ export function RoundRulesCard({ cat, matches }: { cat: Category; matches: Match
   const started = (m: Match) => !["bye", "cancelled"].includes(m.status) && (["live", "finished", "walkover"].includes(m.status) || m.games.length > 0);
   const locked = (scope: Scope) => {
     if (scope === "group") return matches.some((m) => m.stage === "group" && started(m));
-    if (scope === "ko:*") return ko.some((m) => started(m) && (draft[`ko:${koRounds - m.round + 1}`]?.mode ?? "default") === "default");
-    return ko.some((m) => started(m) && `ko:${koRounds - m.round + 1}` === scope);
+    if (scope === "ko:*") return ko.some((m) => started(m) && (draft[`ko:${fromEndOf(m, koRounds)}`]?.mode ?? "default") === "default");
+    return ko.some((m) => started(m) && `ko:${fromEndOf(m, koRounds)}` === scope);
   };
 
   const rulesOf = (d: Draft): ScoringRules | null => {

@@ -69,6 +69,12 @@ module.exports = function registerMatchesRoutes(api, { pool, id, me, touch }) {
     touch(res, m.tournamentId);
     res.json(m);
   });
+  api.put('/matches/:id/result', auth.requireAuth, async (req, res) => {
+    const mid = id(req.params.id);
+    const { tournament_id } = await matchSvc.correctResult(pool, me(req), mid, schemas.correctResult.parse(req.body));
+    touch(res, tournament_id);
+    res.json(await matchSvc.getMatch(pool, mid));
+  });
   api.put('/matches/:id/referee', auth.requireAuth, async (req, res) => {
     const mid = id(req.params.id);
     await matchSvc.assignReferee(pool, me(req), mid, schemas.referee.parse(req.body).refereeUserId);

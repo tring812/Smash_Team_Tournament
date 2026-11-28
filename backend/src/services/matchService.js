@@ -5,12 +5,12 @@
  * Tách từ tournamentService; nơi gọi require thẳng tệp này.
  */
 
-const { roundLabel } = require('../domain/bracket');
+const { roundLabel, seedsFromGroups } = require('../domain/bracket');
 const { evaluateMatch } = require('../domain/scoring');
 const { effectiveRules } = require('../domain/roundRules');
 const { notFound, forbidden, conflict, unprocessable } = require('../errors');
 const rallies = require('./rallyStore');
-const { withTx, roleIn, requireOrganizer, logEvent, FINAL_STATUSES } = require('./tournamentService');
+const { withTx, roleIn, requireOrganizer, logEvent, groupStandings, FINAL_STATUSES } = require('./tournamentService');
 const { playersOfEntry } = require('./shared');
 const { loadCategory } = require('./categoryService');
 
@@ -36,28 +36,76 @@ async function walkoverTo(c, m, winnerId, actorId) {
   await advanceWinner(c, m, winnerId, actorId);
 }
 
+/** Hai trận cuối có thể được chốt đồng thời; khoá nội dung rồi đọc trạng thái mới nhất của cả hai. */
+async function completeKnockout(c, categoryId) {
+  await c.query('SELECT id FROM categories WHERE id = $1 FOR UPDATE', [categoryId]);
+  await c.query(
+    `UPDATE categories SET stage = 'completed' WHERE id = $1 AND stage = 'knockout'
+      AND NOT EXISTS (
+        SELECT 1 FROM matches WHERE category_id = $1 AND stage = 'knockout' AND next_match_id IS NULL
+          AND status NOT IN ('finished', 'walkover', 'bye', 'cancelled')
+      )`, [categoryId],
+  );
+}
+
+/** Đưa đối thủ còn hợp lệ đi tiếp khi gặp đội đã bị truất quyền. Hai đội tranh hạng đều bị truất quyền → không trao hạng. */
+async function settleDisqualifiedMatch(c, m, actorId) {
+  if (!m?.entry_a_id || !m?.entry_b_id || FINAL_STATUSES.has(m.status) || m.status === 'cancelled') return false;
+  const { rows: dq } = await c.query(
+    'SELECT id FROM entries WHERE id IN ($1, $2) AND disqualified_at IS NOT NULL', [m.entry_a_id, m.entry_b_id],
+  );
+  if (dq.length === 1) {
+    await walkoverTo(c, m, dq[0].id === m.entry_a_id ? m.entry_b_id : m.entry_a_id, actorId);
+    return true;
+  }
+  if (dq.length === 2 && m.is_third_place) {
+    await c.query(
+      `UPDATE matches SET status = 'cancelled', finished_at = now(), version = version + 1, updated_at = now() WHERE id = $1`, [m.id],
+    );
+    await completeKnockout(c, m.category_id);
+  }
+  return false;
+}
+
+/** Trận nhận đội thắng, và trận nhận đội thua nếu đây là bán kết có tranh hạng Ba–Tư. */
+const downstreamIds = (m) => [m.next_match_id, m.loser_next_match_id].filter(Boolean);
+
 /**
- * Đưa đội thắng vào trận kế tiếp của nhánh. Nếu đối thủ ở trận đó đã bị truất quyền → tự xử walkover.
- * @param {Queryable} c @param {any} m  trận vừa kết thúc @param {string} winnerId @param {string} actorId
+ * Đưa đội thắng đi tiếp và chuyển đội thua bán kết vào trận tranh hạng Ba–Tư (nếu bật).
+ * @param {Queryable} c @param {any} m @param {string} winnerId @param {string} actorId
  */
 async function advanceWinner(c, m, winnerId, actorId) {
   if (m.stage !== 'knockout') return;
   if (!m.next_match_id) {
-    await c.query(`UPDATE categories SET stage = 'completed' WHERE id = $1`, [m.category_id]);
+    await completeKnockout(c, m.category_id);
     return;
   }
   const col = m.next_slot === 'a' ? 'entry_a_id' : 'entry_b_id';
-  const { rows } = await c.query(
-    `UPDATE matches SET ${col} = $2, version = version + 1, updated_at = now() WHERE id = $1 RETURNING *`,
-    [m.next_match_id, winnerId],
-  );
-  const next = rows[0];
-  if (!next?.entry_a_id || !next?.entry_b_id || FINAL_STATUSES.has(next.status)) return;
-  const { rows: dq } = await c.query(
-    'SELECT id FROM entries WHERE id IN ($1, $2) AND disqualified_at IS NOT NULL', [next.entry_a_id, next.entry_b_id],
-  );
-  if (dq.length === 1) {
-    await walkoverTo(c, next, dq[0].id === next.entry_a_id ? next.entry_b_id : next.entry_a_id, actorId);
+  const putInto = async (id, entryId) => (await c.query(
+    `UPDATE matches SET ${col} = $2, version = version + 1, updated_at = now() WHERE id = $1 RETURNING *`, [id, entryId],
+  )).rows[0];
+  const next = await putInto(m.next_match_id, winnerId);
+  const third = m.loser_next_match_id
+    ? await putInto(m.loser_next_match_id, winnerId === m.entry_a_id ? m.entry_b_id : m.entry_a_id)
+    : null;
+  await settleDisqualifiedMatch(c, next, actorId);
+  await settleDisqualifiedMatch(c, third, actorId);
+}
+
+/** Khoá và kiểm tra mọi trận nhận đội trước khi đổi kết quả hoặc mở lại trận dẫn vào. */
+async function assertDownstreamWaiting(c, ids) {
+  if (!ids.length) return;
+  let rows;
+  try {
+    ({ rows } = await c.query(
+      'SELECT status, games, called_at FROM matches WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE NOWAIT', [ids],
+    ));
+  } catch (err) {
+    if (err.code === '55P03') throw conflict('NEXT_STARTED', 'Trận vòng sau đang được cập nhật — hãy thử lại');
+    throw err;
+  }
+  if (rows.length !== ids.length || rows.some((r) => !['pending', 'scheduled'].includes(r.status) || r.called_at || r.games.length)) {
+    throw conflict('NEXT_STARTED', 'Trận vòng sau đã được gọi hoặc bắt đầu; hãy rút trận về hàng chờ nếu chưa đánh');
   }
 }
 
@@ -110,7 +158,7 @@ async function lockScorable(c, matchId, viewer, opts = {}) {
     }
     await courts.assertPlayersFree(c, occupancy);
   }
-  return { m, role, rules: effectiveRules(m, m.stage, m.round, m.ko_rounds) };
+  return { m, role, rules: effectiveRules(m, m.stage, m.round, m.ko_rounds, m.is_third_place) };
 }
 
 /**
@@ -221,6 +269,79 @@ async function recordScore(pool, viewer, matchId, input) {
 }
 
 /**
+ * Đính chính kết quả mà không mở lại trận, nhận sân hoặc ghi đè biên bản cũ.
+ * @param {Pool} pool @param {Viewer} viewer @param {string} matchId
+ * @param {{action: 'finish', version: number, games: [number, number][], reason: string}
+ *   | {action: 'walkover', version: number, walkoverWinner: 'a'|'b', reason: string}} input
+ */
+async function correctResult(pool, viewer, matchId, input) {
+  return withTx(pool, async (c) => {
+    const ref = (await c.query('SELECT tournament_id, category_id, stage FROM matches WHERE id = $1', [matchId])).rows[0];
+    if (!ref) throw notFound('Không tìm thấy trận');
+    await requireOrganizer(c, ref.tournament_id, viewer);
+    const cat = await loadCategory(c, ref.category_id, ref.stage === 'group');
+    const m = (await c.query('SELECT * FROM matches WHERE id = $1 FOR UPDATE', [matchId])).rows[0];
+    if (!m) throw notFound('Không tìm thấy trận');
+    if (!['finished', 'walkover'].includes(m.status) || !m.entry_a_id || !m.entry_b_id) {
+      throw conflict('NOT_FINISHED', 'Chỉ sửa kết quả của trận đã kết thúc hoặc xử bỏ cuộc');
+    }
+    if (input.version !== m.version) throw conflict('VERSION_CONFLICT', 'Kết quả vừa được cập nhật — tải lại trước khi sửa');
+    const reason = input.reason?.trim();
+    if (!reason || reason.length < 3 || reason.length > 300) throw unprocessable('Lý do sửa kết quả phải từ 3 đến 300 ký tự');
+
+    const status = input.action === 'finish' ? 'finished' : 'walkover';
+    const games = input.action === 'finish' ? input.games : m.games;
+    let side;
+    if (input.action === 'finish') {
+      const koRounds = m.stage === 'knockout'
+        ? (await c.query("SELECT max(round) AS rounds FROM matches WHERE category_id = $1 AND stage = 'knockout'", [m.category_id])).rows[0].rounds
+        : 0;
+      const ev = evaluateMatch(games, effectiveRules(cat, m.stage, m.round, koRounds, m.is_third_place));
+      if (!ev.valid || !ev.complete) throw unprocessable(ev.error ?? 'Tỉ số chưa đủ số game thắng');
+      side = ev.winner;
+    } else {
+      side = input.walkoverWinner;
+    }
+    const winnerId = side === 'a' ? m.entry_a_id : m.entry_b_id;
+    const winnerChanged = winnerId !== m.winner_entry_id;
+    const gamesChanged = JSON.stringify(games) !== JSON.stringify(m.games);
+    if (!winnerChanged && !gamesChanged && status === m.status) throw conflict('RESULT_UNCHANGED', 'Kết quả không thay đổi');
+
+    if (winnerChanged && m.stage === 'knockout') {
+      const dq = await c.query('SELECT 1 FROM entries WHERE id = $1 AND disqualified_at IS NOT NULL', [winnerId]);
+      if (dq.rows.length) throw conflict('WINNER_DISQUALIFIED', 'Không thể đưa đội đã bị truất quyền đi tiếp');
+      await assertDownstreamWaiting(c, downstreamIds(m));
+    }
+    const qualifiers = async () => JSON.stringify(seedsFromGroups(
+      (await groupStandings(c, cat.id)).map((g) => g.standings.filter((r) => !r.disqualified).map((r) => r.entryId)),
+      cat.advance_per_group,
+    ));
+    const beforeSeeds = m.stage === 'group' && cat.stage !== 'groups' ? await qualifiers() : null;
+    await c.query(
+      `UPDATE matches SET status = $2, games = $3::jsonb, winner_entry_id = $4, version = version + 1, updated_at = now()
+        WHERE id = $1`, [m.id, status, JSON.stringify(games), winnerId],
+    );
+    if (beforeSeeds !== null && beforeSeeds !== await qualifiers()) {
+      throw conflict('QUALIFIERS_CHANGED', 'Sửa kết quả sẽ đổi đội hoặc vị trí trong nhánh đã tạo; chưa thể lưu');
+    }
+    if (winnerChanged && m.next_match_id) await advanceWinner(c, m, winnerId, viewer.id);
+    if (gamesChanged) await rallies.recordOverride(c, matchId, games, viewer.id);
+    await c.query(
+      `INSERT INTO match_score_events (match_id, actor_user_id, action, games) VALUES ($1, $2, 'score_correct', $3::jsonb)`,
+      [m.id, viewer.id, JSON.stringify(games)],
+    );
+    const labels = await c.query('SELECT id, player1_name, player2_name FROM entries WHERE id IN ($1, $2)', [m.entry_a_id, m.entry_b_id]);
+    const names = new Map(labels.rows.map((r) => [r.id, [r.player1_name, r.player2_name].filter(Boolean).join(' / ')]));
+    await logEvent(c, m.tournament_id, m.category_id, viewer.id, 'score_correct', {
+      matchId, reason, teams: [names.get(m.entry_a_id), names.get(m.entry_b_id)],
+      before: { status: m.status, games: m.games, winner: m.winner_entry_id === m.entry_a_id ? 'a' : 'b' },
+      after: { status, games, winner: side },
+    });
+    return { tournament_id: m.tournament_id };
+  });
+}
+
+/**
  * BTC mở lại trận đã kết thúc để sửa tỉ số — chỉ khi trận kế tiếp chưa bắt đầu.
  * @param {Pool} pool @param {Viewer} viewer @param {string} matchId
  */
@@ -231,19 +352,19 @@ async function reopenMatch(pool, viewer, matchId) {
     if (!m) throw notFound('Không tìm thấy trận');
     await requireOrganizer(c, m.tournament_id, viewer);
     if (m.status !== 'finished' && m.status !== 'walkover') throw conflict('NOT_FINISHED', 'Trận chưa kết thúc');
+    const dq = await c.query('SELECT 1 FROM entries WHERE id IN ($1, $2) AND disqualified_at IS NOT NULL', [m.entry_a_id, m.entry_b_id]);
+    if (dq.rows.length) throw conflict('ENTRY_DISQUALIFIED', 'Trận có đội bị truất quyền — dùng Sửa kết quả để đính chính lịch sử');
     // Phục hồi cũng là nhận sân/VĐV: dùng cùng khoá với gọi sân và bắt đầu trận.
     await c.query('SELECT id FROM tournaments WHERE id = $1 FOR UPDATE', [m.tournament_id]);
     if (m.stage === 'group') {
       const cat = await loadCategory(c, m.category_id, true);
       if (cat.stage !== 'groups') throw conflict('KNOCKOUT_STARTED', 'Đã tạo nhánh loại trực tiếp, không thể sửa vòng bảng');
     }
-    if (m.next_match_id) {
-      const n = (await c.query('SELECT status, games FROM matches WHERE id = $1 FOR UPDATE', [m.next_match_id])).rows[0];
-      if (!['pending', 'scheduled'].includes(n.status) || n.games.length > 0) {
-        throw conflict('NEXT_STARTED', 'Trận vòng sau đã bắt đầu, không thể mở lại');
-      }
+    const ids = downstreamIds(m);
+    if (ids.length) {
+      await assertDownstreamWaiting(c, ids);
       const col = m.next_slot === 'a' ? 'entry_a_id' : 'entry_b_id';
-      await c.query(`UPDATE matches SET ${col} = NULL, version = version + 1 WHERE id = $1`, [m.next_match_id]);
+      await c.query(`UPDATE matches SET ${col} = NULL, version = version + 1, updated_at = now() WHERE id = ANY($1::uuid[])`, [ids]);
     } else if (m.stage === 'knockout') {
       await c.query(`UPDATE categories SET stage = 'knockout' WHERE id = $1`, [m.category_id]);
     }
@@ -297,7 +418,7 @@ async function assignReferee(pool, viewer, matchId, refereeUserId) {
  */
 const matchSelectFrom = (source) => `
   SELECT m.id, m.tournament_id, m.category_id, cat.code AS category_code, cat.name AS category_name,
-         m.stage, g.name AS group_name, m.round, m.position, m.status, m.games, m.court, m.scheduled_at, m.called_at,
+         m.stage, g.name AS group_name, m.round, m.position, m.is_third_place, m.status, m.games, m.court, m.scheduled_at, m.called_at,
          m.version, m.updated_at, m.referee_user_id, ru.full_name AS referee_name,
          m.entry_a_id, m.entry_b_id, m.winner_entry_id,
          ea.player1_name AS a_p1, ea.player2_name AS a_p2, ea.club AS a_club, ea.disqualified_at IS NOT NULL AS a_dq,
@@ -327,7 +448,8 @@ function presentMatch(r) {
     stage: r.stage,
     groupName: r.group_name,
     round: r.round,
-    roundLabel: r.stage === 'knockout' ? roundLabel(r.round, r.ko_rounds) : `Lượt ${r.round}`,
+    isThirdPlace: Boolean(r.is_third_place),
+    roundLabel: r.is_third_place ? 'Tranh hạng Ba–Tư' : r.stage === 'knockout' ? roundLabel(r.round, r.ko_rounds) : `Lượt ${r.round}`,
     position: r.position,
     status: r.status,
     games: r.games,
@@ -349,7 +471,7 @@ function presentMatch(r) {
       players: playersOfEntry(r.b_p1, r.b_p1_aid, r.b_p2, r.b_p2_aid),
     } : null,
     winner: r.winner_entry_id ? (r.winner_entry_id === r.entry_a_id ? 'a' : 'b') : null,
-    rules: effectiveRules(r, r.stage, r.round, r.ko_rounds),
+    rules: effectiveRules(r, r.stage, r.round, r.ko_rounds, r.is_third_place),
   };
 }
 
@@ -386,13 +508,14 @@ async function getBracket(db, categoryId) {
   const { rows } = await db.query(
     `${MATCH_SELECT} WHERE m.category_id = $1 AND m.stage = 'knockout' ORDER BY m.round, m.position`, [categoryId],
   );
-  const matches = rows.map(presentMatch);
+  const third = rows.find((r) => r.is_third_place);
+  const matches = rows.filter((r) => !r.is_third_place).map(presentMatch);
   const total = matches.reduce((mx, m) => Math.max(mx, m.round), 0);
   const rounds = [];
   for (let r = 1; r <= total; r += 1) {
     rounds.push({ round: r, label: roundLabel(r, total), matches: matches.filter((m) => m.round === r) });
   }
-  return { rounds };
+  return { rounds, thirdPlace: third ? presentMatch(third) : null };
 }
 
 /**
@@ -420,5 +543,5 @@ async function refereeQueue(db, viewer) {
 
 module.exports = {
   MATCH_SELECT, matchSelectFrom, presentMatch, getMatch, listMatches, getBracket, refereeQueue,
-  startMatch, recordScore, reopenMatch, assignReferee, lockScorable, advanceWinner, walkoverTo,
+  startMatch, recordScore, correctResult, reopenMatch, assignReferee, lockScorable, advanceWinner, settleDisqualifiedMatch,
 };

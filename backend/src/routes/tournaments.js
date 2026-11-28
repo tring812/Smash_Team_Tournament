@@ -7,6 +7,7 @@ const svc = require('../services/tournamentService');
 const categorySvc = require('../services/categoryService');
 const matchSvc = require('../services/matchService');
 const athletes = require('../services/athleteService');
+const entries = require('../services/entryService');
 const referees = require('../services/refereeService');
 const live = require('../liveBus');
 const auth = require('../auth');
@@ -96,6 +97,11 @@ module.exports = function registerTournamentsRoutes(api, { pool, id, me, touch }
     const out = await athletes.updateAthlete(pool, me(req), id(req.params.id), schemas.updateAthlete.parse(req.body));
     const r = await pool.query('SELECT tournament_id FROM athletes WHERE id = $1', [out.id]);
     touch(res, r.rows[0]?.tournament_id);
+    res.json(out);
+  });
+  api.post('/athletes/:id/disqualify', auth.requireAuth, async (req, res) => {
+    const out = await entries.disqualifyAthlete(pool, me(req), id(req.params.id), schemas.disqualifyAthlete.parse(req.body));
+    touch(res, out.tournamentId);
     res.json(out);
   });
   // BXH mọi nội dung của giải trong MỘT request (trang giải: tab Bảng đấu / tìm VĐV) thay cho 1 request mỗi nội dung.

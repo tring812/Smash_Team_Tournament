@@ -4,6 +4,7 @@ const { z } = require('zod');
 
 const name = (max) => z.string().trim().min(1).max(max);
 const score = z.number().int().min(0).max(60);
+const reason = z.string().trim().min(3).max(300);
 const password = z.string().min(8, 'Mật khẩu tối thiểu 8 ký tự').max(128);
 const username = z.string().trim().toLowerCase().regex(/^[a-z0-9._-]{3,40}$/, 'Tên đăng nhập 3–40 ký tự: chữ thường, số, . _ -');
 
@@ -66,6 +67,7 @@ const schemas = {
     isDoubles: z.boolean(),
     groupCount: z.number().int().min(1).max(32).optional(),
     advancePerGroup: z.number().int().min(1).max(4).optional(),
+    thirdPlace: z.boolean().optional(),
     pointsToWin: z.number().int().min(5).max(50).optional(),
     maxPoints: z.number().int().min(5).max(60).optional(),
     gamesToWin: z.number().int().min(1).max(3).optional(),
@@ -76,6 +78,7 @@ const schemas = {
     isDoubles: z.boolean().optional(),
     groupCount: z.number().int().min(1).max(32).optional(),
     advancePerGroup: z.number().int().min(1).max(4).optional(),
+    thirdPlace: z.boolean().optional(),
     pointsToWin: z.number().int().min(5).max(50).optional(),
     maxPoints: z.number().int().min(5).max(60).optional(),
     gamesToWin: z.number().int().min(1).max(3).optional(),
@@ -108,7 +111,11 @@ const schemas = {
     courts: z.number().int().min(1).max(50).optional(),
     slotMinutes: z.number().int().min(5).max(240).optional(),
   }),
-  disqualify: z.object({ reason: z.string().trim().min(3).max(300) }),
+  disqualify: z.object({ reason }),
+  disqualifyAthlete: z.discriminatedUnion('scope', [
+    z.object({ scope: z.literal('category'), categoryId: z.uuid(), reason }),
+    z.object({ scope: z.literal('tournament'), reason }),
+  ]),
   swap: z.object({ entryA: z.uuid(), entryB: z.uuid() }),
   updateEntry: z.object({
     player1Name: name(120),
@@ -127,6 +134,10 @@ const schemas = {
     games: z.array(z.tuple([score, score])).max(5).optional(),
     walkoverWinner: z.enum(['a', 'b']).optional(),
   }),
+  correctResult: z.discriminatedUnion('action', [
+    z.object({ action: z.literal('finish'), version: z.number().int().min(1), reason, games: z.array(z.tuple([score, score])).min(1).max(5) }),
+    z.object({ action: z.literal('walkover'), version: z.number().int().min(1), reason, walkoverWinner: z.enum(['a', 'b']) }),
+  ]),
   // Biên bản: ô VĐV a1/a2/b1/b2; expectedSeq = seq của sự kiện sắp thêm (chống 2 máy cùng bấm).
   rally: z.object({
     type: z.enum(['start', 'point', 'fix_server']),
