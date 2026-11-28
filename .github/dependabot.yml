@@ -10,12 +10,21 @@ updates:
   - package-ecosystem: npm
     directory: /backend
     schedule: { interval: weekly }
+    target-branch: develop
     open-pull-requests-limit: 5
     groups:
       backend-minor-patch: { update-types: ["minor", "patch"] }
   - package-ecosystem: npm
     directory: /frontend
     schedule: { interval: weekly }
+    target-branch: develop
     open-pull-requests-limit: 5
     groups:
       frontend-minor-patch: { update-types: ["minor", "patch"] }
+    ignore:
+      # TypeScript 7 (trình biên dịch viết lại bằng Go) bỏ JS API mà bộ test frontend dùng → test hỏng (#60).
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      # Giữ @types/node khớp Node đang chạy (CI Node 22, engines >=20.19) — không nhảy lên 26 (#58).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
