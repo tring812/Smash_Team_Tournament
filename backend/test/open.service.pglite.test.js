@@ -102,7 +102,7 @@ describe('giải mở rộng (PGlite)', { skip: hasPglite ? false : 'chưa cài 
     await svc.updateTournament(pool, ADMIN, t.id, { status: 'published' });
   });
 
-  test('truất quyền ở vòng bảng: huỷ mọi trận (kể cả đã đánh), BXH bỏ đội đó; huỷ truất quyền khôi phục', async () => {
+  test('truất quyền ở vòng bảng: giữ trận đã chốt, huỷ các trận còn lại và khôi phục được', async () => {
     const [ga] = await groupsOf();
     const ms = (await matchSvc.listMatches(pool, t.id, { categoryId: cat.id })).filter((m) => m.groupName === 'A');
     const victim = ga[0];
@@ -110,18 +110,23 @@ describe('giải mở rộng (PGlite)', { skip: hasPglite ? false : 'chưa cài 
     const played = await beginMatch(pool, ADMIN, REF, pending);
     await matchSvc.recordScore(pool, REF, played.id, { action: 'finish', version: played.version, games: win('a') });
 
-    const r =await entrySvc.disqualifyEntry(pool, ADMIN, victim, 'Sai danh tính VĐV');
-    assert.equal(r.cancelledMatches, 3);
+    const r = await entrySvc.disqualifyEntry(pool, ADMIN, victim, 'Sai danh tính VĐV');
+    assert.equal(r.cancelledMatches, 2);
     const groupA = (await svc.groupStandings(pool, cat.id))[0];
     const dqRow = groupA.standings.find((s) => s.entryId === victim);
     assert.equal(dqRow.disqualified, true);
-    assert.equal(groupA.standings.filter((s) => !s.disqualified).every((s) => s.played === 0), true);
+    assert.equal(dqRow.rank, null);
+    const opponent = played.a.id === victim ? played.b : played.a;
+    const row = groupA.standings.find((s) => s.entryId === opponent.id);
+    assert.equal(row.played, 1);
+    assert.equal(row.won, Number(played.a.id === opponent.id));
+    assert.equal((await matchSvc.getMatch(pool, played.id)).status, 'finished');
     const cancelled = (await matchSvc.listMatches(pool, t.id, { categoryId: cat.id })).filter((m) => m.status === 'cancelled');
-    assert.equal(cancelled.length, 3);
+    assert.equal(cancelled.length, 2);
     await rejectsWith(matchSvc.recordScore(pool, REF, cancelled[0].id, { action: 'save', version: cancelled[0].version, games: [[1, 0]] }), 409, 'MATCH_CANCELLED');
 
     const back = await entrySvc.reinstateEntry(pool, ADMIN, victim);
-    assert.equal(back.restoredMatches, 3);
+    assert.equal(back.restoredMatches, 2);
     const restored = await matchSvc.getMatch(pool, played.id);
     assert.equal(restored.status, 'finished');
     await entrySvc.disqualifyEntry(pool, ADMIN, victim, 'Sai danh tính VĐV');

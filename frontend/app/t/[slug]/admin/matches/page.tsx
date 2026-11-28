@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Clock, FileText, PenLine, RotateCcw, Swords } from "lucide-react";
+import { Clock, FileText, Pencil, PenLine, Swords } from "lucide-react";
 import { api, fmtTime } from "../../../../lib/api";
 import { usePoll } from "../../../../lib/usePoll";
 import type { Match, MatchStatus, Staff } from "../../../../lib/types";
 import { Button, Card, CardSkeleton, DqBadge, EmptyState, PageHeader, textInputClass } from "../../../../components/ui";
 import { StatusBadge, matchTitle } from "../../../../components/MatchViews";
 import { useAdmin } from "../AdminContext";
+import { CorrectResultModal } from "../CorrectResultModal";
 import { MoveMatchModal } from "../MoveMatchModal";
 import { NoRefereeHint, RefereeOptions } from "../RefereeOptions";
 
@@ -18,12 +19,13 @@ const FILTERS: { id: "all" | "called" | MatchStatus; label: string }[] = [
 ];
 
 export default function MatchesPage() {
-  const { t, version, busy, act, setError } = useAdmin();
+  const { t, version, busy, setError } = useAdmin();
   const [cat, setCat] = useState("");
   const [status, setStatus] = useState<(typeof FILTERS)[number]["id"]>("all");
   const matches = usePoll((s) => api<Match[]>(`/tournaments/${t.id}/matches${cat ? `?categoryId=${cat}` : ""}`, { signal: s }), [t.id, cat, version], 15_000);
   const staff = usePoll((s) => api<Staff[]>(`/tournaments/${t.id}/staff`, { signal: s }), [t.id, version], 120_000);
   const [moving, setMoving] = useState<Match | null>(null);
+  const [correcting, setCorrecting] = useState<Match | null>(null);
   /** Trận đang lưu trọng tài — chỉ khoá đúng ô đó, các ô khác vẫn chọn tiếp được. */
   const [saving, setSaving] = useState<ReadonlySet<string>>(new Set());
   const replace = (r: Match) => matches.mutate((list) => list.map((x) => (x.id === r.id ? r : x)));
@@ -55,7 +57,7 @@ export default function MatchesPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Quản lý giải" title="Trận đấu & trọng tài" desc="Phân công trọng tài, dời giờ / sân từng trận, mở bàn nhập điểm, mở lại trận để sửa tỉ số. Gọi trận theo sân trống ở Điều phối sân." />
+      <PageHeader eyebrow="Quản lý giải" title="Trận đấu & trọng tài" desc="Phân công trọng tài, dời trận, nhập điểm hoặc sửa kết quả đã chốt kèm lý do. Gọi trận theo sân trống ở Điều phối sân." />
 
       <NoRefereeHint staff={staff.data} slug={t.slug} />
 
@@ -125,10 +127,9 @@ export default function MatchesPage() {
                         </Link>
                       )}
                       {["finished", "walkover"].includes(m.status) ? (
-                        <Button variant="outline" className="px-3" disabled={busy}
-                          onClick={() => act(() => api(`/matches/${m.id}/reopen`, { method: "POST" }), "Đã mở lại trận để sửa")}>
-                          {/* Mở lại vẫn tải lại toàn bộ: trận sau trong nhánh và trạng thái nội dung cũng đổi. */}
-                          <RotateCcw className="w-4 h-4" aria-hidden />Mở lại
+                        <Button variant="outline" className="px-3" disabled={busy || !m.a || !m.b}
+                          onClick={() => setCorrecting(m)}>
+                          <Pencil className="w-4 h-4" aria-hidden />Sửa kết quả
                         </Button>
                       ) : m.a && m.b && m.status !== "cancelled" ? (
                         <span className="inline-flex gap-2">
@@ -149,6 +150,7 @@ export default function MatchesPage() {
         )}
       </Card>
       <MoveMatchModal key={moving?.id ?? "none"} match={moving} courts={t.courts} busyCourts={busyCourts} onClose={() => setMoving(null)} onDone={replace} />
+      {correcting && <CorrectResultModal key={correcting.id} match={correcting} onClose={() => setCorrecting(null)} />}
     </div>
   );
 }

@@ -39,7 +39,7 @@ export const ACTION_LABEL: Record<TournamentEvent["action"], string> = {
   call_match: "Gọi vào sân", uncall_match: "Rút trận", move_match: "Dời trận", court_referee: "Trọng tài sân", athlete_update: "Sửa hồ sơ VĐV", rules_update: "Luật điểm theo vòng",
   referee_create: "Tạo TK trọng tài", referee_update: "Sửa TK trọng tài", referee_remove: "Gỡ trọng tài",
   rally_fix_server: "Sửa người giao", rally_undo: "Hoàn tác pha cầu", score_confirm: "Xác nhận kết quả",
-  start_match: "Bắt đầu trận",
+  start_match: "Bắt đầu trận", score_correct: "Sửa kết quả",
 };
 
 /** Tóm tắt 1 dòng nhật ký để hiển thị. */
@@ -47,7 +47,7 @@ export function describeEvent(ev: TournamentEvent): string {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- details là JSON tự do theo từng action
   const d = ev.details as Record<string, any>;
   switch (ev.action) {
-    case "disqualify": return `${d.name} — ${d.reason}${d.cancelledMatches ? ` (huỷ ${d.cancelledMatches} trận)` : ""}${d.walkoverMatchId ? " (đối thủ thắng W.O)" : ""}`;
+    case "disqualify": return `${d.athleteName ? `${d.athleteName} · đội ${d.name}${d.scope === "tournament" ? " · toàn giải" : ""}` : d.name} — ${d.reason}${d.cancelledMatches ? ` (huỷ ${d.cancelledMatches} trận)` : ""}${d.walkoverMatchId ? " (đối thủ thắng W.O)" : ""}`;
     case "reinstate": return `${d.name} (khôi phục ${d.restoredMatches} trận)`;
     case "swap": return `${d.a?.name} (${d.a?.from}→${d.a?.to}) ⇄ ${d.b?.name} (${d.b?.from}→${d.b?.to})`;
     case "edit_entry": return `${d.before?.name} → ${d.after?.name}`;
@@ -61,6 +61,11 @@ export function describeEvent(ev: TournamentEvent): string {
     case "rally_fix_server": return `Người giao: ${d.name ?? d.server}${Array.isArray(d.score) ? ` (lúc ${d.score[0]}-${d.score[1]})` : ""}`;
     case "rally_undo": return `Bỏ ${d.type === "point" ? `pha cầu${Array.isArray(d.score) ? ` ${d.score[0]}-${d.score[1]}` : ""}` : d.type === "start" ? "chọn người giao" : "sửa người giao"}`;
     case "score_confirm": return d.walkover ? `Bỏ cuộc — bên ${String(d.winner).toUpperCase()} thắng` : `Kết quả ${(d.games as number[][] | null)?.map((g) => g.join("-")).join(", ") ?? ""}`;
+    case "score_correct": {
+      const describe = (r: { status: string; winner: string; games: number[][] }) => r.status === "walkover"
+        ? `W.O. (${String(r.winner).toUpperCase()} thắng)` : r.games.map((g) => g.join("–")).join(", ");
+      return `${d.teams.join(" – ")}: ${describe(d.before)} → ${describe(d.after)}. Lý do: ${d.reason}`;
+    }
     case "uncall_match": return `Rút khỏi sân ${d.court}, về hàng chờ`;
     case "move_match": return `Sân ${d.from?.court ?? "—"} · ${d.from?.at ? fmtTime(String(d.from.at)) : "chưa xếp"} → Sân ${d.to?.court ?? "—"} · ${d.to?.at ? fmtTime(String(d.to.at)) : "chưa xếp"}`;
     case "court_referee": return `Sân ${d.court}: ${d.referee ?? "bỏ trọng tài"}`;

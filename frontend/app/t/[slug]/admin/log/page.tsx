@@ -16,7 +16,7 @@ export default function LogPage() {
   const events = usePoll((s) => api<TournamentEvent[]>(`/tournaments/${t.id}/events`, { signal: s }), [t.id, version], 60_000);
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Quản lý giải" title="Nhật ký thao tác" desc="Mọi lần bốc thăm, truất quyền, đổi bảng, sửa đội, xếp lịch. Không thể sửa hay xoá." />
+      <PageHeader eyebrow="Quản lý giải" title="Nhật ký thao tác" desc="Mọi lần bốc thăm, truất quyền, sửa đội, xếp lịch và sửa kết quả. Không thể sửa hay xoá nhật ký." />
       <Card>
         {!events.data ? <div className="p-5"><CardSkeleton /></div> : events.data.length === 0 ? (
           <EmptyState icon={<ScrollText className="w-10 h-10" />} title="Chưa có thao tác nào" />

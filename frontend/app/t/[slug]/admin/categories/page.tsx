@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import dynamic from "next/dynamic";
-import { ArrowLeftRight, ChevronDown, FileSpreadsheet, GitBranch, Pencil, Plus, RotateCcw, Shuffle, Trash2, UserX, Users } from "lucide-react";
+import { ArrowLeftRight, ChevronDown, FileSpreadsheet, GitBranch, Pencil, Plus, RotateCcw, Shuffle, Trash2, Users } from "lucide-react";
 import { api } from "../../../../lib/api";
 import { usePoll } from "../../../../lib/usePoll";
 import type { Category, Entry, Match } from "../../../../lib/types";
@@ -53,11 +53,10 @@ export default function CategoriesPage() {
   const matches = usePoll((s) => (cid ? api<Match[]>(`/tournaments/${t.id}/matches?categoryId=${cid}`, { signal: s }) : Promise.resolve([])), [cid, version], 30_000);
 
   const [addOpen, setAddOpen] = useState(false);
-  const [newCat, setNewCat] = useState({ code: "MS", name: "Đơn nam", isDoubles: false, groupCount: 2, advancePerGroup: 2, preset: "bwf" as keyof typeof PRESETS, gamesToWin: 2 });
+  const [newCat, setNewCat] = useState({ code: "MS", name: "Đơn nam", isDoubles: false, groupCount: 2, advancePerGroup: 2, preset: "bwf" as keyof typeof PRESETS, gamesToWin: 2, thirdPlace: false });
   const [bulk, setBulk] = useState("");
   const [swap, setSwap] = useState({ a: "", b: "" });
   const [editing, setEditing] = useState<{ e: Entry; p1: string; p2: string; club: string } | null>(null);
-  const [dq, setDq] = useState<{ e: Entry; reason: string } | null>(null);
 
   const list = entries.data ?? [];
   const started = (m: Match) => !["bye", "cancelled"].includes(m.status) && (["live", "finished", "walkover"].includes(m.status) || m.games.length > 0);
@@ -93,11 +92,12 @@ export default function CategoriesPage() {
 
       {cat && (
         <Card title={`${cat.code} — ${cat.name}`} actions={<>
-          <CategoryActions cat={cat} entryCount={list.length} groupsStarted={groupsStarted} />
+          <CategoryActions cat={cat} entryCount={list.filter((e) => !e.disqualified_at).length} groupsStarted={groupsStarted} />
           <CategoryCrud cat={cat} entryCount={list.length} anyStarted={anyStarted} onDeleted={() => setCatId("")} />
         </>}>
           <p className="-mt-2 mb-5 text-sm text-slate-500">
             {cat.is_doubles ? "Đôi" : "Đơn"} · {cat.group_count} bảng · {cat.advance_per_group} đội/bảng đi tiếp · {cat.points_to_win} điểm (trần {cat.max_points}) · {cat.games_to_win === 2 ? "thắng 2/3 game" : "1 game"}
+            {cat.third_place && " · Có tranh hạng Ba–Tư"}
           </p>
 
           {cat.stage === "setup" && (
@@ -165,7 +165,7 @@ export default function CategoriesPage() {
                         </td>
                         <th scope="row" className="py-3 pr-3 text-left font-semibold">
                           <span className={isDq ? "line-through" : "text-slate-900"}>{e.name}</span>
-                          {isDq && <><DqBadge reason={e.dq_reason} /><span className="block text-xs font-normal">Lý do: {e.dq_reason}</span></>}
+                          {isDq && <><DqBadge reason={e.dq_reason} />{e.dq_reason && <span className="block text-xs font-normal">Lý do: {e.dq_reason}</span>}</>}
                         </th>
                         <td className="py-3 pr-3 text-slate-600">{e.club || "—"}</td>
                         <td className="tabular py-3 pr-3 text-right text-slate-500">{e.draw_lot ?? "—"}</td>
@@ -183,12 +183,7 @@ export default function CategoriesPage() {
                                 <Trash2 className="w-4 h-4" aria-hidden /><span className="hidden md:inline">Xoá</span>
                               </Button>
                             )}
-                            {(cat.stage === "groups" || cat.stage === "knockout") && !isDq && (
-                              <Button variant="danger" className="px-3" disabled={busy} aria-label={`Truất quyền ${e.name}`} onClick={() => setDq({ e, reason: "" })}>
-                                <UserX className="w-4 h-4" aria-hidden /><span className="hidden md:inline">Truất quyền</span>
-                              </Button>
-                            )}
-                            {isDq && cat.stage === "groups" && (
+                            {isDq && (cat.stage === "setup" || (cat.stage === "groups" && e.group_id)) && (
                               <Button variant="outline" className="px-3" disabled={busy}
                                 onClick={() => act(() => api(`/entries/${e.id}/reinstate`, { method: "POST" }), `Đã huỷ truất quyền ${e.name}`)}>
                                 <RotateCcw className="w-4 h-4" aria-hidden />Huỷ truất quyền
@@ -217,7 +212,8 @@ export default function CategoriesPage() {
             const ok = await act(() => api(`/tournaments/${t.id}/categories`, {
               method: "POST",
               body: { code: newCat.code, name: newCat.name, isDoubles: newCat.isDoubles, groupCount: newCat.groupCount,
-                advancePerGroup: newCat.advancePerGroup, pointsToWin: p.pointsToWin, maxPoints: p.maxPoints, gamesToWin: newCat.gamesToWin },
+                 advancePerGroup: newCat.advancePerGroup, pointsToWin: p.pointsToWin, maxPoints: p.maxPoints, gamesToWin: newCat.gamesToWin,
+                 thirdPlace: newCat.thirdPlace },
             }), `Đã thêm nội dung ${newCat.code}`);
             if (ok) setAddOpen(false);
           }}>
@@ -234,6 +230,7 @@ export default function CategoriesPage() {
           <Select label="Thể thức" value={newCat.gamesToWin} onChange={(e) => setNewCat({ ...newCat, gamesToWin: Number(e.target.value) })}>
             <option value={2}>Thắng 2/3 game</option><option value={1}>1 game</option>
           </Select>
+          <ThirdPlaceOption checked={newCat.thirdPlace} onChange={(thirdPlace) => setNewCat({ ...newCat, thirdPlace })} />
           <div className="flex items-end justify-end gap-2 sm:col-span-2">
             <Button variant="ghost" onClick={() => setAddOpen(false)}>Huỷ</Button>
             <Button type="submit" disabled={busy}>Thêm nội dung</Button>
@@ -260,29 +257,18 @@ export default function CategoriesPage() {
         )}
       </Modal>
 
-      <Modal open={Boolean(dq)} onClose={() => setDq(null)} title={`Truất quyền: ${dq?.e.name ?? ""}`}>
-        {dq && cat && (
-          <form className="grid gap-4"
-            onSubmit={async (ev) => {
-              ev.preventDefault();
-              const ok = await act(() => api(`/entries/${dq.e.id}/disqualify`, { method: "POST", body: { reason: dq.reason } }), `Đã truất quyền ${dq.e.name}`);
-              if (ok) setDq(null);
-            }}>
-            <p className="rounded-2xl bg-red-50 p-4 text-sm text-red-800">
-              {cat.stage === "groups"
-                ? "Vòng bảng: MỌI kết quả của đội bị huỷ (theo BWF), bảng xếp hạng tính lại. Có thể huỷ truất quyền trước khi tạo nhánh."
-                : "Loại trực tiếp: đối thủ thắng bỏ cuộc (W.O) và đi tiếp. Không thể hoàn tác."}
-            </p>
-            <Field label="Lý do (bắt buộc, ghi vào nhật ký)" required minLength={3} maxLength={300} value={dq.reason}
-              onChange={(ev) => setDq({ ...dq, reason: ev.target.value })} />
-            <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setDq(null)}>Huỷ</Button>
-              <Button type="submit" variant="primary" disabled={busy}><UserX className="w-4 h-4" aria-hidden />Xác nhận truất quyền</Button>
-            </div>
-          </form>
-        )}
-      </Modal>
     </div>
+  );
+}
+
+function ThirdPlaceOption({ checked, onChange, disabled }: { checked: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
+  return (
+    <label className="flex items-start gap-2 text-sm sm:col-span-2">
+      <input className="mt-1 accent-primary" type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+      <span><strong>Tranh hạng Ba–Tư</strong><br /><span className="text-xs text-slate-500">
+        {disabled ? "Đã tạo nhánh, không thể đổi." : "Hai đội thua bán kết gặp nhau và dùng cùng luật điểm với bán kết."}
+      </span></span>
+    </label>
   );
 }
 
@@ -294,10 +280,11 @@ export default function CategoriesPage() {
 function CategoryCrud({ cat, entryCount, anyStarted, onDeleted }: { cat: Category; entryCount: number; anyStarted: boolean; onDeleted: () => void }) {
   const { busy, act } = useAdmin();
   const presetOf = (c: Category) => (Object.entries(PRESETS).find(([, p]) => p.pointsToWin === c.points_to_win && p.maxPoints === c.max_points)?.[0] ?? "keep") as keyof typeof PRESETS | "keep";
-  const init = () => ({ code: cat.code, name: cat.name, isDoubles: cat.is_doubles, groupCount: cat.group_count, advancePerGroup: cat.advance_per_group, preset: presetOf(cat), gamesToWin: cat.games_to_win });
+  const init = () => ({ code: cat.code, name: cat.name, isDoubles: cat.is_doubles, groupCount: cat.group_count, advancePerGroup: cat.advance_per_group, preset: presetOf(cat), gamesToWin: cat.games_to_win, thirdPlace: Boolean(cat.third_place) });
   const [edit, setEdit] = useState<ReturnType<typeof init> | null>(null);
   const [del, setDel] = useState<string | null>(null);
   const drawn = cat.stage !== "setup";
+  const bracketCreated = cat.stage === "knockout" || cat.stage === "completed";
   const lockDoubles = drawn || entryCount > 0;
 
   return (
@@ -318,7 +305,7 @@ function CategoryCrud({ cat, entryCount, anyStarted, onDeleted }: { cat: Categor
               const p = edit.preset === "keep" ? null : PRESETS[edit.preset];
               const body = {
                 code: edit.code, name: edit.name, isDoubles: edit.isDoubles, groupCount: edit.groupCount,
-                advancePerGroup: edit.advancePerGroup, gamesToWin: edit.gamesToWin,
+                 advancePerGroup: edit.advancePerGroup, gamesToWin: edit.gamesToWin, thirdPlace: edit.thirdPlace,
                 ...(p ? { pointsToWin: p.pointsToWin, maxPoints: p.maxPoints } : {}),
               };
               if (await act(() => api(`/categories/${cat.id}`, { method: "PATCH", body }), `Đã cập nhật nội dung ${edit.code}`)) setEdit(null);
@@ -339,6 +326,7 @@ function CategoryCrud({ cat, entryCount, anyStarted, onDeleted }: { cat: Categor
             <Select label="Thể thức" value={edit.gamesToWin} disabled={anyStarted} onChange={(e) => setEdit({ ...edit, gamesToWin: Number(e.target.value) })}>
               <option value={2}>Thắng 2/3 game</option><option value={1}>1 game</option>
             </Select>
+            <ThirdPlaceOption checked={edit.thirdPlace} disabled={bracketCreated} onChange={(thirdPlace) => setEdit({ ...edit, thirdPlace })} />
             <ul className="space-y-1 text-xs text-slate-500 sm:col-span-2">
               {lockDoubles && <li>• Đơn/đôi chỉ đổi được khi nội dung chưa có đội nào.</li>}
               {drawn && <li>• Đã bốc thăm: không đổi số bảng / số đội đi tiếp.</li>}

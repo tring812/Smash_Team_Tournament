@@ -424,9 +424,14 @@ async function scheduleTournament(pool, viewer, tid, opts = {}) {
     const feeders = new Map();
     if (stage === 'knockout') {
       const { rows: ko } = await c.query(
-        `SELECT id, next_match_id FROM matches WHERE tournament_id = $1 AND stage = 'knockout' AND next_match_id IS NOT NULL`, [tid],
+        `SELECT id, next_match_id, loser_next_match_id FROM matches WHERE tournament_id = $1 AND stage = 'knockout'
+          AND (next_match_id IS NOT NULL OR loser_next_match_id IS NOT NULL)`, [tid],
       );
-      for (const k of ko) feeders.set(k.next_match_id, [...(feeders.get(k.next_match_id) ?? []), k.id]);
+      for (const k of ko) {
+        for (const target of [k.next_match_id, k.loser_next_match_id].filter(Boolean)) {
+          feeders.set(target, [...(feeders.get(target) ?? []), k.id]);
+        }
+      }
     }
 
     // Trận đang đánh: nếu lịch mới bắt đầu trước khi trận đó kịp xong (1 khung), chặn sân & VĐV của nó ở khung đầu.
@@ -534,7 +539,7 @@ async function standingsOf(db, scope) {
 function standingsOfGroup(g, members, matches) {
   const mem = members.filter((m) => m.group_id === g.id);
   const active = mem.filter((e) => !e.disqualified_at);
-  // Trận bị huỷ do truất quyền không tính (theo BWF: xoá mọi kết quả của đội bị truất quyền).
+  // Chỉ trận đã huỷ không tính. Kết quả đã chốt trước khi truất quyền vẫn tính cho đối thủ.
   const ms = matches.filter((m) => m.group_id === g.id && m.status !== 'cancelled');
   const finished = ms.filter((m) => m.status === 'finished' || m.status === 'walkover').map((m) => ({
     a: m.entry_a_id,
@@ -546,11 +551,12 @@ function standingsOfGroup(g, members, matches) {
   // Phá hoà cuối cùng: bốc thăm phụ (lot nhỏ xếp trên) — giải mở rộng không dùng ELO.
   const tiebreak = Object.fromEntries(active.map((e) => [e.id, -(e.draw_lot ?? 1e6)]));
   const byId = new Map(mem.map((e) => [e.id, e]));
-  const rows = computeStandings(active.map((e) => e.id), finished, tiebreak).map((r) => ({
+  const unranked = mem.filter((e) => e.disqualified_at);
+  const rows = computeStandings(active.map((e) => e.id), finished, tiebreak, unranked.map((e) => e.id)).map((r) => ({
     ...r, name: entryLabel(byId.get(r.entryId)), club: byId.get(r.entryId)?.club ?? '', disqualified: false, dqReason: null,
     players: entryPlayers(byId.get(r.entryId)),
   }));
-  const dq = mem.filter((e) => e.disqualified_at).map((e) => ({
+  const dq = unranked.map((e) => ({
     entryId: e.id, rank: null, played: 0, won: 0, lost: 0, gamesFor: 0, gamesAgainst: 0, pointsFor: 0, pointsAgainst: 0,
     name: entryLabel(e), club: e.club ?? '', disqualified: true, dqReason: e.dq_reason, players: entryPlayers(e),
   }));
@@ -573,8 +579,16 @@ async function generateKnockout(pool, viewer, categoryId) {
       standings.map((g) => g.standings.filter((r) => !r.disqualified).map((r) => r.entryId)), cat.advance_per_group,
     );
     if (seeds.length < 2) throw conflict('NOT_ENOUGH_QUALIFIERS', 'Cần ít nhất 2 đội vào vòng loại trực tiếp');
+    if (cat.third_place && seeds.length < 4) {
+      throw conflict('THIRD_PLACE_NEEDS_SEMIFINALS', 'Tranh hạng Ba–Tư cần hai trận bán kết có đủ đội (ít nhất 4 đội vào nhánh)');
+    }
     const bracket = buildBracket(seeds);
     const totalRounds = Math.max(...bracket.map((b) => b.round));
+    const thirdPlaceId = cat.third_place ? (await c.query(
+      `INSERT INTO matches (tournament_id, category_id, stage, round, position, is_third_place)
+        VALUES ($1, $2, 'knockout', $3, 1, TRUE) RETURNING id`,
+      [cat.tournament_id, categoryId, totalRounds],
+    )).rows[0].id : null;
 
     // Chèn từ chung kết ngược về vòng 1 để có sẵn id trận kế tiếp.
     /** @type {Map<string, string>} */
@@ -586,10 +600,11 @@ async function generateKnockout(pool, viewer, categoryId) {
       const winner = isBye ? (b.a ?? b.b) : null;
       const { rows } = await c.query(
         `INSERT INTO matches (tournament_id, category_id, stage, round, position, entry_a_id, entry_b_id,
-                              status, winner_entry_id, next_match_id, next_slot, finished_at)
-         VALUES ($1, $2, 'knockout', $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+                               status, winner_entry_id, next_match_id, next_slot, finished_at, loser_next_match_id)
+         VALUES ($1, $2, 'knockout', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
         [cat.tournament_id, categoryId, b.round, b.position, b.a, b.b, isBye ? 'bye' : 'pending', winner,
-          nextId ?? null, b.next ? b.next.slot : null, isBye ? new Date().toISOString() : null],
+           nextId ?? null, b.next ? b.next.slot : null, isBye ? new Date().toISOString() : null,
+           b.round === totalRounds - 1 ? thirdPlaceId : null],
       );
       idOf.set(`${b.round}:${b.position}`, rows[0].id);
     }
@@ -602,7 +617,10 @@ async function generateKnockout(pool, viewer, categoryId) {
       );
     }
     await c.query(`UPDATE categories SET stage = 'knockout' WHERE id = $1`, [categoryId]);
-    return { qualifiers: seeds.length, rounds: totalRounds, matches: bracket.length };
+    return {
+      qualifiers: seeds.length, rounds: totalRounds, matches: bracket.length + Number(Boolean(thirdPlaceId)),
+      ...(thirdPlaceId ? { thirdPlaceId } : {}),
+    };
   });
 }
 
@@ -731,8 +749,7 @@ async function listEntries(db, categoryId) {
     `SELECT e.id, e.player1_name, e.player2_name, e.club, e.draw_lot, e.disqualified_at, e.dq_reason,
             e.player1_athlete_id, e.player2_athlete_id,
             g.id AS group_id, g.name AS group_name,
-            EXISTS (SELECT 1 FROM matches m WHERE e.id IN (m.entry_a_id, m.entry_b_id) AND m.status <> 'cancelled'
-                      AND (m.status IN ('live', 'finished', 'walkover') OR m.games <> '[]'::jsonb)) AS has_played
+            EXISTS (SELECT 1 FROM matches m WHERE e.id IN (m.entry_a_id, m.entry_b_id) AND ${STARTED_SQL}) AS has_played
        FROM entries e LEFT JOIN group_members gm ON gm.entry_id = e.id LEFT JOIN groups g ON g.id = gm.group_id
       WHERE e.category_id = $1 ORDER BY g.sort_order NULLS LAST, e.draw_lot NULLS LAST, e.created_at, e.player1_name`,
     [categoryId],

@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, GitBranch, MapPin, Table2, Trophy } from "lucide-react";
+import { Check, GitBranch, MapPin, Medal, Table2, Trophy } from "lucide-react";
 import { fmtTime } from "../lib/api";
 import type { Bracket, Match, Side } from "../lib/types";
 import { StatusBadge } from "./MatchViews";
@@ -52,7 +52,42 @@ export function BracketExplorer({ bracket, view }: { bracket: Bracket; view: Bra
   if (!bracket.rounds.length) {
     return <EmptyState icon={<GitBranch className="w-10 h-10" />} title="Chưa có cây thi đấu" desc="Cây loại trực tiếp sẽ xuất hiện khi Ban tổ chức tạo nhánh sau vòng bảng." />;
   }
-  return view === "tree" ? <Tree bracket={bracket} /> : <TableView bracket={bracket} />;
+  return (
+    <div className="space-y-4">
+      {view === "tree" ? <Tree bracket={bracket} /> : <TableView bracket={bracket} />}
+      {bracket.thirdPlace && <ThirdPlace match={bracket.thirdPlace} />}
+    </div>
+  );
+}
+
+function ThirdPlace({ match }: { match: Match }) {
+  const winner = match.winner ? match[match.winner] : null;
+  const loser = match.winner ? match[match.winner === "a" ? "b" : "a"] : null;
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-4" aria-label="Tranh hạng Ba–Tư">
+      <header className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="flex items-center gap-2 font-bold text-slate-900"><Medal className="h-5 w-5 text-primary" aria-hidden />Tranh hạng Ba–Tư</h3>
+        <StatusBadge status={match.status} called={Boolean(match.calledAt)} />
+      </header>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        {(["a", "b"] as const).map((side, i) => (
+          <div key={side} className="flex flex-wrap items-center justify-between gap-1 rounded-lg bg-slate-50 px-3 py-2 text-sm">
+            <span className={match[side] ? "font-semibold text-slate-900" : "italic text-slate-500"}>
+              {match[side]?.name ?? `Chờ đội thua bán kết ${i + 1}`}{match[side]?.disqualified && <DqBadge />}
+            </span>
+            {winner && match.winner === side && <span className="font-bold text-primary">Hạng Ba</span>}
+            {loser && !loser.disqualified && match.winner !== side && <span className="font-bold text-slate-600">Hạng Tư</span>}
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+        {match.court && <span>Sân {match.court}</span>}
+        {match.scheduledAt && <span>{fmtTime(match.scheduledAt)}</span>}
+        {match.games.length > 0 && <span className="tabular font-bold">{scoreLine(match)}</span>}
+        {match.status === "cancelled" && <span>Không trao hạng Ba–Tư.</span>}
+      </div>
+    </section>
+  );
 }
 
 /* ───────────────────────────── Dạng cây ───────────────────────────── */
